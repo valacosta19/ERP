@@ -27,7 +27,7 @@ function parseType(s: string): 'income' | 'expense' {
   return 'expense'
 }
 
-const IMPORT_ORDER: EntityType[] = ['categories', 'suppliers', 'products', 'transactions', 'lots']
+const IMPORT_ORDER: EntityType[] = ['categories', 'professionals', 'catalog_items', 'suppliers', 'products', 'transactions', 'lots']
 
 export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
   const [results, setResults] = useState<ImportResult[]>([])
@@ -58,7 +58,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
       const supMap = new Map(supRes.data.map(s => [s.name.toLowerCase(), s.id]))
       const skuMap = new Map(prodRes.data.map(p => [p.sku, p.id]))
       const hdMap = new Map(hdRes.data.map(h => [h.name.toLowerCase(), h.id]))
-      const catalogItemMap = new Map(catalogRes.data.map(ci => [ci.name.toLowerCase(), { category_id: ci.category_id }]))
+      const catalogItemMap = new Map(catalogRes.data.map(ci => [ci.name.toLowerCase(), { id: ci.id, category_id: ci.category_id }]))
 
       const importResults: ImportResult[] = []
 
@@ -180,6 +180,36 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
                 }
               }
 
+              result.inserted++
+            }
+          }
+
+          if (entityType === 'professionals') {
+            for (const row of sheet.rows) {
+              const name = getVal(row, m, 'name')
+              if (!name) { result.skipped++; continue }
+              if (hdMap.has(name.toLowerCase())) { result.skipped++; continue }
+              const activeRaw = getVal(row, m, 'active').toLowerCase()
+              const active = activeRaw === '' || activeRaw === 'true' || activeRaw === '1' || activeRaw === 'sí' || activeRaw === 'si'
+              const { data, error } = await supabase.from('hairdressers').insert({ name, active }).select('id, name').single()
+              if (error) { result.errors.push(`${name}: ${error.message}`); continue }
+              hdMap.set(name.toLowerCase(), data.id)
+              result.inserted++
+            }
+          }
+
+          if (entityType === 'catalog_items') {
+            for (const row of sheet.rows) {
+              const name = getVal(row, m, 'name')
+              const categoryName = getVal(row, m, 'category')
+              if (!name || !categoryName) { result.skipped++; continue }
+              const category_id = catMap.get(categoryName.toLowerCase())
+              if (!category_id) { result.errors.push(`Categoría no encontrada: ${categoryName}`); continue }
+              if (catalogItemMap.has(name.toLowerCase())) { result.skipped++; continue }
+              const price = parseNum(getVal(row, m, 'price'))
+              const { data, error } = await supabase.from('catalog_items').insert({ name, category_id, price }).select('id, name, category_id').single()
+              if (error) { result.errors.push(`${name}: ${error.message}`); continue }
+              catalogItemMap.set(name.toLowerCase(), { id: data.id, category_id: data.category_id })
               result.inserted++
             }
           }
