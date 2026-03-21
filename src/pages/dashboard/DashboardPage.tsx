@@ -136,7 +136,7 @@ export function DashboardPage() {
               <YAxis tick={{ fontSize: 12, fill: 'var(--color-muted)' }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
               <Tooltip
                 contentStyle={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 8, fontSize: 12 }}
-                formatter={(v: number) => fmt(v)}
+                formatter={(v) => fmt(v as number)}
               />
               <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
               <Area type="monotone" dataKey="ingresos" name="Ingresos" stroke="#10B981" strokeWidth={2} fill="url(#gradIncome)" />

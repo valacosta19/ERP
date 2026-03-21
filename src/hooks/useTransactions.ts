@@ -26,7 +26,7 @@ export function useTransactions(filters: TransactionFilters = {}) {
 
       const { data, error } = await query
       if (error) throw new Error(error.message)
-      return data as Transaction[]
+      return data as unknown as Transaction[]
     },
   })
 }
@@ -50,7 +50,7 @@ export function useCreateTransaction() {
         .select('*, category:categories(*)')
         .single()
       if (error) throw new Error(error.message)
-      return data as Transaction
+      return data as unknown as Transaction
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['transactions'] }),
   })
@@ -67,7 +67,7 @@ export function useUpdateTransaction() {
         .select('*, category:categories(*)')
         .single()
       if (error) throw new Error(error.message)
-      return data as Transaction
+      return data as unknown as Transaction
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['transactions'] }),
   })

@@ -122,11 +122,27 @@ Deduplicación por `sku` (productos) y `name.toLowerCase()` (categorías, provee
 |------|-----------|------------|
 | ✅ 1 | Scaffolding (Vite + React + Tailwind), Supabase, migraciones, AppShell, Auth | Login funcional, navegación entre páginas vacías |
 | ✅ 2 | Módulo Transacciones + Categorías + Dashboard KPIs | Reemplaza Tab 1 del Excel |
-| 3 | Proveedores + Pedidos de Compra + stock-in (crear lotes al recibir) | Reemplaza Tab 3, stock se incrementa |
+| ✅ 3 | Proveedores + Pedidos de Compra + stock-in (crear lotes al recibir) | Reemplaza Tab 3, stock se incrementa |
 | 4 | Venta de productos + RPC FIFO + `sale_items` | Costeo correcto por lote |
 | 5 | Reportes (utilidad por producto, valorización de inventario) | Vista completa de rentabilidad |
 | 6 | Wizard de importación Excel | Migración de datos existentes |
 | 7 | Polish: responsive, UX empleado, error boundaries | Listo para producción |
+
+---
+
+---
+
+## Protocolo de continuidad
+
+Al terminar cada fase, crear un archivo `PHASE_N_SUMMARY.md` en la raíz con el siguiente contenido:
+- Qué se completó
+- Decisiones técnicas tomadas
+- Qué quedó pendiente
+- Qué no debe romperse
+- Comandos para validar
+- Riesgos o deuda técnica abierta
+
+Al iniciar cada fase, leer el summary de la fase anterior antes de escribir código.
 
 ---
 

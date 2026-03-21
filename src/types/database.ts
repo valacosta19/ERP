@@ -21,6 +21,7 @@ export interface Database {
           full_name?: string | null
           role?: 'admin' | 'employee'
         }
+        Relationships: []
       }
       categories: {
         Row: {
@@ -40,6 +41,7 @@ export interface Database {
           name?: string
           type?: 'income' | 'expense'
         }
+        Relationships: []
       }
       transactions: {
         Row: {
@@ -70,6 +72,7 @@ export interface Database {
           category_id?: string | null
           description?: string | null
         }
+        Relationships: []
       }
       suppliers: {
         Row: {
@@ -98,6 +101,7 @@ export interface Database {
           email?: string | null
           notes?: string | null
         }
+        Relationships: []
       }
       products: {
         Row: {
@@ -129,6 +133,7 @@ export interface Database {
           min_stock?: number
           deleted_at?: string | null
         }
+        Relationships: []
       }
       purchase_orders: {
         Row: {
@@ -153,6 +158,7 @@ export interface Database {
           order_date?: string
           status?: 'draft' | 'received' | 'cancelled'
         }
+        Relationships: []
       }
       purchase_order_items: {
         Row: {
@@ -177,6 +183,7 @@ export interface Database {
           unit_cost?: number
           lot_id?: string | null
         }
+        Relationships: []
       }
       inventory_lots: {
         Row: {
@@ -206,6 +213,7 @@ export interface Database {
           remaining_quantity?: number
           notes?: string | null
         }
+        Relationships: []
       }
       inventory_movements: {
         Row: {
@@ -233,6 +241,7 @@ export interface Database {
           created_at?: string
         }
         Update: never
+        Relationships: []
       }
       sale_items: {
         Row: {
@@ -256,6 +265,7 @@ export interface Database {
           created_at?: string
         }
         Update: never
+        Relationships: []
       }
     }
     Views: Record<string, never>
