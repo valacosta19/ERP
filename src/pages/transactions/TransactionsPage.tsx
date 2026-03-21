@@ -13,7 +13,9 @@ import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useCategories } from '@/hooks/useCategories'
 import { useProfessionals } from '@/hooks/useProfessionals'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
-import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, PaymentDirection, CatalogItem } from '@/types'
+import { useProducts } from '@/hooks/useProducts'
+import { supabase } from '@/lib/supabaseClient'
+import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, PaymentDirection, CatalogItem, Product } from '@/types'
 import type { PaymentRow } from '@/hooks/useTransactions'
 
 const INSTRUMENT_OPTIONS: { value: string; label: string }[] = [
@@ -40,6 +42,7 @@ const EMPTY_DRAFT = {
   seña_amount: '',
   payments: [makeEmptyPayment()] as PaymentRow[],
   professional_ids: [] as string[],
+  product_id: null as string | null,
 }
 
 function calcTotal(payments: PaymentRow[]) {
@@ -51,20 +54,22 @@ function formatAmount(type: TransactionType, amount: number) {
   return `${sign}$${amount.toLocaleString('es-CO')}`
 }
 
+type Suggestion = { id: string; name: string; price: number; productId?: string }
+
 function DescriptionCombobox({
   value,
   onChange,
   onSelect,
-  catalogItems,
+  suggestions,
 }: {
   value: string
   onChange: (v: string) => void
-  onSelect: (item: CatalogItem) => void
-  catalogItems: CatalogItem[]
+  onSelect: (s: Suggestion) => void
+  suggestions: Suggestion[]
 }) {
   const [open, setOpen] = useState(false)
-  const filtered = catalogItems.filter(item =>
-    value.length > 0 && item.name.toLowerCase().includes(value.toLowerCase())
+  const filtered = suggestions.filter(s =>
+    value.length > 0 && s.name.toLowerCase().includes(value.toLowerCase())
   )
 
   return (
@@ -92,16 +97,16 @@ function DescriptionCombobox({
           className="absolute left-0 top-full mt-1 rounded-lg border border-[var(--color-border)] shadow-lg overflow-hidden"
           style={{ background: 'var(--color-surface)', zIndex: 50, minWidth: '200px' }}
         >
-          {filtered.map(item => (
+          {filtered.map(s => (
             <button
-              key={item.id}
+              key={s.id}
               type="button"
-              onMouseDown={() => { onSelect(item); setOpen(false) }}
+              onMouseDown={() => { onSelect(s); setOpen(false) }}
               className="w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-[var(--color-bg)] transition-colors"
             >
-              <span style={{ color: 'var(--color-text)' }}>{item.name}</span>
+              <span style={{ color: 'var(--color-text)' }}>{s.name}</span>
               <span className="tabular-nums text-xs ml-4" style={{ color: 'var(--color-muted)' }}>
-                ${item.price.toLocaleString('es-CO')}
+                ${s.price.toLocaleString('es-CO')}
               </span>
             </button>
           ))}
@@ -143,6 +148,7 @@ export function TransactionsPage() {
   const { data: categories = [] } = useCategories()
   const { data: professionals = [] } = useProfessionals()
   const { data: catalogItems = [] } = useCatalogItems(draft?.category_id || undefined)
+  const { data: products = [] } = useProducts()
   const createTx = useCreateTransaction()
   const updateTx = useUpdateTransaction()
   const deleteTx = useDeleteTransaction()
@@ -166,6 +172,11 @@ export function TransactionsPage() {
 
   const isDraftServiceCategory = categories.find(c => c.id === draft?.category_id)?.name.toLowerCase() === 'servicio'
   const isEditServiceCategory = categories.find(c => c.id === editForm.category_id)?.name.toLowerCase() === 'servicio'
+  const isDraftProductCategory = categories.find(c => c.id === draft?.category_id)?.name.toLowerCase() === 'producto'
+
+  const draftSuggestions: Suggestion[] = isDraftProductCategory
+    ? products.map((p: Product) => ({ id: p.id, name: p.name, price: p.sale_price, productId: p.id }))
+    : catalogItems.map((ci: CatalogItem) => ({ id: ci.id, name: ci.name, price: ci.price }))
 
   function startNew() {
     setFormError('')
@@ -190,16 +201,18 @@ export function TransactionsPage() {
         ? tx.payments.map(p => ({ payment_method: p.payment_method, instrument: p.instrument, amount: p.amount, type: p.type }))
         : [makeEmptyPayment()],
       professional_ids: tx.professionals?.map(h => h.id) ?? [],
+      product_id: null,
     })
     setFormError('')
     setModalOpen(true)
   }
 
-  function handleCatalogSelect(item: CatalogItem) {
+  function handleSuggestionSelect(s: Suggestion) {
     setDraft(d => d && {
       ...d,
-      description: item.name,
-      payments: [{ ...d.payments[0], amount: item.price }],
+      description: s.name,
+      payments: [{ ...d.payments[0], amount: s.price }],
+      product_id: s.productId ?? null,
     })
   }
 
@@ -210,7 +223,7 @@ export function TransactionsPage() {
       setFormError('Fecha y al menos un pago con monto son obligatorios.')
       return
     }
-    await createTx.mutateAsync({
+    const tx = await createTx.mutateAsync({
       date: draft.date,
       type: draft.type,
       category_id: draft.category_id || null,
@@ -224,6 +237,17 @@ export function TransactionsPage() {
       })),
       professional_ids: draft.professional_ids,
     })
+    if (draft.product_id && draft.type === 'expense') {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
+        p_product_id: draft.product_id,
+        p_quantity: 1,
+        p_transaction_id: tx.id,
+        p_unit_sale_price: total,
+        p_created_by: user!.id,
+      })
+      if (fifoError) throw new Error(fifoError.message)
+    }
     setDraft(null)
     setFormError('')
   }
@@ -291,7 +315,7 @@ export function TransactionsPage() {
             </select>
             <select
               value={draft.category_id}
-              onChange={e => setDraft(d => d && { ...d, category_id: e.target.value })}
+              onChange={e => setDraft(d => d && { ...d, category_id: e.target.value, product_id: null })}
               style={INLINE_SELECT_STYLE}
             >
               <option value="">Sin categoría</option>
@@ -301,9 +325,9 @@ export function TransactionsPage() {
             </select>
             <DescriptionCombobox
               value={draft.description}
-              onChange={v => setDraft(d => d && { ...d, description: v })}
-              onSelect={handleCatalogSelect}
-              catalogItems={catalogItems}
+              onChange={v => setDraft(d => d && { ...d, description: v, product_id: null })}
+              onSelect={handleSuggestionSelect}
+              suggestions={draftSuggestions}
             />
           </div>
 
@@ -702,13 +726,6 @@ export function TransactionsPage() {
                       onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, amount: parseFloat(e.target.value) || 0 } : pp) }))}
                       placeholder="Monto"
                       prefix="$"
-                    />
-                  </div>
-                  <div className="w-24">
-                    <Select
-                      options={DIRECTION_OPTIONS}
-                      value={p.type}
-                      onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, type: e.target.value as PaymentDirection } : pp) }))}
                     />
                   </div>
                   {editForm.payments.length > 1 && (

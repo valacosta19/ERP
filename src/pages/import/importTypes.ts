@@ -1,4 +1,4 @@
-export type EntityType = 'categories' | 'suppliers' | 'products' | 'transactions' | 'lots' | 'professionals' | 'catalog_items'
+export type EntityType = 'categories' | 'suppliers' | 'products' | 'transactions' | 'lots' | 'professionals'
 
 export type ParsedSheet = {
   name: string
