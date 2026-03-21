@@ -27,7 +27,7 @@ function parseType(s: string): 'income' | 'expense' {
   return 'expense'
 }
 
-const IMPORT_ORDER: EntityType[] = ['categories', 'professionals', 'suppliers', 'products', 'transactions', 'lots']
+const IMPORT_ORDER: EntityType[] = ['categories', 'professionals', 'suppliers', 'products', 'services', 'transactions', 'lots']
 
 export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
   const [results, setResults] = useState<ImportResult[]>([])
@@ -41,21 +41,24 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
 
   const runImport = async () => {
     try {
-      const [catRes, supRes, prodRes, hdRes] = await Promise.all([
+      const [catRes, supRes, prodRes, hdRes, svcRes] = await Promise.all([
         supabase.from('categories').select('id, name'),
         supabase.from('suppliers').select('id, name'),
         supabase.from('products').select('id, sku').is('deleted_at', null),
         supabase.from('hairdressers').select('id, name'),
+        supabase.from('catalog_items').select('id, name'),
       ])
       if (catRes.error) throw new Error(catRes.error.message)
       if (supRes.error) throw new Error(supRes.error.message)
       if (prodRes.error) throw new Error(prodRes.error.message)
       if (hdRes.error) throw new Error(hdRes.error.message)
+      if (svcRes.error) throw new Error(svcRes.error.message)
 
       const catMap = new Map(catRes.data.map(c => [c.name.toLowerCase(), c.id]))
       const supMap = new Map(supRes.data.map(s => [s.name.toLowerCase(), s.id]))
       const skuMap = new Map(prodRes.data.map(p => [p.sku, p.id]))
       const hdMap = new Map(hdRes.data.map(h => [h.name.toLowerCase(), h.id]))
+      const svcMap = new Set(svcRes.data.map(s => s.name.toLowerCase()))
 
       const importResults: ImportResult[] = []
 
@@ -193,6 +196,26 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               const { data, error } = await supabase.from('hairdressers').insert({ name, active }).select('id, name').single()
               if (error) { result.errors.push(`${name}: ${error.message}`); continue }
               hdMap.set(name.toLowerCase(), data.id)
+              result.inserted++
+            }
+          }
+
+          if (entityType === 'services') {
+            let servicesCatId = catMap.get('servicio')
+            if (!servicesCatId) {
+              const { data: newCat, error: catErr } = await supabase.from('categories').insert({ name: 'Servicio' }).select('id').single()
+              if (catErr) { result.errors.push(`Categoría Servicio: ${catErr.message}`); continue }
+              catMap.set('servicio', newCat.id)
+              servicesCatId = newCat.id
+            }
+            for (const row of sheet.rows) {
+              const name = getVal(row, m, 'name')
+              if (!name) { result.skipped++; continue }
+              if (svcMap.has(name.toLowerCase())) { result.skipped++; continue }
+              const price = parseNum(getVal(row, m, 'price'))
+              const { error } = await supabase.from('catalog_items').insert({ name, category_id: servicesCatId, price })
+              if (error) { result.errors.push(`${name}: ${error.message}`); continue }
+              svcMap.add(name.toLowerCase())
               result.inserted++
             }
           }

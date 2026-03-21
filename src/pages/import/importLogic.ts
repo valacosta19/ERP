@@ -11,6 +11,7 @@ export const ENTITY_LABELS: Record<EntityType, string> = {
   categories: 'Categorías',
   suppliers: 'Proveedores',
   products: 'Productos',
+  services: 'Servicios',
   transactions: 'Transacciones',
   lots: 'Lotes de apertura',
   professionals: 'Profesionales',
@@ -28,12 +29,16 @@ export const ENTITY_FIELDS: Record<EntityType, FieldDef[]> = {
     { key: 'notes', label: 'Notas', required: false },
   ],
   products: [
-    { key: 'sku', label: 'SKU', required: true },
     { key: 'name', label: 'Nombre', required: true },
+    { key: 'sku', label: 'SKU (auto-generado si vacío)', required: false },
+    { key: 'sale_price', label: 'Precio de venta', required: false },
     { key: 'brand', label: 'Marca', required: false },
     { key: 'unit', label: 'Unidad', required: false },
-    { key: 'sale_price', label: 'Precio de venta', required: true },
     { key: 'min_stock', label: 'Stock mínimo', required: false },
+  ],
+  services: [
+    { key: 'name', label: 'Nombre', required: true },
+    { key: 'price', label: 'Precio', required: false },
   ],
   transactions: [
     { key: 'date', label: 'Fecha', required: true },
@@ -125,6 +130,7 @@ export function autoSuggestMapping(headers: string[], entityType: EntityType): R
     professional: ['peluquera', 'hairdresser', 'empleada', 'stylist', 'professional'],
     brand: ['marca', 'brand'],
     active: ['activo', 'active', 'habilitado'],
+    price: ['precio', 'price', 'monto', 'valor'],
   }
 
   for (const field of fields) {
