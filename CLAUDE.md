@@ -1,43 +1,94 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+ERP for a hair salon. Replaces Excel. Core value: FIFO inventory costing so each sale reflects the real lot cost.
+
+This is an MVP. No automated tests. `npm run build` is the validation gate.
+
+---
 
 ## Commands
 
 ```bash
-npm run dev       # start dev server (Vite HMR)
-npm run build     # tsc -b && vite build  — use this to validate before finishing any task
-npm run lint      # eslint on all .ts/.tsx files
+npm run dev       # dev server with HMR
+npm run build     # tsc + vite build — must exit 0 before any task is done
+npm run lint      # eslint on all .ts/.tsx
 ```
 
-There are no tests. `npm run build` is the primary validation gate — it must exit 0 before any task is considered done.
+---
+
+## Working by phases
+
+- Check `PROJECT_STATE.md` and the most recent `PHASE_N_SUMMARY.md` before starting anything.
+- Work only within the current phase's scope. Document out-of-scope items — do not implement them.
+- If a task is too large, propose how to split it first.
+- When a phase closes: `npm run build` passes, user validates manually, then write `PHASE_N_SUMMARY.md` and update `PROJECT_STATE.md`.
+
+**Current phase: 5** — Reports (gross profit per product, inventory valuation).
+
+---
 
 ## Architecture
 
-### Data layer — Supabase + TanStack Query
-All DB access goes through `src/lib/supabaseClient.ts`, a typed `createClient<Database>` instance. The `Database` type lives in `src/types/database.ts` and must be kept in sync with `supabase/migrations/001_initial_schema.sql`.
+### Data layer
+All DB access via `src/lib/supabaseClient.ts` (`createClient<Database>`). Types in `src/types/database.ts` — must stay in sync with migrations.
 
-**Critical quirk with `@supabase/supabase-js` 2.99 + TypeScript 5.9**: every table in `database.ts` must include `Relationships: []` or TypeScript infers the insert/update parameter type as `never`. Join queries (e.g. `select('*, category:categories(*)')`) return a `SelectQueryError` type instead of the joined shape — use `as unknown as TargetType` to cast them.
+Hooks in `src/hooks/`: one `useX` query + one hook per mutation (`useCreateX`, `useUpdateX`, `useDeleteX`). Mutations call `queryClient.invalidateQueries` on success. No service layer.
 
-Each data domain gets its own hook file in `src/hooks/`. Hooks call Supabase directly (no service layer). Mutations call `queryClient.invalidateQueries` on success. The hook files follow the pattern: one `useX` query + one hook per mutation (`useCreateX`, `useUpdateX`, `useDeleteX`).
+**Known quirk — `@supabase/supabase-js` 2.99 + TS 5.9**: every table in `database.ts` must include `Relationships: []` or insert/update types infer as `never`. Join queries return `SelectQueryError` — cast with `as unknown as TargetType`.
 
 ### Auth
-`useAuth` (`src/hooks/useAuth.ts`) manages session + profile state via `supabase.auth.onAuthStateChange`. It is called directly in components that need it — there is no React context wrapper. `AuthGuard` (`src/components/layout/AuthGuard.tsx`) wraps protected routes and accepts a `requireAdmin` prop that redirects employees to `/dashboard`.
+`useAuth` manages session + profile via `onAuthStateChange`. No React context. `AuthGuard` wraps protected routes; `<AuthGuard requireAdmin>` for admin-only routes.
 
 ### Routing
-All routes are defined in `src/App.tsx`. Protected routes are nested inside an `AuthGuard > AppShell` element. Admin-only routes (`/import`, `/settings`) have their own `<AuthGuard requireAdmin>` wrapper.
+All routes in `src/App.tsx`. Protected routes nested inside `AuthGuard > AppShell`.
 
 ### UI primitives
-`src/components/ui/` contains `Button`, `Input`, `Select`, `Modal`, `Badge`, `Table`. These are the only components to use for forms and tables — do not introduce third-party form/table libraries. All styling uses CSS custom properties (`var(--color-*)`) defined as design tokens; do not use raw Tailwind color classes like `bg-green-500`.
+`src/components/ui/`: Button, Input, Select, Modal, Badge, Table. Do not introduce third-party form or table libraries. Style with `var(--color-*)` CSS custom properties — never raw Tailwind color classes like `bg-green-500`.
 
 ### Business logic
-**FIFO inventory**: implemented as a Postgres RPC `consume_inventory_fifo` in the migration. Call it via `supabase.rpc('consume_inventory_fifo', { ... })` — do not replicate this logic in the frontend.
+- **FIFO**: Postgres RPC `consume_inventory_fifo` (SECURITY DEFINER). Call via `supabase.rpc(...)`. Never replicate in frontend.
+- **Stock**: computed in `useProducts` by summing `inventory_lots.remaining_quantity`. No `stock` column on `products`.
+- **sale_items** rows are immutable — no edit UI, no update policy.
 
-**Stock calculation**: `useProducts` computes current stock client-side by summing `inventory_lots.remaining_quantity` per product. There is no `stock` column on the `products` table — `stock` is a computed field added in the hook.
+---
 
-**Purchase order receive flow**: `useReceivePurchaseOrder` loops per item: insert `inventory_lots` → update `purchase_order_items.lot_id` → insert `inventory_movements`. This is not atomic (no DB transaction). If it fails mid-loop the PO status stays `draft` and the user can retry.
+## How to validate manually (no automated tests)
 
-### Development phases
-The project is built in phases tracked in `PLAN.md`. Each completed phase has a `PHASE_N_SUMMARY.md` at the root with technical decisions, risks, and what must not break. **Read the most recent phase summary before starting work on the next phase.**
+```bash
+npm run build   # zero errors
+npm run dev     # then verify in browser:
+```
 
-Current state: Phases 1–3 complete. Phase 4 is next (sale of products via FIFO RPC + `sale_items`).
+- `/login` — auth works, redirects correctly
+- `/transactions` — list loads, create/edit modal works
+- `/suppliers` — CRUD works
+- `/purchase-orders` — create PO, receive it, stock increases on `/inventory`
+- `/inventory` — stock correct, lot drawer opens, sale decrements stock
+
+For each phase, verify only the new screens/flows added in that phase.
+
+---
+
+## Subagents
+
+Specialized agents live in `.claude/agents/`. Use them for non-trivial or multi-file work:
+
+| Agent | Use for |
+|-------|---------|
+| `coordinator` | Phase kickoffs, multi-layer features |
+| `backend-agent` | Schema, migrations, hooks, RLS, RPCs |
+| `frontend-agent` | Pages, components, routing, forms |
+| `reviewer-agent` | Quality review after implementing a feature |
+| `bug-agent` | Diagnosing a specific bug with reproduction steps |
+
+For small single-file changes, act directly — do not delegate unnecessarily.
+
+---
+
+## Rules
+
+- **No over-engineering.** Build the minimum that satisfies the current phase. No abstractions for hypothetical future needs.
+- **Respect scope.** If it's not in the current phase, document it and stop.
+- **Prefer small, verifiable changes.** One concern per commit. Validate with `npm run build` after every non-trivial change.
+- **No empty catch blocks.** Throw or surface every error.
+- **No dead code.** Remove unused variables, functions, and imports after every change.
