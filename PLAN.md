@@ -14,8 +14,8 @@ Excel siempre costea las ventas al último precio de compra. Este ERP implementa
 | 3 | Proveedores + Pedidos de Compra + stock-in | ✅ |
 | 4 | Inventario + venta con RPC FIFO + `sale_items` | ✅ |
 | 5 | Reportes: utilidad bruta por producto + valorización de inventario | ✅ |
-| 6 | Wizard de importación Excel (upload → mapeo → preview → import) | 🔄 actual |
-| 7 | Polish: transacciones atómicas, responsive, error boundaries | — |
+| 6 | Wizard de importación Excel (upload → mapeo → preview → import) | ✅ |
+| 7 | Polish: transacciones atómicas, responsive, error boundaries | 🔄 actual |
 
 ---
 

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
+import type { Json } from '@/types/database'
 
 interface SaleLineItem {
   product_id: string
@@ -21,35 +22,14 @@ export function useCreateSale() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No autenticado')
 
-      const total = payload.items.reduce(
-        (sum, item) => sum + item.quantity * item.unit_sale_price,
-        0
-      )
-
-      const { data: tx, error: txErr } = await supabase
-        .from('transactions')
-        .insert({
-          date: payload.date,
-          type: 'income',
-          amount: total,
-          category_id: payload.category_id,
-          description: payload.description,
-          created_by: user.id,
-        })
-        .select('id')
-        .single()
-      if (txErr) throw new Error(txErr.message)
-
-      for (const item of payload.items) {
-        const { error: rpcErr } = await supabase.rpc('consume_inventory_fifo', {
-          p_product_id: item.product_id,
-          p_quantity: item.quantity,
-          p_transaction_id: tx.id,
-          p_unit_sale_price: item.unit_sale_price,
-          p_created_by: user.id,
-        })
-        if (rpcErr) throw new Error(rpcErr.message)
-      }
+      const { error } = await supabase.rpc('create_sale', {
+        p_date: payload.date,
+        p_category_id: payload.category_id,
+        p_description: payload.description,
+        p_created_by: user.id,
+        p_items: payload.items as unknown as Json,
+      })
+      if (error) throw new Error(error.message)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['products'] })

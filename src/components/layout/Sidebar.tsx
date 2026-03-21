@@ -31,7 +31,11 @@ const navItems: NavItem[] = [
   { to: '/settings', icon: <Settings size={18} />, label: 'Ajustes', adminOnly: true },
 ]
 
-export function Sidebar() {
+interface SidebarProps {
+  onClose?: () => void
+}
+
+export function Sidebar({ onClose }: SidebarProps) {
   const { profile, signOut } = useAuth()
   const isAdmin = profile?.role === 'admin'
 
@@ -58,6 +62,7 @@ export function Sidebar() {
             <NavLink
               key={item.to}
               to={item.to}
+              onClick={onClose}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 animate-slide-in
                  ${isActive

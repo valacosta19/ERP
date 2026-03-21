@@ -124,8 +124,8 @@ export function PurchaseOrdersPage() {
   }
 
   async function handleReceive() {
-    if (!selectedPO?.items) return
-    await receivePO.mutateAsync({ po: selectedPO, items: selectedPO.items })
+    if (!selectedPO) return
+    await receivePO.mutateAsync({ po: selectedPO })
     setReceiveOpen(false)
     setSelectedPO(null)
   }

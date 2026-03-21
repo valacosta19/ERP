@@ -280,6 +280,23 @@ export interface Database {
         }
         Returns: void
       }
+      create_sale: {
+        Args: {
+          p_date: string
+          p_category_id: string | null
+          p_description: string | null
+          p_created_by: string
+          p_items: Json
+        }
+        Returns: string
+      }
+      receive_purchase_order: {
+        Args: {
+          p_po_id: string
+          p_created_by: string | null
+        }
+        Returns: void
+      }
     }
     Enums: Record<string, never>
   }

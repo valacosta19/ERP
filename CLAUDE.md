@@ -23,7 +23,7 @@ npm run lint      # eslint on all .ts/.tsx
 - If a task is too large, propose how to split it first.
 - When a phase closes: `npm run build` passes, user validates manually, then write `PHASE_N_SUMMARY.md` and update `PROJECT_STATE.md`.
 
-**Current phase: 5** — Reports (gross profit per product, inventory valuation).
+**Current phase: 7** — Polish: atomic transactions, responsive layout, error boundaries.
 
 ---
 
@@ -82,6 +82,19 @@ Specialized agents live in `.claude/agents/`. Use them for non-trivial or multi-
 | `bug-agent` | Diagnosing a specific bug with reproduction steps |
 
 For small single-file changes, act directly — do not delegate unnecessarily.
+
+---
+
+## Execution mode
+
+- Agents may make changes without step-by-step confirmation.
+- Prioritize flow over micro-validations.
+- Ask for confirmation only for:
+  - Destructive changes
+  - Ambiguous decisions
+  - Changes outside the current phase scope
+
+Expected flow: plan → execute → report → validate
 
 ---
 

@@ -10,7 +10,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
-**Phase 5** — Reports: gross profit per product and inventory valuation.
+**Phase 8** — Transactions v2: payment methods, hairdressers, señas, commission reports.
 
 ---
 
@@ -21,6 +21,9 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 2 | Transactions, Categories, Dashboard KPIs |
 | 3 | Suppliers, Purchase Orders, stock-in (inventory lots created on PO receive) |
 | 4 | Inventory page, LotDrawer, SaleForm (cart), `consume_inventory_fifo` RPC wired up |
+| 5 | ReportsPage: gross profit per product + inventory valuation; `useReports` hook |
+| 6 | Import wizard (5 steps): upload → sheets → mapping → preview → batch import for all entity types |
+| 7 | ✅ Atomic sale + receive-PO RPCs, responsive AppShell sidebar, ErrorBoundary on all routes |
 
 ---
 
@@ -61,9 +64,9 @@ Postgres (Supabase)
 | Suppliers | `useSuppliers` | `SuppliersPage` |
 | Purchase Orders | `usePurchaseOrders` | `PurchaseOrdersPage` |
 | Inventory / Sales | `useProducts`, `useInventoryLots`, `useSales` | `InventoryPage`, `LotDrawer`, `SaleForm` |
-| Reports | — | `ReportsPage` (stub — Phase 5) |
-| Import | — | `ImportPage` (stub — Phase 6) |
-| Settings | — | `SettingsPage` (stub — Phase 7) |
+| Reports | `useGrossProfitReport`, `useInventoryValuation` | `ReportsPage` |
+| Import | — | `ImportPage` (5-step wizard) |
+| Settings | — | `SettingsPage` (category management) |
 
 ---
 
@@ -87,19 +90,58 @@ Postgres (Supabase)
 
 ---
 
-## Phase 5 pending items
-- `ReportsPage`: gross profit per product from `sale_items` (revenue, COGS, margin)
-- `ReportsPage`: inventory valuation (sum of `remaining_quantity * unit_cost` per product)
-- Likely needs a reporting hook (`useReports` or two focused hooks)
-- No new migrations expected — queries against existing tables
+## Phase 8 scope — Transactions v2
+
+### Goal
+Replace the simple `amount` + `type` model with a richer structure that mirrors the salon's Excel: multiple payment methods per transaction, hairdresser attribution, and seña (advance payment) tracking.
+
+### New DB objects (migration 004)
+
+**`hairdressers` table**
+- `id uuid PK`, `name text UNIQUE NOT NULL`, `active boolean default true`
+- Managed from Settings by admin users.
+
+**`transaction_payments` table** — payment method breakdown per transaction
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | uuid PK | |
+| `transaction_id` | uuid FK → transactions | |
+| `payment_method` | text | MP \| PPY \| Efectivo \| Santander |
+| `instrument` | text nullable | Transferencia \| Tarjeta |
+| `amount` | numeric | always positive |
+| `type` | text | entrada \| salida |
+
+**`transaction_hairdressers` table** — many-to-many
+- `(transaction_id, hairdresser_id)` composite PK
+
+**Columns added to `transactions`**
+- `is_seña boolean default false` — this transaction IS an advance payment
+- `seña_amount numeric nullable` — advance already collected for this service (manual, no FK)
+
+`transactions.amount` stays as the computed total (sum of its `transaction_payments`).
+
+### Commission rules (derived, not stored)
+- 1 hairdresser: 40% of transaction amount
+- 2+ hairdressers: 20% each
+- Calculated in a new commission report tab inside `ReportsPage`.
+
+### UI changes
+- **Transaction form**: add payment method rows (method + instrument + amount + direction), hairdresser multi-select, seña toggle and seña_amount field. Total auto-calculated from payment rows.
+- **Transaction list**: show payment method badge(s), hairdresser names.
+- **ReportsPage**: new "Comisiones" tab — per-hairdresser commission total for the selected date range.
+- **SettingsPage**: new "Peluqueras" section — CRUD for hairdressers.
+
+### Out of scope for Phase 8
+- Linking a seña transaction to the service transaction it was applied to (deferred).
+- Commission rates that differ per service category.
+- Editing existing `transaction_payments` rows (immutable like `sale_items`).
 
 ---
 
 ## Open risks / tech debt
-- Non-atomic sale: if FIFO RPC fails on product N of M, prior products are consumed and the transaction is already inserted. Fix: wrap in a DB function (Phase 7).
-- `useProducts` fires two sequential queries (products + lots). A `products_with_stock` view would consolidate this — consider in Phase 7.
+- `useProducts` fires two sequential queries (products + lots). A `products_with_stock` view would consolidate this — deferred, not in Phase 7 scope.
 - No optimistic updates anywhere — UI shows stale data until `invalidateQueries` refetches.
-- Migration 002 must be run manually in Supabase SQL editor for production environments.
+- Migrations 002 and 003 must be run manually in Supabase SQL editor for production environments.
 
 ---
 
@@ -119,6 +161,4 @@ npm run dev     # then:
 ## Upcoming phases
 | Phase | What |
 |-------|------|
-| 5 | Reports: gross profit per product, inventory valuation |
-| 6 | Excel import wizard (5-step: upload → map → preview → import) |
-| 7 | Polish: atomic transactions, responsive layout, error boundaries, production hardening |
+| 9 | TBD |

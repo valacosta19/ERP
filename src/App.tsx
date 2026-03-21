@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
 import { AuthGuard } from '@/components/layout/AuthGuard'
+import { ErrorBoundary } from '@/components/layout/ErrorBoundary'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { DashboardPage } from '@/pages/dashboard/DashboardPage'
 import { TransactionsPage } from '@/pages/transactions/TransactionsPage'
@@ -35,17 +36,17 @@ export default function App() {
             }
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/transactions" element={<TransactionsPage />} />
-            <Route path="/inventory" element={<InventoryPage />} />
-            <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
-            <Route path="/suppliers" element={<SuppliersPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/dashboard" element={<ErrorBoundary><DashboardPage /></ErrorBoundary>} />
+            <Route path="/transactions" element={<ErrorBoundary><TransactionsPage /></ErrorBoundary>} />
+            <Route path="/inventory" element={<ErrorBoundary><InventoryPage /></ErrorBoundary>} />
+            <Route path="/purchase-orders" element={<ErrorBoundary><PurchaseOrdersPage /></ErrorBoundary>} />
+            <Route path="/suppliers" element={<ErrorBoundary><SuppliersPage /></ErrorBoundary>} />
+            <Route path="/reports" element={<ErrorBoundary><ReportsPage /></ErrorBoundary>} />
             <Route
               path="/import"
               element={
                 <AuthGuard requireAdmin>
-                  <ImportPage />
+                  <ErrorBoundary><ImportPage /></ErrorBoundary>
                 </AuthGuard>
               }
             />
@@ -53,7 +54,7 @@ export default function App() {
               path="/settings"
               element={
                 <AuthGuard requireAdmin>
-                  <SettingsPage />
+                  <ErrorBoundary><SettingsPage /></ErrorBoundary>
                 </AuthGuard>
               }
             />
