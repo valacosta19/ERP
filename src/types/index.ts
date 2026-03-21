@@ -12,6 +12,7 @@ export interface Profile {
   id: string
   full_name: string | null
   role: UserRole
+  business_name: string | null
   created_at: string
 }
 
@@ -22,7 +23,7 @@ export interface Category {
   created_at: string
 }
 
-export interface Hairdresser {
+export interface Professional {
   id: string
   name: string
   active: boolean
@@ -52,7 +53,7 @@ export interface Transaction {
   seña_amount: number | null
   category?: Category
   payments?: TransactionPayment[]
-  hairdressers?: Hairdresser[]
+  professionals?: Professional[]
 }
 
 export interface Supplier {

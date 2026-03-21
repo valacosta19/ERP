@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabaseClient'
 import type { Profile } from '@/types'
@@ -53,4 +54,21 @@ export function useAuth() {
   }
 
   return { ...state, signIn, signOut }
+}
+
+export function useUpdateProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, business_name }: { id: string; business_name: string | null }) => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ business_name })
+        .eq('id', id)
+        .select('*')
+        .single()
+      if (error) throw new Error(error.message)
+      return data as Profile
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] }),
+  })
 }

@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 
 export type CommissionRow = {
-  hairdresser_id: string
-  hairdresser_name: string
+  professional_id: string
+  professional_name: string
   transaction_count: number
   total_amount: number
   commission_amount: number
@@ -62,8 +62,8 @@ export function useCommissionsReport(filters: CommissionsFilters = {}) {
           existing.effective_rate = existing.total_amount > 0 ? existing.commission_amount / existing.total_amount : 0
         } else {
           hdMap.set(row.hairdresser_id, {
-            hairdresser_id: row.hairdresser_id,
-            hairdresser_name: row.hairdressers.name,
+            professional_id: row.hairdresser_id,
+            professional_name: row.hairdressers.name,
             transaction_count: 1,
             total_amount: amount,
             commission_amount: commission,

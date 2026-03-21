@@ -56,7 +56,7 @@ const valuationColumns = [
 ]
 
 const commissionColumns = [
-  { key: 'hairdresser_name', header: 'Peluquera' },
+  { key: 'professional_name', header: 'Profesional' },
   {
     key: 'transaction_count',
     header: 'Transacciones',
@@ -194,14 +194,14 @@ export function ReportsPage() {
             </div>
 
             <section>
-              <h2 className="text-base font-semibold text-[var(--color-text)] mb-3">Comisiones por peluquera</h2>
+              <h2 className="text-base font-semibold text-[var(--color-text)] mb-3">Comisiones por profesional</h2>
               <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg overflow-hidden">
                 <Table<CommissionRow>
                   columns={commissionColumns}
                   data={commissions.data ?? []}
-                  keyField="hairdresser_id"
+                  keyField="professional_id"
                   loading={commissions.isLoading}
-                  emptyMessage="Sin transacciones con peluqueras en el período"
+                  emptyMessage="Sin transacciones con profesionales en el período"
                 />
               </div>
             </section>

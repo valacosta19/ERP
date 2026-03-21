@@ -4,8 +4,9 @@ import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
 import { InlineEditCell } from '@/components/ui/InlineEditCell'
 import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '@/hooks/useCategories'
-import { useHairdressers, useCreateHairdresser, useUpdateHairdresser, useDeleteHairdresser } from '@/hooks/useHairdressers'
-import type { TransactionType, Hairdresser } from '@/types'
+import { useProfessionals, useCreateProfessional, useUpdateProfessional, useDeleteProfessional } from '@/hooks/useProfessionals'
+import { useAuth, useUpdateProfile } from '@/hooks/useAuth'
+import type { TransactionType, Professional } from '@/types'
 
 function DraftInput({
   inputRef,
@@ -64,10 +65,13 @@ export function SettingsPage() {
   const updateCat = useUpdateCategory()
   const deleteCat = useDeleteCategory()
 
-  const { data: hairdressers = [], isLoading: hdsLoading } = useHairdressers()
-  const createHd = useCreateHairdresser()
-  const updateHd = useUpdateHairdresser()
-  const deleteHd = useDeleteHairdresser()
+  const { data: professionals = [], isLoading: hdsLoading } = useProfessionals()
+  const createHd = useCreateProfessional()
+  const updateHd = useUpdateProfessional()
+  const deleteHd = useDeleteProfessional()
+
+  const { profile } = useAuth()
+  const updateProfile = useUpdateProfile()
 
   const income = categories.filter(c => c.type === 'income')
   const expense = categories.filter(c => c.type === 'expense')
@@ -123,20 +127,36 @@ export function SettingsPage() {
     if (e.key === 'Escape') cancelHd()
   }
 
-  async function handleHdToggleActive(hd: Hairdresser) {
+  async function handleHdToggleActive(hd: Professional) {
     await updateHd.mutateAsync({ id: hd.id, active: !hd.active })
   }
 
   async function handleHdDelete(id: string) {
-    if (!confirm('¿Eliminar esta peluquera?')) return
+    if (!confirm('¿Eliminar este profesional?')) return
     await deleteHd.mutateAsync(id)
   }
 
   return (
     <div className="animate-fade-in">
-      <TopBar title="Configuración" subtitle="Categorías y peluqueras" />
+      <TopBar title="Configuración" subtitle="Categorías y profesionales" />
 
       <div className="p-6 space-y-6 max-w-2xl">
+        <section>
+          <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Negocio</h2>
+          <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
+            <div className="flex items-center justify-between px-4 py-3">
+              <span className="text-xs text-[var(--color-muted)] w-32 shrink-0">Nombre del negocio</span>
+              {profile && (
+                <InlineEditCell
+                  value={profile.business_name ?? ''}
+                  onSave={async v => { await updateProfile.mutateAsync({ id: profile.id, business_name: v || null }) }}
+                  className="text-sm text-[var(--color-text)]"
+                />
+              )}
+            </div>
+          </div>
+        </section>
+
         {hdsLoading ? (
           <div className="flex justify-center pt-4">
             <span className="w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
@@ -144,7 +164,7 @@ export function SettingsPage() {
         ) : (
           <section>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-semibold text-[var(--color-text)]">Peluqueras</h2>
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">Profesionales</h2>
               <button
                 onClick={startAddHd}
                 disabled={addingHd}
@@ -154,10 +174,10 @@ export function SettingsPage() {
               </button>
             </div>
             <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-              {hairdressers.length === 0 && !addingHd && (
-                <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin peluqueras</p>
+              {professionals.length === 0 && !addingHd && (
+                <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin profesionales</p>
               )}
-              {hairdressers.map(hd => (
+              {professionals.map(hd => (
                 <div key={hd.id} className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-2">
                     <Badge variant={hd.active ? 'success' : 'default'}>
@@ -207,7 +227,7 @@ export function SettingsPage() {
                     value={hdDraft}
                     onChange={setHdDraft}
                     onKeyDown={handleHdKeyDown}
-                    placeholder="Nombre de la peluquera"
+                    placeholder="Nombre del profesional"
                     autoFocus
                   />
                   <button

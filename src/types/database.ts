@@ -8,18 +8,21 @@ export interface Database {
           id: string
           full_name: string | null
           role: 'admin' | 'employee'
+          business_name: string | null
           created_at: string
         }
         Insert: {
           id: string
           full_name?: string | null
           role?: 'admin' | 'employee'
+          business_name?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           full_name?: string | null
           role?: 'admin' | 'employee'
+          business_name?: string | null
         }
         Relationships: []
       }

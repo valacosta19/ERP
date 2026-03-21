@@ -50,7 +50,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             <p className="text-white font-semibold text-sm leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
               Studio ERP
             </p>
-            <p className="text-white/40 text-xs leading-tight">Peluquería</p>
+            <p className="text-white/40 text-xs leading-tight">{profile?.business_name ?? ''}</p>
           </div>
         </div>
       </div>

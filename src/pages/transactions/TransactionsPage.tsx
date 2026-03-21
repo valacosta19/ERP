@@ -9,7 +9,7 @@ import { Table } from '@/components/ui/Table'
 import { Modal } from '@/components/ui/Modal'
 import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from '@/hooks/useTransactions'
 import { useCategories } from '@/hooks/useCategories'
-import { useHairdressers } from '@/hooks/useHairdressers'
+import { useProfessionals } from '@/hooks/useProfessionals'
 import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, PaymentDirection } from '@/types'
 import type { PaymentRow } from '@/hooks/useTransactions'
 
@@ -49,7 +49,7 @@ const EMPTY_FORM = {
   is_seña: false,
   seña_amount: '',
   payments: [makeEmptyPayment()] as PaymentRow[],
-  hairdresser_ids: [] as string[],
+  professional_ids: [] as string[],
 }
 
 function formatAmount(type: TransactionType, amount: number) {
@@ -87,7 +87,7 @@ export function TransactionsPage() {
     to: to || undefined,
   })
   const { data: categories = [] } = useCategories()
-  const { data: hairdressers = [] } = useHairdressers()
+  const { data: professionals = [] } = useProfessionals()
   const createTx = useCreateTransaction()
   const updateTx = useUpdateTransaction()
   const deleteTx = useDeleteTransaction()
@@ -115,7 +115,7 @@ export function TransactionsPage() {
       payments: tx.payments && tx.payments.length > 0
         ? tx.payments.map(p => ({ payment_method: p.payment_method, instrument: p.instrument, amount: p.amount, type: p.type }))
         : [makeEmptyPayment()],
-      hairdresser_ids: tx.hairdressers?.map(h => h.id) ?? [],
+      professional_ids: tx.professionals?.map(h => h.id) ?? [],
     })
     setFormError('')
     setModalOpen(true)
@@ -136,12 +136,12 @@ export function TransactionsPage() {
     }))
   }
 
-  function toggleHairdresser(id: string) {
+  function toggleProfessional(id: string) {
     setForm(f => ({
       ...f,
-      hairdresser_ids: f.hairdresser_ids.includes(id)
-        ? f.hairdresser_ids.filter(hid => hid !== id)
-        : [...f.hairdresser_ids, id],
+      professional_ids: f.professional_ids.includes(id)
+        ? f.professional_ids.filter(hid => hid !== id)
+        : [...f.professional_ids, id],
     }))
   }
 
@@ -176,7 +176,7 @@ export function TransactionsPage() {
           instrument: p.instrument || null,
           amount: Number(p.amount),
         })),
-        hairdresser_ids: form.hairdresser_ids,
+        professional_ids: form.professional_ids,
       })
     }
     setModalOpen(false)
@@ -197,7 +197,7 @@ export function TransactionsPage() {
     ...categories.map(c => ({ value: c.id, label: c.name })),
   ]
 
-  const activeHairdressers = hairdressers.filter(h => h.active)
+  const activeProfessionals = professionals.filter(h => h.active)
 
   const columns = [
     {
@@ -213,9 +213,9 @@ export function TransactionsPage() {
       render: (tx: Transaction) => (
         <div className="flex flex-col gap-0.5">
           <span className="text-[var(--color-text)]">{tx.description || '—'}</span>
-          {tx.hairdressers && tx.hairdressers.length > 0 && (
+          {tx.professionals && tx.professionals.length > 0 && (
             <span className="text-xs text-[var(--color-muted)]">
-              {tx.hairdressers.map(h => h.name).join(', ')}
+              {tx.professionals.map(h => h.name).join(', ')}
             </span>
           )}
         </div>
@@ -450,17 +450,17 @@ export function TransactionsPage() {
             </div>
           </div>
 
-          {activeHairdressers.length > 0 && (
+          {activeProfessionals.length > 0 && (
             <div>
-              <span className="text-sm font-medium text-[var(--color-text)] block mb-2">Peluqueras</span>
+              <span className="text-sm font-medium text-[var(--color-text)] block mb-2">Profesionales</span>
               <div className="flex flex-wrap gap-2">
-                {activeHairdressers.map(hd => (
+                {activeProfessionals.map(hd => (
                   <button
                     key={hd.id}
                     type="button"
-                    onClick={() => toggleHairdresser(hd.id)}
+                    onClick={() => toggleProfessional(hd.id)}
                     className={`px-3 py-1 rounded-lg text-sm border transition-colors ${
-                      form.hairdresser_ids.includes(hd.id)
+                      form.professional_ids.includes(hd.id)
                         ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]'
                         : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-accent)]'
                     }`}

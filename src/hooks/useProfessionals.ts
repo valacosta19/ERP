@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
-import type { Hairdresser } from '@/types'
+import type { Professional } from '@/types'
 
-export function useHairdressers() {
+export function useProfessionals() {
   return useQuery({
     queryKey: ['hairdressers'],
     queryFn: async () => {
@@ -11,12 +11,12 @@ export function useHairdressers() {
         .select('*')
         .order('name')
       if (error) throw new Error(error.message)
-      return data as Hairdresser[]
+      return data as Professional[]
     },
   })
 }
 
-export function useCreateHairdresser() {
+export function useCreateProfessional() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (name: string) => {
@@ -26,13 +26,13 @@ export function useCreateHairdresser() {
         .select('*')
         .single()
       if (error) throw new Error(error.message)
-      return data as Hairdresser
+      return data as Professional
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['hairdressers'] }),
   })
 }
 
-export function useUpdateHairdresser() {
+export function useUpdateProfessional() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ id, ...payload }: { id: string; name?: string; active?: boolean }) => {
@@ -43,13 +43,13 @@ export function useUpdateHairdresser() {
         .select('*')
         .single()
       if (error) throw new Error(error.message)
-      return data as Hairdresser
+      return data as Professional
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['hairdressers'] }),
   })
 }
 
-export function useDeleteHairdresser() {
+export function useDeleteProfessional() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => {

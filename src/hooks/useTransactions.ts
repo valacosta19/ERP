@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
-import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, PaymentDirection } from '@/types'
+import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, PaymentDirection, Professional } from '@/types'
 
 interface TransactionFilters {
   type?: TransactionType | 'all'
@@ -27,13 +27,13 @@ export function useTransactions(filters: TransactionFilters = {}) {
       const { data, error } = await query
       if (error) throw new Error(error.message)
 
-      type RawTx = Omit<Transaction, 'hairdressers'> & {
-        transaction_hairdressers: { hairdresser_id: string; hairdressers: Transaction['hairdressers'] extends (infer H)[] ? H : never }[]
+      type RawTx = Omit<Transaction, 'professionals'> & {
+        transaction_hairdressers: { hairdresser_id: string; hairdressers: Professional | null }[]
       }
 
       return (data as unknown as RawTx[]).map(tx => ({
         ...tx,
-        hairdressers: tx.transaction_hairdressers.map(th => th.hairdressers).filter(Boolean),
+        professionals: tx.transaction_hairdressers.map(th => th.hairdressers).filter(Boolean),
       })) as Transaction[]
     },
   })
@@ -54,7 +54,7 @@ interface TransactionPayload {
   is_seña: boolean
   seña_amount: number | null
   payments: PaymentRow[]
-  hairdresser_ids: string[]
+  professional_ids: string[]
 }
 
 export function useCreateTransaction() {
@@ -88,10 +88,10 @@ export function useCreateTransaction() {
         if (pmtError) throw new Error(pmtError.message)
       }
 
-      if (payload.hairdresser_ids.length > 0) {
+      if (payload.professional_ids.length > 0) {
         const { error: hdError } = await supabase
           .from('transaction_hairdressers')
-          .insert(payload.hairdresser_ids.map(hid => ({ transaction_id: tx.id, hairdresser_id: hid })))
+          .insert(payload.professional_ids.map(hid => ({ transaction_id: tx.id, hairdresser_id: hid })))
         if (hdError) throw new Error(hdError.message)
       }
 
@@ -104,7 +104,7 @@ export function useCreateTransaction() {
 export function useUpdateTransaction() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, ...payload }: Omit<TransactionPayload, 'payments' | 'hairdresser_ids'> & { id: string; amount: number }) => {
+    mutationFn: async ({ id, ...payload }: Omit<TransactionPayload, 'payments' | 'professional_ids'> & { id: string; amount: number }) => {
       const { data, error } = await supabase
         .from('transactions')
         .update(payload)

@@ -36,10 +36,16 @@ export const ENTITY_FIELDS: Record<EntityType, FieldDef[]> = {
   ],
   transactions: [
     { key: 'date', label: 'Fecha', required: true },
-    { key: 'type', label: 'Tipo (income / expense)', required: true },
-    { key: 'amount', label: 'Monto', required: true },
+    { key: 'type', label: 'Tipo (income / expense)', required: false },
+    { key: 'amount', label: 'Monto', required: false },
     { key: 'category', label: 'Categoría (nombre)', required: false },
     { key: 'description', label: 'Descripción', required: false },
+    { key: 'entrada', label: 'Entrada (ingreso)', required: false },
+    { key: 'salida', label: 'Salida (egreso)', required: false },
+    { key: 'payment_method', label: 'Medio de pago', required: false },
+    { key: 'instrument', label: 'Instrumento', required: false },
+    { key: 'is_seña', label: 'Seña', required: false },
+    { key: 'professional', label: 'Profesional', required: false },
   ],
   lots: [
     { key: 'sku', label: 'SKU del producto', required: true },
@@ -106,6 +112,12 @@ export function autoSuggestMapping(headers: string[], entityType: EntityType): R
     unit: ['unidad', 'unit'],
     email: ['email'],
     notes: ['notas', 'notes'],
+    entrada: ['entrada', 'ingreso', 'income'],
+    salida: ['salida', 'egreso', 'gasto', 'expense'],
+    payment_method: ['medio de pago', 'medio', 'metodo', 'método de pago', 'payment'],
+    instrument: ['instrumento', 'instrument'],
+    is_seña: ['seña', 'sena', 'señas', 'deposito', 'seña cobrada'],
+    professional: ['peluquera', 'hairdresser', 'empleada', 'stylist', 'professional'],
   }
 
   for (const field of fields) {

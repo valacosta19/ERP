@@ -41,18 +41,21 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
 
   const runImport = async () => {
     try {
-      const [catRes, supRes, prodRes] = await Promise.all([
+      const [catRes, supRes, prodRes, hdRes] = await Promise.all([
         supabase.from('categories').select('id, name'),
         supabase.from('suppliers').select('id, name'),
         supabase.from('products').select('id, sku').is('deleted_at', null),
+        supabase.from('hairdressers').select('id, name'),
       ])
       if (catRes.error) throw new Error(catRes.error.message)
       if (supRes.error) throw new Error(supRes.error.message)
       if (prodRes.error) throw new Error(prodRes.error.message)
+      if (hdRes.error) throw new Error(hdRes.error.message)
 
       const catMap = new Map(catRes.data.map(c => [c.name.toLowerCase(), c.id]))
       const supMap = new Map(supRes.data.map(s => [s.name.toLowerCase(), s.id]))
       const skuMap = new Map(prodRes.data.map(p => [p.sku, p.id]))
+      const hdMap = new Map(hdRes.data.map(h => [h.name.toLowerCase(), h.id]))
 
       const importResults: ImportResult[] = []
 
@@ -115,14 +118,62 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
           if (entityType === 'transactions') {
             for (const row of sheet.rows) {
               const date = getVal(row, m, 'date')
-              const amount = parseNum(getVal(row, m, 'amount'))
+
+              const entradaVal = parseNum(getVal(row, m, 'entrada'))
+              const salidaVal = parseNum(getVal(row, m, 'salida'))
+
+              let amount: number
+              let type: 'income' | 'expense'
+
+              if (entradaVal > 0) {
+                amount = entradaVal
+                type = 'income'
+              } else if (salidaVal > 0) {
+                amount = salidaVal
+                type = 'expense'
+              } else {
+                amount = parseNum(getVal(row, m, 'amount'))
+                type = parseType(getVal(row, m, 'type'))
+              }
+
               if (!date || amount === 0) { result.skipped++; continue }
-              const type = parseType(getVal(row, m, 'type'))
+
               const categoryName = getVal(row, m, 'category')
               const category_id = categoryName ? (catMap.get(categoryName.toLowerCase()) ?? null) : null
               const description = getVal(row, m, 'description') || null
-              const { error } = await supabase.from('transactions').insert({ date, type, amount, category_id, description })
-              if (error) { result.errors.push(`${date} $${amount}: ${error.message}`); continue }
+
+              const señaRaw = getVal(row, m, 'is_seña').toLowerCase()
+              const is_seña = señaRaw !== '' && señaRaw !== '0' && señaRaw !== 'false' && señaRaw !== 'no'
+
+              const { data: txData, error: txError } = await supabase
+                .from('transactions')
+                .insert({ date, type, amount, category_id, description, is_seña, seña_amount: is_seña ? amount : null })
+                .select('id')
+                .single()
+              if (txError) { result.errors.push(`${date} $${amount}: ${txError.message}`); continue }
+
+              const paymentMethod = getVal(row, m, 'payment_method')
+              if (paymentMethod) {
+                const instrument = getVal(row, m, 'instrument') || null
+                const { error: pmError } = await supabase.from('transaction_payments').insert({
+                  transaction_id: txData.id,
+                  payment_method: paymentMethod,
+                  instrument,
+                  amount,
+                  type: type === 'income' ? 'entrada' : 'salida',
+                })
+                if (pmError) { result.errors.push(`${date} payment: ${pmError.message}`); continue }
+              }
+
+              const professionalName = getVal(row, m, 'professional')
+              if (professionalName) {
+                const professional_id = hdMap.get(professionalName.toLowerCase())
+                if (professional_id) {
+                  const { error: hdError } = await supabase.from('transaction_hairdressers').insert({ transaction_id: txData.id, hairdresser_id: professional_id })
+                  if (hdError) { result.errors.push(`${date} profesional: ${hdError.message}`); continue }
+                }
+              }
+
               result.inserted++
             }
           }
