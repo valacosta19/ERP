@@ -1,0 +1,215 @@
+import { useEffect, useState } from 'react'
+import { CheckCircle, AlertCircle } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
+import { supabase } from '@/lib/supabaseClient'
+import { ENTITY_LABELS } from '../importLogic'
+import type { ParsedSheet, EntityType, SheetAssignments, ColumnMappings, ImportResult } from '../importTypes'
+
+interface Props {
+  sheets: ParsedSheet[]
+  assignments: SheetAssignments
+  mappings: ColumnMappings
+  onDone: () => void
+}
+
+function getVal(row: Record<string, string>, mapping: Record<string, string>, field: string): string {
+  const col = mapping[field]
+  return col ? (row[col] ?? '').trim() : ''
+}
+
+function parseNum(s: string): number {
+  return parseFloat(s.replace(/,/g, '.')) || 0
+}
+
+function parseType(s: string): 'income' | 'expense' {
+  const lower = s.toLowerCase()
+  if (lower === 'income' || lower === 'ingreso' || lower === 'entrada') return 'income'
+  return 'expense'
+}
+
+const IMPORT_ORDER: EntityType[] = ['categories', 'suppliers', 'products', 'transactions', 'lots']
+
+export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
+  const [results, setResults] = useState<ImportResult[]>([])
+  const [running, setRunning] = useState(true)
+  const [fatalError, setFatalError] = useState<string | null>(null)
+
+  useEffect(() => {
+    runImport()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const runImport = async () => {
+    try {
+      const [catRes, supRes, prodRes] = await Promise.all([
+        supabase.from('categories').select('id, name'),
+        supabase.from('suppliers').select('id, name'),
+        supabase.from('products').select('id, sku').is('deleted_at', null),
+      ])
+      if (catRes.error) throw new Error(catRes.error.message)
+      if (supRes.error) throw new Error(supRes.error.message)
+      if (prodRes.error) throw new Error(prodRes.error.message)
+
+      const catMap = new Map(catRes.data.map(c => [c.name.toLowerCase(), c.id]))
+      const supMap = new Map(supRes.data.map(s => [s.name.toLowerCase(), s.id]))
+      const skuMap = new Map(prodRes.data.map(p => [p.sku, p.id]))
+
+      const importResults: ImportResult[] = []
+
+      for (const entityType of IMPORT_ORDER) {
+        const targetSheets = sheets.filter(s => assignments[s.name] === entityType)
+        if (targetSheets.length === 0) continue
+
+        const result: ImportResult = { entity: entityType, inserted: 0, skipped: 0, errors: [] }
+
+        for (const sheet of targetSheets) {
+          const m = mappings[sheet.name] ?? {}
+
+          if (entityType === 'categories') {
+            for (const row of sheet.rows) {
+              const name = getVal(row, m, 'name')
+              if (!name) { result.skipped++; continue }
+              if (catMap.has(name.toLowerCase())) { result.skipped++; continue }
+              const type = parseType(getVal(row, m, 'type'))
+              const { data, error } = await supabase.from('categories').insert({ name, type }).select('id, name').single()
+              if (error) { result.errors.push(`${name}: ${error.message}`); continue }
+              catMap.set(name.toLowerCase(), data.id)
+              result.inserted++
+            }
+          }
+
+          if (entityType === 'suppliers') {
+            for (const row of sheet.rows) {
+              const name = getVal(row, m, 'name')
+              if (!name) { result.skipped++; continue }
+              if (supMap.has(name.toLowerCase())) { result.skipped++; continue }
+              const { data, error } = await supabase.from('suppliers').insert({
+                name,
+                contact: getVal(row, m, 'contact') || null,
+                phone: getVal(row, m, 'phone') || null,
+                email: getVal(row, m, 'email') || null,
+                notes: getVal(row, m, 'notes') || null,
+              }).select('id, name').single()
+              if (error) { result.errors.push(`${name}: ${error.message}`); continue }
+              supMap.set(name.toLowerCase(), data.id)
+              result.inserted++
+            }
+          }
+
+          if (entityType === 'products') {
+            for (const row of sheet.rows) {
+              const sku = getVal(row, m, 'sku')
+              const name = getVal(row, m, 'name')
+              if (!sku || !name) { result.skipped++; continue }
+              if (skuMap.has(sku)) { result.skipped++; continue }
+              const sale_price = parseNum(getVal(row, m, 'sale_price'))
+              const min_stock = parseNum(getVal(row, m, 'min_stock'))
+              const unit = getVal(row, m, 'unit') || null
+              const { data, error } = await supabase.from('products').insert({ sku, name, unit, sale_price, min_stock }).select('id, sku').single()
+              if (error) { result.errors.push(`${sku}: ${error.message}`); continue }
+              skuMap.set(sku, data.id)
+              result.inserted++
+            }
+          }
+
+          if (entityType === 'transactions') {
+            for (const row of sheet.rows) {
+              const date = getVal(row, m, 'date')
+              const amount = parseNum(getVal(row, m, 'amount'))
+              if (!date || amount === 0) { result.skipped++; continue }
+              const type = parseType(getVal(row, m, 'type'))
+              const categoryName = getVal(row, m, 'category')
+              const category_id = categoryName ? (catMap.get(categoryName.toLowerCase()) ?? null) : null
+              const description = getVal(row, m, 'description') || null
+              const { error } = await supabase.from('transactions').insert({ date, type, amount, category_id, description })
+              if (error) { result.errors.push(`${date} $${amount}: ${error.message}`); continue }
+              result.inserted++
+            }
+          }
+
+          if (entityType === 'lots') {
+            for (const row of sheet.rows) {
+              const sku = getVal(row, m, 'sku')
+              const received_date = getVal(row, m, 'received_date')
+              const initial_quantity = parseNum(getVal(row, m, 'initial_quantity'))
+              const unit_cost = parseNum(getVal(row, m, 'unit_cost'))
+              if (!sku || !received_date || initial_quantity === 0) { result.skipped++; continue }
+              const product_id = skuMap.get(sku)
+              if (!product_id) { result.errors.push(`SKU no encontrado: ${sku}`); continue }
+              const notes = getVal(row, m, 'notes') || null
+              const { error } = await supabase.from('inventory_lots').insert({
+                product_id,
+                received_date,
+                initial_quantity,
+                remaining_quantity: initial_quantity,
+                unit_cost,
+                notes,
+              })
+              if (error) { result.errors.push(`${sku}: ${error.message}`); continue }
+              result.inserted++
+            }
+          }
+        }
+
+        importResults.push(result)
+      }
+
+      setResults(importResults)
+    } catch (err) {
+      setFatalError(err instanceof Error ? err.message : 'Error inesperado')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  if (running) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-12">
+        <span className="w-8 h-8 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-[var(--color-muted)]">Importando datos...</p>
+      </div>
+    )
+  }
+
+  if (fatalError) {
+    return (
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-[var(--color-danger)]">{fatalError}</p>
+        <Button variant="secondary" onClick={onDone}>Cerrar</Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3">
+        {results.map(r => (
+          <div key={r.entity} className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              {r.errors.length === 0
+                ? <CheckCircle size={16} className="text-green-500" />
+                : <AlertCircle size={16} className="text-yellow-500" />
+              }
+              <span className="text-sm font-semibold text-[var(--color-text)]">{ENTITY_LABELS[r.entity]}</span>
+            </div>
+            <div className="flex gap-6 text-xs text-[var(--color-muted)]">
+              <span>{r.inserted} insertados</span>
+              <span>{r.skipped} omitidos</span>
+              {r.errors.length > 0 && <span className="text-[var(--color-danger)]">{r.errors.length} errores</span>}
+            </div>
+            {r.errors.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {r.errors.map((e, i) => (
+                  <li key={i} className="text-xs text-[var(--color-danger)]">{e}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end">
+        <Button onClick={onDone}>Terminar</Button>
+      </div>
+    </div>
+  )
+}

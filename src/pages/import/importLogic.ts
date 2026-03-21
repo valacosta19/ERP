@@ -1,0 +1,119 @@
+import * as XLSX from 'xlsx'
+import type { EntityType, ParsedSheet } from './importTypes'
+
+export type FieldDef = {
+  key: string
+  label: string
+  required: boolean
+}
+
+export const ENTITY_LABELS: Record<EntityType, string> = {
+  categories: 'Categorías',
+  suppliers: 'Proveedores',
+  products: 'Productos',
+  transactions: 'Transacciones',
+  lots: 'Lotes de apertura',
+}
+
+export const ENTITY_FIELDS: Record<EntityType, FieldDef[]> = {
+  categories: [
+    { key: 'name', label: 'Nombre', required: true },
+    { key: 'type', label: 'Tipo (income / expense)', required: true },
+  ],
+  suppliers: [
+    { key: 'name', label: 'Nombre', required: true },
+    { key: 'contact', label: 'Contacto', required: false },
+    { key: 'phone', label: 'Teléfono', required: false },
+    { key: 'email', label: 'Email', required: false },
+    { key: 'notes', label: 'Notas', required: false },
+  ],
+  products: [
+    { key: 'sku', label: 'SKU', required: true },
+    { key: 'name', label: 'Nombre', required: true },
+    { key: 'unit', label: 'Unidad', required: false },
+    { key: 'sale_price', label: 'Precio de venta', required: true },
+    { key: 'min_stock', label: 'Stock mínimo', required: false },
+  ],
+  transactions: [
+    { key: 'date', label: 'Fecha', required: true },
+    { key: 'type', label: 'Tipo (income / expense)', required: true },
+    { key: 'amount', label: 'Monto', required: true },
+    { key: 'category', label: 'Categoría (nombre)', required: false },
+    { key: 'description', label: 'Descripción', required: false },
+  ],
+  lots: [
+    { key: 'sku', label: 'SKU del producto', required: true },
+    { key: 'received_date', label: 'Fecha de recepción', required: true },
+    { key: 'initial_quantity', label: 'Cantidad inicial', required: true },
+    { key: 'unit_cost', label: 'Costo unitario', required: true },
+    { key: 'notes', label: 'Notas', required: false },
+  ],
+}
+
+export function parseWorkbook(file: File): Promise<ParsedSheet[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target!.result as ArrayBuffer)
+        const wb = XLSX.read(data, { type: 'array', cellDates: true })
+        const sheets: ParsedSheet[] = wb.SheetNames.map(name => {
+          const ws = wb.Sheets[name]
+          const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, {
+            defval: '',
+            raw: false,
+            dateNF: 'yyyy-mm-dd',
+          })
+          const headers = rows.length > 0 ? Object.keys(rows[0]) : []
+          return {
+            name,
+            headers,
+            rows: rows.map(r =>
+              Object.fromEntries(Object.entries(r).map(([k, v]) => [k, String(v ?? '')]))
+            ),
+          }
+        })
+        resolve(sheets)
+      } catch (err) {
+        reject(new Error(err instanceof Error ? err.message : 'Error al parsear el archivo'))
+      }
+    }
+    reader.onerror = () => reject(new Error('Error al leer el archivo'))
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+export function autoSuggestMapping(headers: string[], entityType: EntityType): Record<string, string> {
+  const fields = ENTITY_FIELDS[entityType]
+  const mapping: Record<string, string> = {}
+  const normalizedHeaders = headers.map(h => h.toLowerCase().trim())
+
+  const ALIASES: Record<string, string[]> = {
+    name: ['nombre', 'name'],
+    type: ['tipo', 'type'],
+    date: ['fecha', 'date'],
+    amount: ['monto', 'importe', 'valor', 'amount'],
+    description: ['descripcion', 'descripción', 'detalle', 'description'],
+    received_date: ['fecha recepcion', 'fecha de recepción', 'fecha recepción', 'received_date'],
+    initial_quantity: ['cantidad', 'cantidad inicial', 'initial_quantity'],
+    unit_cost: ['costo', 'costo unitario', 'precio compra', 'unit_cost'],
+    sale_price: ['precio', 'precio venta', 'precio de venta', 'sale_price'],
+    min_stock: ['stock minimo', 'stock mínimo', 'minimo', 'min_stock'],
+    contact: ['contacto', 'contact'],
+    phone: ['telefono', 'teléfono', 'tel', 'phone'],
+    category: ['categoria', 'categoría', 'category'],
+    sku: ['sku'],
+    unit: ['unidad', 'unit'],
+    email: ['email'],
+    notes: ['notas', 'notes'],
+  }
+
+  for (const field of fields) {
+    const aliases = ALIASES[field.key] ?? [field.key]
+    const idx = normalizedHeaders.findIndex(h => aliases.some(a => h === a || h.includes(a)))
+    if (idx !== -1) {
+      mapping[field.key] = headers[idx]
+    }
+  }
+  return mapping
+}
