@@ -1,13 +1,11 @@
 import { useState } from 'react'
-import { Layers, ShoppingCart } from 'lucide-react'
+import { Layers } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
-import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Table } from '@/components/ui/Table'
 import { InlineEditCell } from '@/components/ui/InlineEditCell'
 import { useProducts, useUpdateProduct } from '@/hooks/useProducts'
 import { LotDrawer } from './LotDrawer'
-import { SaleForm } from './SaleForm'
 import type { Product } from '@/types'
 
 function stockVariant(product: Product): 'success' | 'warning' | 'danger' {
@@ -26,7 +24,6 @@ function stockLabel(product: Product): string {
 
 export function InventoryPage() {
   const [lotProductId, setLotProductId] = useState<string | null>(null)
-  const [saleOpen, setSaleOpen] = useState(false)
 
   const { data: products = [], isLoading } = useProducts()
   const updateProduct = useUpdateProduct()
@@ -126,12 +123,6 @@ export function InventoryPage() {
       <TopBar
         title="Inventario"
         subtitle={`${products.length} productos`}
-        actions={
-          <Button onClick={() => setSaleOpen(true)} size="sm">
-            <ShoppingCart size={14} />
-            Nueva venta
-          </Button>
-        }
       />
 
       <div className="p-6">
@@ -149,11 +140,6 @@ export function InventoryPage() {
       <LotDrawer
         product={selectedProduct}
         onClose={() => setLotProductId(null)}
-      />
-      <SaleForm
-        open={saleOpen}
-        onClose={() => setSaleOpen(false)}
-        products={products}
       />
     </div>
   )

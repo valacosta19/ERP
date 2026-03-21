@@ -273,7 +273,10 @@ export interface Database {
         }
         Update: {
           id?: string
+          received_date?: string
+          initial_quantity?: number
           remaining_quantity?: number
+          unit_cost?: number
           notes?: string | null
         }
         Relationships: []
