@@ -120,8 +120,8 @@ Deduplicación por `sku` (productos) y `name.toLowerCase()` (categorías, provee
 
 | Fase | Contenido | Entregable |
 |------|-----------|------------|
-| 1 | Scaffolding (Vite + React + Tailwind), Supabase, migraciones, AppShell, Auth | Login funcional, navegación entre páginas vacías |
-| 2 | Módulo Transacciones + Categorías + Dashboard KPIs | Reemplaza Tab 1 del Excel |
+| ✅ 1 | Scaffolding (Vite + React + Tailwind), Supabase, migraciones, AppShell, Auth | Login funcional, navegación entre páginas vacías |
+| ✅ 2 | Módulo Transacciones + Categorías + Dashboard KPIs | Reemplaza Tab 1 del Excel |
 | 3 | Proveedores + Pedidos de Compra + stock-in (crear lotes al recibir) | Reemplaza Tab 3, stock se incrementa |
 | 4 | Venta de productos + RPC FIFO + `sale_items` | Costeo correcto por lote |
 | 5 | Reportes (utilidad por producto, valorización de inventario) | Vista completa de rentabilidad |
