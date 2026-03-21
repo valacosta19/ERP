@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import React from 'react'
 
 interface Column<T> {
   key: string
@@ -13,9 +14,11 @@ interface TableProps<T> {
   keyField: keyof T
   loading?: boolean
   emptyMessage?: string
+  prependRow?: React.ReactNode
+  appendRow?: React.ReactNode
 }
 
-export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros' }: TableProps<T>) {
+export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow }: TableProps<T>) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -32,6 +35,7 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
           </tr>
         </thead>
         <tbody>
+          {prependRow}
           {loading ? (
             <tr>
               <td colSpan={columns.length} className="px-4 py-12 text-center text-[var(--color-muted)]">
@@ -58,6 +62,7 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
               </tr>
             ))
           )}
+          {appendRow}
         </tbody>
       </table>
     </div>

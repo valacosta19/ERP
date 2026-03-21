@@ -10,7 +10,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
-**Phase 9** — Inline editing: Excel-style cell-by-cell editing across all main views.
+**Phase 10** — TBD
 
 ---
 
@@ -25,6 +25,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 6 | Import wizard (5 steps): upload → sheets → mapping → preview → batch import for all entity types |
 | 7 | ✅ Atomic sale + receive-PO RPCs, responsive AppShell sidebar, ErrorBoundary on all routes |
 | 8 | ✅ Payment methods, hairdressers, señas, commission reports (Transactions v2) |
+| 9 | ✅ Inline editing: InlineEditCell component, useUpdateCategory hook, inline edit on Suppliers / Inventory / Settings |
 
 ---
 
@@ -164,4 +165,4 @@ npm run dev     # then:
 ## Upcoming phases
 | Phase | What |
 |-------|------|
-| 9 | TBD |
+| 10 | TBD |

@@ -1,30 +1,67 @@
-import { useState } from 'react'
-import { Plus, Trash2, Pencil } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { Plus, Trash2, Check, X } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
-import { Modal } from '@/components/ui/Modal'
-import { useCategories, useCreateCategory, useDeleteCategory } from '@/hooks/useCategories'
+import { InlineEditCell } from '@/components/ui/InlineEditCell'
+import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '@/hooks/useCategories'
 import { useHairdressers, useCreateHairdresser, useUpdateHairdresser, useDeleteHairdresser } from '@/hooks/useHairdressers'
 import type { TransactionType, Hairdresser } from '@/types'
 
-const EMPTY_CAT_FORM = { name: '', type: 'income' as TransactionType }
-const EMPTY_HD_FORM = { name: '' }
+function DraftInput({
+  inputRef,
+  value,
+  onChange,
+  onKeyDown,
+  placeholder,
+  autoFocus,
+}: {
+  inputRef?: React.Ref<HTMLInputElement>
+  value: string
+  onChange: (v: string) => void
+  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  placeholder?: string
+  autoFocus?: boolean
+}) {
+  const [focused, setFocused] = useState(autoFocus ?? false)
+  return (
+    <input
+      ref={inputRef}
+      value={value}
+      autoFocus={autoFocus}
+      onChange={e => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      placeholder={placeholder}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        background: 'transparent',
+        border: 'none',
+        borderBottom: `1.5px solid ${focused ? 'var(--color-accent)' : 'var(--color-border)'}`,
+        padding: '3px 2px',
+        fontSize: '0.875rem',
+        color: 'var(--color-text)',
+        outline: 'none',
+        fontFamily: 'inherit',
+        transition: 'border-color 0.15s ease',
+      }}
+    />
+  )
+}
 
 export function SettingsPage() {
-  const [catModalOpen, setCatModalOpen] = useState(false)
-  const [catForm, setCatForm] = useState(EMPTY_CAT_FORM)
-  const [catFormError, setCatFormError] = useState('')
+  const [addingCatType, setAddingCatType] = useState<TransactionType | null>(null)
+  const [catDraft, setCatDraft] = useState('')
+  const catInputRef = useRef<HTMLInputElement>(null)
 
-  const [hdModalOpen, setHdModalOpen] = useState(false)
-  const [editingHd, setEditingHd] = useState<Hairdresser | null>(null)
-  const [hdForm, setHdForm] = useState(EMPTY_HD_FORM)
-  const [hdFormError, setHdFormError] = useState('')
+  const [addingHd, setAddingHd] = useState(false)
+  const [hdDraft, setHdDraft] = useState('')
+  const hdInputRef = useRef<HTMLInputElement>(null)
 
   const { data: categories = [], isLoading: catsLoading } = useCategories()
   const createCat = useCreateCategory()
+  const updateCat = useUpdateCategory()
   const deleteCat = useDeleteCategory()
 
   const { data: hairdressers = [], isLoading: hdsLoading } = useHairdressers()
@@ -35,19 +72,27 @@ export function SettingsPage() {
   const income = categories.filter(c => c.type === 'income')
   const expense = categories.filter(c => c.type === 'expense')
 
-  function openCreateCat() {
-    setCatForm(EMPTY_CAT_FORM)
-    setCatFormError('')
-    setCatModalOpen(true)
+  function startAddCat(type: TransactionType) {
+    setAddingCatType(type)
+    setCatDraft('')
+    setTimeout(() => catInputRef.current?.focus(), 0)
   }
 
-  async function handleCatSubmit() {
-    if (!catForm.name.trim()) {
-      setCatFormError('El nombre es obligatorio.')
-      return
-    }
-    await createCat.mutateAsync({ name: catForm.name.trim(), type: catForm.type })
-    setCatModalOpen(false)
+  async function saveCat() {
+    if (!catDraft.trim() || !addingCatType) return
+    await createCat.mutateAsync({ name: catDraft.trim(), type: addingCatType })
+    setAddingCatType(null)
+    setCatDraft('')
+  }
+
+  function cancelCat() {
+    setAddingCatType(null)
+    setCatDraft('')
+  }
+
+  function handleCatKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); saveCat() }
+    if (e.key === 'Escape') cancelCat()
   }
 
   async function handleCatDelete(id: string) {
@@ -55,31 +100,27 @@ export function SettingsPage() {
     await deleteCat.mutateAsync(id)
   }
 
-  function openCreateHd() {
-    setEditingHd(null)
-    setHdForm(EMPTY_HD_FORM)
-    setHdFormError('')
-    setHdModalOpen(true)
+  function startAddHd() {
+    setAddingHd(true)
+    setHdDraft('')
+    setTimeout(() => hdInputRef.current?.focus(), 0)
   }
 
-  function openEditHd(hd: Hairdresser) {
-    setEditingHd(hd)
-    setHdForm({ name: hd.name })
-    setHdFormError('')
-    setHdModalOpen(true)
+  async function saveHd() {
+    if (!hdDraft.trim()) return
+    await createHd.mutateAsync(hdDraft.trim())
+    setAddingHd(false)
+    setHdDraft('')
   }
 
-  async function handleHdSubmit() {
-    if (!hdForm.name.trim()) {
-      setHdFormError('El nombre es obligatorio.')
-      return
-    }
-    if (editingHd) {
-      await updateHd.mutateAsync({ id: editingHd.id, name: hdForm.name.trim() })
-    } else {
-      await createHd.mutateAsync(hdForm.name.trim())
-    }
-    setHdModalOpen(false)
+  function cancelHd() {
+    setAddingHd(false)
+    setHdDraft('')
+  }
+
+  function handleHdKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); saveHd() }
+    if (e.key === 'Escape') cancelHd()
   }
 
   async function handleHdToggleActive(hd: Hairdresser) {
@@ -93,22 +134,7 @@ export function SettingsPage() {
 
   return (
     <div className="animate-fade-in">
-      <TopBar
-        title="Configuración"
-        subtitle="Categorías y peluqueras"
-        actions={
-          <div className="flex gap-2">
-            <Button onClick={openCreateHd} size="sm" variant="secondary">
-              <Plus size={14} />
-              Nueva peluquera
-            </Button>
-            <Button onClick={openCreateCat} size="sm">
-              <Plus size={14} />
-              Nueva categoría
-            </Button>
-          </div>
-        }
-      />
+      <TopBar title="Configuración" subtitle="Categorías y peluqueras" />
 
       <div className="p-6 space-y-6 max-w-2xl">
         {hdsLoading ? (
@@ -117,9 +143,18 @@ export function SettingsPage() {
           </div>
         ) : (
           <section>
-            <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Peluqueras</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">Peluqueras</h2>
+              <button
+                onClick={startAddHd}
+                disabled={addingHd}
+                className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
+              >
+                <Plus size={12} /> Nueva
+              </button>
+            </div>
             <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-              {hairdressers.length === 0 && (
+              {hairdressers.length === 0 && !addingHd && (
                 <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin peluqueras</p>
               )}
               {hairdressers.map(hd => (
@@ -128,15 +163,13 @@ export function SettingsPage() {
                     <Badge variant={hd.active ? 'success' : 'default'}>
                       {hd.active ? 'Activa' : 'Inactiva'}
                     </Badge>
-                    <span className="text-sm text-[var(--color-text)]">{hd.name}</span>
+                    <InlineEditCell
+                      value={hd.name}
+                      onSave={async v => { await updateHd.mutateAsync({ id: hd.id, name: v }) }}
+                      className="text-sm text-[var(--color-text)]"
+                    />
                   </div>
                   <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => openEditHd(hd)}
-                      className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
-                    >
-                      <Pencil size={14} />
-                    </button>
                     <button
                       onClick={() => handleHdToggleActive(hd)}
                       className="px-2 py-1 rounded-lg text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
@@ -152,6 +185,47 @@ export function SettingsPage() {
                   </div>
                 </div>
               ))}
+              {addingHd && (
+                <div
+                  className="flex items-center gap-2 px-4 py-2.5 animate-slide-in"
+                  style={{
+                    background: 'var(--color-accent-light)',
+                    borderLeft: '3px solid var(--color-accent)',
+                  }}
+                >
+                  <span
+                    className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
+                    style={{
+                      color: 'var(--color-accent)',
+                      background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+                    }}
+                  >
+                    Nueva
+                  </span>
+                  <DraftInput
+                    inputRef={hdInputRef}
+                    value={hdDraft}
+                    onChange={setHdDraft}
+                    onKeyDown={handleHdKeyDown}
+                    placeholder="Nombre de la peluquera"
+                    autoFocus
+                  />
+                  <button
+                    onClick={saveHd}
+                    disabled={createHd.isPending || !hdDraft.trim()}
+                    className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+                    style={{ background: 'var(--color-accent)', color: '#fff' }}
+                  >
+                    <Check size={13} />
+                  </button>
+                  <button
+                    onClick={cancelHd}
+                    className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -163,16 +237,29 @@ export function SettingsPage() {
         ) : (
           <>
             <section>
-              <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Categorías de ingresos</h2>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-[var(--color-text)]">Categorías de ingresos</h2>
+                <button
+                  onClick={() => startAddCat('income')}
+                  disabled={addingCatType !== null}
+                  className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
+                >
+                  <Plus size={12} /> Nueva
+                </button>
+              </div>
               <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                {income.length === 0 && (
+                {income.length === 0 && addingCatType !== 'income' && (
                   <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin categorías</p>
                 )}
                 {income.map(cat => (
                   <div key={cat.id} className="flex items-center justify-between px-4 py-3">
                     <div className="flex items-center gap-2">
                       <Badge variant="success">Ingreso</Badge>
-                      <span className="text-sm text-[var(--color-text)]">{cat.name}</span>
+                      <InlineEditCell
+                        value={cat.name}
+                        onSave={async v => { await updateCat.mutateAsync({ id: cat.id, name: v }) }}
+                        className="text-sm text-[var(--color-text)]"
+                      />
                     </div>
                     <button
                       onClick={() => handleCatDelete(cat.id)}
@@ -182,20 +269,74 @@ export function SettingsPage() {
                     </button>
                   </div>
                 ))}
+                {addingCatType === 'income' && (
+                  <div
+                    className="flex items-center gap-2 px-4 py-2.5 animate-slide-in"
+                    style={{
+                      background: 'var(--color-accent-light)',
+                      borderLeft: '3px solid var(--color-accent)',
+                    }}
+                  >
+                    <span
+                      className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
+                      style={{
+                        color: 'var(--color-accent)',
+                        background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+                      }}
+                    >
+                      Nueva
+                    </span>
+                    <DraftInput
+                      inputRef={catInputRef}
+                      value={catDraft}
+                      onChange={setCatDraft}
+                      onKeyDown={handleCatKeyDown}
+                      placeholder="Nombre de la categoría"
+                      autoFocus
+                    />
+                    <button
+                      onClick={saveCat}
+                      disabled={createCat.isPending || !catDraft.trim()}
+                      className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+                      style={{ background: 'var(--color-accent)', color: '#fff' }}
+                    >
+                      <Check size={13} />
+                    </button>
+                    <button
+                      onClick={cancelCat}
+                      className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                )}
               </div>
             </section>
 
             <section>
-              <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Categorías de gastos</h2>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-[var(--color-text)]">Categorías de gastos</h2>
+                <button
+                  onClick={() => startAddCat('expense')}
+                  disabled={addingCatType !== null}
+                  className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
+                >
+                  <Plus size={12} /> Nueva
+                </button>
+              </div>
               <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                {expense.length === 0 && (
+                {expense.length === 0 && addingCatType !== 'expense' && (
                   <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin categorías</p>
                 )}
                 {expense.map(cat => (
                   <div key={cat.id} className="flex items-center justify-between px-4 py-3">
                     <div className="flex items-center gap-2">
                       <Badge variant="danger">Gasto</Badge>
-                      <span className="text-sm text-[var(--color-text)]">{cat.name}</span>
+                      <InlineEditCell
+                        value={cat.name}
+                        onSave={async v => { await updateCat.mutateAsync({ id: cat.id, name: v }) }}
+                        className="text-sm text-[var(--color-text)]"
+                      />
                     </div>
                     <button
                       onClick={() => handleCatDelete(cat.id)}
@@ -205,58 +346,52 @@ export function SettingsPage() {
                     </button>
                   </div>
                 ))}
+                {addingCatType === 'expense' && (
+                  <div
+                    className="flex items-center gap-2 px-4 py-2.5 animate-slide-in"
+                    style={{
+                      background: 'var(--color-accent-light)',
+                      borderLeft: '3px solid var(--color-accent)',
+                    }}
+                  >
+                    <span
+                      className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
+                      style={{
+                        color: 'var(--color-accent)',
+                        background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+                      }}
+                    >
+                      Nueva
+                    </span>
+                    <DraftInput
+                      inputRef={catInputRef}
+                      value={catDraft}
+                      onChange={setCatDraft}
+                      onKeyDown={handleCatKeyDown}
+                      placeholder="Nombre de la categoría"
+                      autoFocus
+                    />
+                    <button
+                      onClick={saveCat}
+                      disabled={createCat.isPending || !catDraft.trim()}
+                      className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+                      style={{ background: 'var(--color-accent)', color: '#fff' }}
+                    >
+                      <Check size={13} />
+                    </button>
+                    <button
+                      onClick={cancelCat}
+                      className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                )}
               </div>
             </section>
           </>
         )}
       </div>
-
-      <Modal open={catModalOpen} onClose={() => setCatModalOpen(false)} title="Nueva categoría">
-        <div className="space-y-4">
-          <Input
-            label="Nombre"
-            value={catForm.name}
-            onChange={e => setCatForm(f => ({ ...f, name: e.target.value }))}
-            placeholder="Ej: Servicios, Nómina..."
-          />
-          <Select
-            label="Tipo"
-            options={[
-              { value: 'income', label: 'Ingreso' },
-              { value: 'expense', label: 'Gasto' },
-            ]}
-            value={catForm.type}
-            onChange={e => setCatForm(f => ({ ...f, type: e.target.value as TransactionType }))}
-          />
-          {catFormError && <p className="text-xs text-[var(--color-danger)]">{catFormError}</p>}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setCatModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCatSubmit} loading={createCat.isPending}>Crear categoría</Button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        open={hdModalOpen}
-        onClose={() => setHdModalOpen(false)}
-        title={editingHd ? 'Editar peluquera' : 'Nueva peluquera'}
-      >
-        <div className="space-y-4">
-          <Input
-            label="Nombre"
-            value={hdForm.name}
-            onChange={e => setHdForm({ name: e.target.value })}
-            placeholder="Nombre de la peluquera"
-          />
-          {hdFormError && <p className="text-xs text-[var(--color-danger)]">{hdFormError}</p>}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setHdModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleHdSubmit} loading={createHd.isPending || updateHd.isPending}>
-              {editingHd ? 'Guardar cambios' : 'Crear peluquera'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   )
 }

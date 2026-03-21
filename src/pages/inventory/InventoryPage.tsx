@@ -4,7 +4,8 @@ import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Table } from '@/components/ui/Table'
-import { useProducts } from '@/hooks/useProducts'
+import { InlineEditCell } from '@/components/ui/InlineEditCell'
+import { useProducts, useUpdateProduct } from '@/hooks/useProducts'
 import { LotDrawer } from './LotDrawer'
 import { SaleForm } from './SaleForm'
 import type { Product } from '@/types'
@@ -28,6 +29,19 @@ export function InventoryPage() {
   const [saleOpen, setSaleOpen] = useState(false)
 
   const { data: products = [], isLoading } = useProducts()
+  const updateProduct = useUpdateProduct()
+
+  async function saveProductField(p: Product, field: 'name' | 'sale_price', value: string) {
+    await updateProduct.mutateAsync({
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      unit: p.unit,
+      sale_price: p.sale_price,
+      min_stock: p.min_stock,
+      [field]: field === 'sale_price' ? Number(value) : value,
+    })
+  }
 
   const columns = [
     {
@@ -35,7 +49,11 @@ export function InventoryPage() {
       header: 'Producto',
       render: (p: Product) => (
         <div>
-          <p className="font-medium text-[var(--color-text)]">{p.name}</p>
+          <InlineEditCell
+            value={p.name}
+            onSave={v => saveProductField(p, 'name', v)}
+            className="font-medium text-[var(--color-text)]"
+          />
           <p className="text-xs text-[var(--color-muted)]">{p.sku}</p>
         </div>
       ),
@@ -52,9 +70,12 @@ export function InventoryPage() {
       header: 'Precio venta',
       className: 'text-right',
       render: (p: Product) => (
-        <span className="tabular-nums font-medium">
-          ${Number(p.sale_price).toLocaleString('es-CO')}
-        </span>
+        <InlineEditCell
+          value={String(p.sale_price)}
+          onSave={v => saveProductField(p, 'sale_price', v)}
+          type="number"
+          className="tabular-nums font-medium text-right"
+        />
       ),
     },
     {

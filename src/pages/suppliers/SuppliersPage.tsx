@@ -1,70 +1,104 @@
-import { useState } from 'react'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { Plus, Trash2, Check, X } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 import { Table } from '@/components/ui/Table'
-import { Modal } from '@/components/ui/Modal'
+import { InlineEditCell } from '@/components/ui/InlineEditCell'
 import { useSuppliers, useCreateSupplier, useUpdateSupplier, useDeleteSupplier } from '@/hooks/useSuppliers'
 import type { Supplier } from '@/types'
 
-const EMPTY_FORM = {
-  name: '',
-  contact: '',
-  phone: '',
-  email: '',
-  notes: '',
+const EMPTY_DRAFT = { name: '', contact: '', phone: '', email: '', notes: '' }
+
+function DraftInput({
+  inputRef,
+  value,
+  onChange,
+  onKeyDown,
+  placeholder,
+  type = 'text',
+  autoFocus,
+}: {
+  inputRef?: React.Ref<HTMLInputElement>
+  value: string
+  onChange: (v: string) => void
+  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  placeholder?: string
+  type?: string
+  autoFocus?: boolean
+}) {
+  const [focused, setFocused] = useState(autoFocus ?? false)
+  return (
+    <input
+      ref={inputRef}
+      type={type}
+      value={value}
+      autoFocus={autoFocus}
+      onChange={e => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      placeholder={placeholder}
+      style={{
+        width: '100%',
+        background: 'transparent',
+        border: 'none',
+        borderBottom: `1.5px solid ${focused ? 'var(--color-accent)' : 'var(--color-border)'}`,
+        padding: '3px 2px',
+        fontSize: '0.875rem',
+        color: 'var(--color-text)',
+        outline: 'none',
+        fontFamily: 'inherit',
+        transition: 'border-color 0.15s ease',
+      }}
+    />
+  )
 }
 
 export function SuppliersPage() {
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editing, setEditing] = useState<Supplier | null>(null)
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [formError, setFormError] = useState('')
+  const [draft, setDraft] = useState<typeof EMPTY_DRAFT | null>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
 
   const { data: suppliers = [], isLoading } = useSuppliers()
   const createSupplier = useCreateSupplier()
   const updateSupplier = useUpdateSupplier()
   const deleteSupplier = useDeleteSupplier()
 
-  function openCreate() {
-    setEditing(null)
-    setForm(EMPTY_FORM)
-    setFormError('')
-    setModalOpen(true)
+  function startNew() {
+    setDraft({ ...EMPTY_DRAFT })
+    setTimeout(() => nameRef.current?.focus(), 0)
   }
 
-  function openEdit(supplier: Supplier) {
-    setEditing(supplier)
-    setForm({
-      name: supplier.name,
-      contact: supplier.contact ?? '',
-      phone: supplier.phone ?? '',
-      email: supplier.email ?? '',
-      notes: supplier.notes ?? '',
+  async function saveNew() {
+    if (!draft || !draft.name.trim()) return
+    await createSupplier.mutateAsync({
+      name: draft.name.trim(),
+      contact: draft.contact.trim() || null,
+      phone: draft.phone.trim() || null,
+      email: draft.email.trim() || null,
+      notes: draft.notes.trim() || null,
     })
-    setFormError('')
-    setModalOpen(true)
+    setDraft(null)
   }
 
-  async function handleSubmit() {
-    if (!form.name.trim()) {
-      setFormError('El nombre es obligatorio.')
-      return
-    }
-    const payload = {
-      name: form.name.trim(),
-      contact: form.contact.trim() || null,
-      phone: form.phone.trim() || null,
-      email: form.email.trim() || null,
-      notes: form.notes.trim() || null,
-    }
-    if (editing) {
-      await updateSupplier.mutateAsync({ id: editing.id, ...payload })
-    } else {
-      await createSupplier.mutateAsync(payload)
-    }
-    setModalOpen(false)
+  function cancelNew() {
+    setDraft(null)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') { e.preventDefault(); saveNew() }
+    if (e.key === 'Escape') cancelNew()
+  }
+
+  async function saveField(s: Supplier, field: keyof Supplier, value: string) {
+    await updateSupplier.mutateAsync({
+      id: s.id,
+      name: s.name,
+      contact: s.contact,
+      phone: s.phone,
+      email: s.email,
+      notes: s.notes,
+      [field]: value || null,
+    })
   }
 
   async function handleDelete(id: string) {
@@ -72,39 +106,139 @@ export function SuppliersPage() {
     await deleteSupplier.mutateAsync(id)
   }
 
+  const newRow = draft ? (
+    <tr
+      className="animate-slide-in"
+      style={{
+        background: 'var(--color-accent-light)',
+        borderBottom: '2px solid var(--color-accent)',
+      }}
+    >
+      <td
+        className="px-4 py-2.5"
+        style={{ borderLeft: '3px solid var(--color-accent)' }}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
+            style={{
+              color: 'var(--color-accent)',
+              background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+            }}
+          >
+            Nuevo
+          </span>
+          <DraftInput
+            inputRef={nameRef}
+            value={draft.name}
+            onChange={v => setDraft(d => d && { ...d, name: v })}
+            onKeyDown={handleKeyDown}
+            placeholder="Nombre *"
+            autoFocus
+          />
+        </div>
+      </td>
+      <td className="px-4 py-2.5">
+        <DraftInput
+          value={draft.contact}
+          onChange={v => setDraft(d => d && { ...d, contact: v })}
+          onKeyDown={handleKeyDown}
+          placeholder="Contacto"
+        />
+      </td>
+      <td className="px-4 py-2.5">
+        <DraftInput
+          value={draft.phone}
+          onChange={v => setDraft(d => d && { ...d, phone: v })}
+          onKeyDown={handleKeyDown}
+          placeholder="Teléfono"
+        />
+      </td>
+      <td className="px-4 py-2.5">
+        <DraftInput
+          value={draft.email}
+          onChange={v => setDraft(d => d && { ...d, email: v })}
+          onKeyDown={handleKeyDown}
+          placeholder="Email"
+          type="email"
+        />
+      </td>
+      <td className="px-4 py-2.5">
+        <div className="flex items-center gap-1 justify-end">
+          <button
+            onClick={saveNew}
+            disabled={createSupplier.isPending || !draft.name.trim()}
+            title="Guardar (Enter)"
+            className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+            style={{
+              background: 'var(--color-accent)',
+              color: '#fff',
+            }}
+          >
+            <Check size={13} />
+          </button>
+          <button
+            onClick={cancelNew}
+            title="Cancelar (Esc)"
+            className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      </td>
+    </tr>
+  ) : undefined
+
   const columns = [
     {
       key: 'name',
       header: 'Nombre',
-      render: (s: Supplier) => <span className="font-medium text-[var(--color-text)]">{s.name}</span>,
+      render: (s: Supplier) => (
+        <InlineEditCell
+          value={s.name}
+          onSave={v => saveField(s, 'name', v)}
+          className="font-medium text-[var(--color-text)]"
+        />
+      ),
     },
     {
       key: 'contact',
       header: 'Contacto',
-      render: (s: Supplier) => <span className="text-[var(--color-muted)]">{s.contact || '—'}</span>,
+      render: (s: Supplier) => (
+        <span className="text-[var(--color-muted)]">{s.contact || '—'}</span>
+      ),
     },
     {
       key: 'phone',
       header: 'Teléfono',
-      render: (s: Supplier) => <span className="text-[var(--color-muted)]">{s.phone || '—'}</span>,
+      render: (s: Supplier) => (
+        <InlineEditCell
+          value={s.phone ?? ''}
+          onSave={v => saveField(s, 'phone', v)}
+          placeholder="—"
+          className="text-[var(--color-muted)]"
+        />
+      ),
     },
     {
       key: 'email',
       header: 'Email',
-      render: (s: Supplier) => <span className="text-[var(--color-muted)]">{s.email || '—'}</span>,
+      render: (s: Supplier) => (
+        <InlineEditCell
+          value={s.email ?? ''}
+          onSave={v => saveField(s, 'email', v)}
+          type="email"
+          placeholder="—"
+          className="text-[var(--color-muted)]"
+        />
+      ),
     },
     {
       key: 'actions',
       header: '',
-      className: 'w-20',
+      className: 'w-12',
       render: (s: Supplier) => (
         <div className="flex items-center gap-1 justify-end">
-          <button
-            onClick={() => openEdit(s)}
-            className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
-          >
-            <Pencil size={14} />
-          </button>
           <button
             onClick={() => handleDelete(s.id)}
             className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
@@ -122,78 +256,24 @@ export function SuppliersPage() {
         title="Proveedores"
         subtitle={`${suppliers.length} registros`}
         actions={
-          <Button onClick={openCreate} size="sm">
+          <Button onClick={startNew} size="sm" disabled={!!draft}>
             <Plus size={14} />
             Nuevo proveedor
           </Button>
         }
       />
-
       <div className="p-6">
-        <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
+        <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
           <Table
             columns={columns}
             data={suppliers}
             keyField="id"
             loading={isLoading}
             emptyMessage="No hay proveedores registrados"
+            prependRow={newRow}
           />
         </div>
       </div>
-
-      <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={editing ? 'Editar proveedor' : 'Nuevo proveedor'}
-      >
-        <div className="space-y-4">
-          <Input
-            label="Nombre *"
-            value={form.name}
-            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            placeholder="Ej. Distribuidora Belleza S.A."
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="Contacto"
-              value={form.contact}
-              onChange={e => setForm(f => ({ ...f, contact: e.target.value }))}
-              placeholder="Nombre del contacto"
-            />
-            <Input
-              label="Teléfono"
-              value={form.phone}
-              onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-              placeholder="+57 300 000 0000"
-            />
-          </div>
-          <Input
-            label="Email"
-            type="email"
-            value={form.email}
-            onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-            placeholder="contacto@proveedor.com"
-          />
-          <Input
-            label="Notas"
-            value={form.notes}
-            onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-            placeholder="Opcional"
-          />
-          {formError && <p className="text-xs text-[var(--color-danger)]">{formError}</p>}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              loading={createSupplier.isPending || updateSupplier.isPending}
-            >
-              {editing ? 'Guardar cambios' : 'Crear proveedor'}
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   )
 }
