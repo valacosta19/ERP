@@ -15,6 +15,10 @@ export function InlineEditCell({ value, onSave, type = 'text', placeholder, clas
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    if (!editing) setDraft(value)
+  }, [value, editing])
+
+  useEffect(() => {
     if (editing && inputRef.current) {
       inputRef.current.focus()
       inputRef.current.select()

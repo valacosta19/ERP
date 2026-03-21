@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react'
-import { Plus, Trash2, Check, X } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Plus, Trash2, Check, X, Pencil } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
 import { InlineEditCell } from '@/components/ui/InlineEditCell'
@@ -48,6 +48,114 @@ function DraftInput({
         transition: 'border-color 0.15s ease',
       }}
     />
+  )
+}
+
+function BusinessNameCard({ name, onSave }: { name: string; onSave: (v: string) => Promise<void> }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(name)
+  const [saving, setSaving] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!editing) setDraft(name)
+  }, [name, editing])
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus()
+  }, [editing])
+
+  async function commit() {
+    const trimmed = draft.trim()
+    if (trimmed === name) { setEditing(false); return }
+    setSaving(true)
+    try { await onSave(trimmed) } finally { setSaving(false); setEditing(false) }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') { e.preventDefault(); commit() }
+    if (e.key === 'Escape') { setDraft(name); setEditing(false) }
+  }
+
+  const isEmpty = !name
+
+  return (
+    <div
+      onClick={() => !editing && setEditing(true)}
+      className="group relative rounded-xl border transition-all cursor-pointer hover:border-[var(--color-accent)]"
+      style={{
+        background: editing
+          ? 'var(--color-accent-light)'
+          : 'var(--color-surface)',
+        borderColor: editing ? 'var(--color-accent)' : 'var(--color-border)',
+        borderStyle: isEmpty && !editing ? 'dashed' : 'solid',
+        padding: '20px 24px',
+      }}
+    >
+      {editing ? (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--color-accent)' }}>
+            Nombre del negocio
+          </p>
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={commit}
+            disabled={saving}
+            placeholder="Ej: Studio Rosa, Salon Valen..."
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: 'none',
+              borderBottom: '2px solid var(--color-accent)',
+              outline: 'none',
+              fontFamily: 'var(--font-display)',
+              fontSize: '1.375rem',
+              fontWeight: 600,
+              color: 'var(--color-text)',
+              padding: '2px 0 6px 0',
+            }}
+          />
+          <p className="text-[11px] mt-2.5" style={{ color: 'var(--color-accent)' }}>
+            Enter para guardar · Esc para cancelar
+          </p>
+        </div>
+      ) : isEmpty ? (
+        <div className="flex items-center gap-3">
+          <div
+            className="flex items-center justify-center w-9 h-9 rounded-lg shrink-0"
+            style={{ background: 'var(--color-accent-light)', color: 'var(--color-accent)' }}
+          >
+            <Plus size={16} />
+          </div>
+          <div>
+            <p className="text-sm font-medium" style={{ color: 'var(--color-accent)' }}>
+              Agregar nombre del negocio
+            </p>
+            <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+              Aparecerá en el menú lateral
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{ color: 'var(--color-muted)' }}>
+              Nombre del negocio
+            </p>
+            <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.375rem', fontWeight: 600, color: 'var(--color-text)', lineHeight: 1.3 }}>
+              {name}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 pt-1" style={{ color: 'var(--color-muted)' }}>
+            <Pencil size={13} />
+            <span className="text-xs">Editar</span>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -143,18 +251,12 @@ export function SettingsPage() {
       <div className="p-6 space-y-6 max-w-2xl">
         <section>
           <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Negocio</h2>
-          <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
-            <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-xs text-[var(--color-muted)] w-32 shrink-0">Nombre del negocio</span>
-              {profile && (
-                <InlineEditCell
-                  value={profile.business_name ?? ''}
-                  onSave={async v => { await updateProfile.mutateAsync({ id: profile.id, business_name: v || null }) }}
-                  className="text-sm text-[var(--color-text)]"
-                />
-              )}
-            </div>
-          </div>
+          {profile && (
+            <BusinessNameCard
+              name={profile.business_name ?? ''}
+              onSave={async v => { await updateProfile.mutateAsync({ id: profile.id, business_name: v || null }) }}
+            />
+          )}
         </section>
 
         {hdsLoading ? (
