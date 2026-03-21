@@ -25,7 +25,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 6 | Import wizard (5 steps): upload → sheets → mapping → preview → batch import for all entity types |
 | 7 | ✅ Atomic sale + receive-PO RPCs, responsive AppShell sidebar, ErrorBoundary on all routes |
 | 8 | ✅ Payment methods, hairdressers, señas, commission reports (Transactions v2) |
-| 9 | ✅ Inline editing: InlineEditCell component, useUpdateCategory hook, inline edit on Suppliers / Inventory / Settings |
+| 9 | ✅ Inline editing + inline row creation (no modals), import wizard extended for Entrada/Salida/payment/professional columns, hairdresser→professional rename, dynamic business_name in sidebar |
 
 ---
 
