@@ -63,7 +63,7 @@ export const ENTITY_FIELDS: Record<EntityType, FieldDef[]> = {
   ],
   catalog_items: [
     { key: 'name', label: 'Nombre', required: true },
-    { key: 'category', label: 'Categoría (nombre)', required: true },
+    { key: 'category', label: 'Categoría (Servicio / Producto)', required: false },
     { key: 'price', label: 'Precio', required: false },
   ],
 }

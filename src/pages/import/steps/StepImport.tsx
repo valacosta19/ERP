@@ -201,11 +201,18 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
           if (entityType === 'catalog_items') {
             for (const row of sheet.rows) {
               const name = getVal(row, m, 'name')
-              const categoryName = getVal(row, m, 'category')
-              if (!name || !categoryName) { result.skipped++; continue }
-              const category_id = catMap.get(categoryName.toLowerCase())
-              if (!category_id) { result.errors.push(`Categoría no encontrada: ${categoryName}`); continue }
+              if (!name) { result.skipped++; continue }
               if (catalogItemMap.has(name.toLowerCase())) { result.skipped++; continue }
+
+              const categoryName = getVal(row, m, 'category') || 'Servicio'
+              let category_id = catMap.get(categoryName.toLowerCase())
+              if (!category_id) {
+                const { data: newCat, error: catError } = await supabase.from('categories').insert({ name: categoryName }).select('id, name').single()
+                if (catError) { result.errors.push(`Categoría "${categoryName}": ${catError.message}`); continue }
+                catMap.set(newCat.name.toLowerCase(), newCat.id)
+                category_id = newCat.id
+              }
+
               const price = parseNum(getVal(row, m, 'price'))
               const { data, error } = await supabase.from('catalog_items').insert({ name, category_id, price }).select('id, name, category_id').single()
               if (error) { result.errors.push(`${name}: ${error.message}`); continue }
