@@ -10,7 +10,21 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
-**Phase 10** — TBD
+**Phase 10** — ✅ Completa
+
+### Cambios implementados en Phase 10
+- **Inline transaction form**: creación de transacciones reemplaza modal con `prependRow` inline (patrón Proveedores). Modal conservado solo para edición.
+- **Catálogo de servicios/productos**: nueva tabla `catalog_items` (migration 008). CRUD en Ajustes → sección "Catálogo" para categorías "Servicio" y "Producto".
+- **DescriptionCombobox**: al crear una transacción, escribir en descripción muestra sugerencias del catálogo filtradas por categoría; seleccionar autocompleta descripción y monto.
+- **Professional selector condicional**: selector de profesionales solo aparece cuando la categoría es "Servicio" (tanto en form inline como en modal de edición).
+- **Import: campo `catalog_item`**: en el wizard de importación de transacciones, columna "Servicio/Producto" asigna automáticamente la `category_id` desde el catálogo y autocompleta la descripción.
+- **Import: campo `brand` en productos**: nueva columna `brand` en tabla `products` (migration 009). Soportada en el import wizard.
+- **Roadmap multi-tenant documentado**: fases 11–14 y sección "Out of MVP scope" en este archivo.
+- **10.x2 — Indicador visual de tipo**: eliminada la columna "Tipo" de la lista de transacciones; el monto ya muestra verde (entrada) / rojo (salida).
+- **10.x — Balance por método de pago**: panel de 4 tarjetas en `TransactionsPage` con saldo por método de pago (Σ entradas − Σ salidas de `transaction_payments`), filtrable por rango de fechas.
+- **10.z — Métodos de pago configurables**: nueva tabla `payment_methods` (migration 010) con CRUD en Ajustes. `TransactionsPage` carga métodos desde DB. `PaymentMethod` widened a `string`.
+- **10.y — Seña como concepto separado**: columnas "Seña" y "Total cobrado" en la lista de transacciones. Comisión calculada sobre `amount + seña_amount`. La seña no es un método de pago.
+- **Lint fixes**: `ErrorBoundary`, `Table` (page clamping sin useEffect), `useAuth` (hoisted fetchProfile).
 
 ---
 
@@ -26,6 +40,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 7 | ✅ Atomic sale + receive-PO RPCs, responsive AppShell sidebar, ErrorBoundary on all routes |
 | 8 | ✅ Payment methods, hairdressers, señas, commission reports (Transactions v2) |
 | 9 | ✅ Inline editing + inline row creation (no modals), import wizard extended for Entrada/Salida/payment/professional columns, hairdresser→professional rename, dynamic business_name in sidebar |
+| 10 | ✅ Catálogo, inline form, DescriptionCombobox, professional selector, import extensions, balance por método de pago, indicador visual de tipo, métodos de pago configurables (DB), seña como concepto separado, lint fixes |
 
 ---
 
@@ -162,7 +177,37 @@ npm run dev     # then:
 
 ---
 
-## Upcoming phases
+## Upcoming phases (MVP)
 | Phase | What |
 |-------|------|
-| 10 | TBD |
+| 11 | Multi-tenant foundation |
+
+---
+
+## Future roadmap — Multi-Tenant SaaS
+
+These phases convert the single-tenant MVP into a sellable SaaS. Architecture stays the same (Supabase + RLS); multi-tenancy is additive.
+
+| Phase | Name | Scope |
+|-------|------|-------|
+| 11 | Multi-tenant foundation | Add `tenants` table; add `tenant_id` to all tables; update RLS policies to filter by `tenant_id` derived from `auth.uid()`; update `profiles` + `handle_new_user` trigger |
+| 12 | Tenant onboarding | Registration flow for new businesses, tenant provisioning, role system (owner / admin / staff per tenant) |
+| 13 | Billing (Stripe) | Subscription plans, Stripe webhook to grant/revoke tenant access, auto-invoices |
+| 14 | Super-admin panel | Cross-tenant view of usage, billing status, and support tools |
+
+---
+
+## Out of MVP scope
+
+Features discussed or requested that are explicitly deferred. Pick them up when starting a future phase.
+
+| Feature | Notes |
+|---------|-------|
+| Multi-tenant isolation | `tenant_id` on all tables + RLS — tracked in Phase 11 |
+| Billing / Stripe | Subscription management, payment failure handling — tracked in Phase 13 |
+| Backend API layer | Custom Node.js server not needed; Supabase RPC + Edge Functions cover all business logic |
+| Automated test suite | Current validation gate is `npm run build` + manual browser check |
+| Seña ↔ service linking | Link a seña transaction to the service transaction it was applied to |
+| Per-category commission rates | Currently fixed at 40% solo / 20% each for 2+ hairdressers |
+| `products_with_stock` DB view | Would replace the two-query pattern in `useProducts` |
+| Optimistic UI updates | Currently refetches on every mutation via `invalidateQueries` |

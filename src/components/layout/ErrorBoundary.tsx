@@ -1,5 +1,5 @@
 import { Component } from 'react'
-import type { ReactNode, ErrorInfo } from 'react'
+import type { ReactNode } from 'react'
 
 interface Props {
   children: ReactNode
@@ -21,7 +21,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, message }
   }
 
-  componentDidCatch(_error: unknown, _info: ErrorInfo) {}
+  componentDidCatch() {}
 
   handleRetry = () => {
     this.setState({ hasError: false, message: '' })

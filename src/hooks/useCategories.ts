@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
-import type { Category, TransactionType } from '@/types'
+import type { Category } from '@/types'
 
 export function useCategories() {
   return useQuery({
@@ -9,7 +9,6 @@ export function useCategories() {
       const { data, error } = await supabase
         .from('categories')
         .select('*')
-        .order('type')
         .order('name')
       if (error) throw new Error(error.message)
       return data as Category[]
@@ -20,7 +19,7 @@ export function useCategories() {
 export function useCreateCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (payload: { name: string; type: TransactionType }) => {
+    mutationFn: async (payload: { name: string }) => {
       const { data, error } = await supabase
         .from('categories')
         .insert(payload)

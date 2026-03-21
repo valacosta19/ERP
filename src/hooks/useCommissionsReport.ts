@@ -14,7 +14,7 @@ type RawTxHd = {
   transaction_id: string
   hairdresser_id: string
   hairdressers: { id: string; name: string } | null
-  transactions: { id: string; amount: number; date: string } | null
+  transactions: { id: string; amount: number; seña_amount: number | null; date: string } | null
 }
 
 interface CommissionsFilters {
@@ -28,7 +28,7 @@ export function useCommissionsReport(filters: CommissionsFilters = {}) {
     queryFn: async () => {
       let query = supabase
         .from('transaction_hairdressers')
-        .select('transaction_id, hairdresser_id, hairdressers(id, name), transactions(id, amount, date)')
+        .select('transaction_id, hairdresser_id, hairdressers(id, name), transactions(id, amount, seña_amount, date)')
 
       if (filters.from) query = query.gte('transactions.date', filters.from)
       if (filters.to) query = query.lte('transactions.date', filters.to)
@@ -51,7 +51,7 @@ export function useCommissionsReport(filters: CommissionsFilters = {}) {
 
         const hairdresserCount = txHairdresserCount.get(row.transaction_id) ?? 1
         const rate = hairdresserCount === 1 ? 0.4 : 0.2
-        const amount = Number(row.transactions.amount)
+        const amount = Number(row.transactions.amount) + Number(row.transactions.seña_amount ?? 0)
         const commission = amount * rate
 
         const existing = hdMap.get(row.hairdresser_id)

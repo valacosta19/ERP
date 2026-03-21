@@ -30,19 +30,16 @@ export interface Database {
         Row: {
           id: string
           name: string
-          type: 'income' | 'expense'
           created_at: string
         }
         Insert: {
           id?: string
           name: string
-          type: 'income' | 'expense'
           created_at?: string
         }
         Update: {
           id?: string
           name?: string
-          type?: 'income' | 'expense'
         }
         Relationships: []
       }
@@ -174,6 +171,7 @@ export interface Database {
           unit: string | null
           sale_price: number
           min_stock: number
+          brand: string | null
           deleted_at: string | null
           created_at: string
         }
@@ -184,6 +182,7 @@ export interface Database {
           unit?: string | null
           sale_price: number
           min_stock?: number
+          brand?: string | null
           deleted_at?: string | null
           created_at?: string
         }
@@ -194,6 +193,7 @@ export interface Database {
           unit?: string | null
           sale_price?: number
           min_stock?: number
+          brand?: string | null
           deleted_at?: string | null
         }
         Relationships: []
@@ -328,6 +328,49 @@ export interface Database {
           created_at?: string
         }
         Update: never
+        Relationships: []
+      }
+      payment_methods: {
+        Row: {
+          id: string
+          name: string
+          active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          active?: boolean
+        }
+        Relationships: []
+      }
+      catalog_items: {
+        Row: {
+          id: string
+          name: string
+          category_id: string | null
+          price: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          category_id?: string | null
+          price?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          category_id?: string | null
+          price?: number
+        }
         Relationships: []
       }
     }

@@ -5,8 +5,10 @@ import { Badge } from '@/components/ui/Badge'
 import { InlineEditCell } from '@/components/ui/InlineEditCell'
 import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '@/hooks/useCategories'
 import { useProfessionals, useCreateProfessional, useUpdateProfessional, useDeleteProfessional } from '@/hooks/useProfessionals'
+import { useCatalogItems, useCreateCatalogItem, useUpdateCatalogItem, useDeleteCatalogItem } from '@/hooks/useCatalogItems'
+import { usePaymentMethods, useCreatePaymentMethod, useUpdatePaymentMethod, useDeletePaymentMethod } from '@/hooks/usePaymentMethods'
 import { useAuth, useUpdateProfile } from '@/hooks/useAuth'
-import type { TransactionType, Professional } from '@/types'
+import type { Professional, PaymentMethodConfig } from '@/types'
 
 function DraftInput({
   inputRef,
@@ -14,6 +16,7 @@ function DraftInput({
   onChange,
   onKeyDown,
   placeholder,
+  type = 'text',
   autoFocus,
 }: {
   inputRef?: React.Ref<HTMLInputElement>
@@ -21,12 +24,14 @@ function DraftInput({
   onChange: (v: string) => void
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
   placeholder?: string
+  type?: string
   autoFocus?: boolean
 }) {
   const [focused, setFocused] = useState(autoFocus ?? false)
   return (
     <input
       ref={inputRef}
+      type={type}
       value={value}
       autoFocus={autoFocus}
       onChange={e => onChange(e.target.value)}
@@ -84,9 +89,7 @@ function BusinessNameCard({ name, onSave }: { name: string; onSave: (v: string) 
       onClick={() => !editing && setEditing(true)}
       className="group relative rounded-xl border transition-all cursor-pointer hover:border-[var(--color-accent)]"
       style={{
-        background: editing
-          ? 'var(--color-accent-light)'
-          : 'var(--color-surface)',
+        background: editing ? 'var(--color-accent-light)' : 'var(--color-surface)',
         borderColor: editing ? 'var(--color-accent)' : 'var(--color-border)',
         borderStyle: isEmpty && !editing ? 'dashed' : 'solid',
         padding: '20px 24px',
@@ -160,13 +163,18 @@ function BusinessNameCard({ name, onSave }: { name: string; onSave: (v: string) 
 }
 
 export function SettingsPage() {
-  const [addingCatType, setAddingCatType] = useState<TransactionType | null>(null)
+  const [addingCat, setAddingCat] = useState(false)
   const [catDraft, setCatDraft] = useState('')
   const catInputRef = useRef<HTMLInputElement>(null)
 
   const [addingHd, setAddingHd] = useState(false)
   const [hdDraft, setHdDraft] = useState('')
   const hdInputRef = useRef<HTMLInputElement>(null)
+
+  const [addingCatalogFor, setAddingCatalogFor] = useState<string | null>(null)
+  const [catalogDraftName, setCatalogDraftName] = useState('')
+  const [catalogDraftPrice, setCatalogDraftPrice] = useState('')
+  const catalogNameRef = useRef<HTMLInputElement>(null)
 
   const { data: categories = [], isLoading: catsLoading } = useCategories()
   const createCat = useCreateCategory()
@@ -178,27 +186,38 @@ export function SettingsPage() {
   const updateHd = useUpdateProfessional()
   const deleteHd = useDeleteProfessional()
 
+  const [addingPm, setAddingPm] = useState(false)
+  const [pmDraft, setPmDraft] = useState('')
+  const pmInputRef = useRef<HTMLInputElement>(null)
+
+  const { data: paymentMethods = [] } = usePaymentMethods()
+  const createPm = useCreatePaymentMethod()
+  const updatePm = useUpdatePaymentMethod()
+  const deletePm = useDeletePaymentMethod()
+
+  const { data: catalogItems = [] } = useCatalogItems()
+  const createCatalogItem = useCreateCatalogItem()
+  const updateCatalogItem = useUpdateCatalogItem()
+  const deleteCatalogItem = useDeleteCatalogItem()
+
   const { profile } = useAuth()
   const updateProfile = useUpdateProfile()
 
-  const income = categories.filter(c => c.type === 'income')
-  const expense = categories.filter(c => c.type === 'expense')
-
-  function startAddCat(type: TransactionType) {
-    setAddingCatType(type)
+  function startAddCat() {
+    setAddingCat(true)
     setCatDraft('')
     setTimeout(() => catInputRef.current?.focus(), 0)
   }
 
   async function saveCat() {
-    if (!catDraft.trim() || !addingCatType) return
-    await createCat.mutateAsync({ name: catDraft.trim(), type: addingCatType })
-    setAddingCatType(null)
+    if (!catDraft.trim()) return
+    await createCat.mutateAsync({ name: catDraft.trim() })
+    setAddingCat(false)
     setCatDraft('')
   }
 
   function cancelCat() {
-    setAddingCatType(null)
+    setAddingCat(false)
     setCatDraft('')
   }
 
@@ -243,6 +262,77 @@ export function SettingsPage() {
     if (!confirm('¿Eliminar este profesional?')) return
     await deleteHd.mutateAsync(id)
   }
+
+  function startAddPm() {
+    setAddingPm(true)
+    setPmDraft('')
+    setTimeout(() => pmInputRef.current?.focus(), 0)
+  }
+
+  async function savePm() {
+    if (!pmDraft.trim()) return
+    await createPm.mutateAsync(pmDraft.trim())
+    setAddingPm(false)
+    setPmDraft('')
+  }
+
+  function cancelPm() {
+    setAddingPm(false)
+    setPmDraft('')
+  }
+
+  function handlePmKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); savePm() }
+    if (e.key === 'Escape') cancelPm()
+  }
+
+  async function handlePmToggleActive(pm: PaymentMethodConfig) {
+    await updatePm.mutateAsync({ id: pm.id, active: !pm.active })
+  }
+
+  async function handlePmDelete(id: string) {
+    if (!confirm('¿Eliminar este método de pago?')) return
+    await deletePm.mutateAsync(id)
+  }
+
+  function startAddCatalogItem(categoryId: string) {
+    setAddingCatalogFor(categoryId)
+    setCatalogDraftName('')
+    setCatalogDraftPrice('')
+    setTimeout(() => catalogNameRef.current?.focus(), 0)
+  }
+
+  async function saveCatalogItem() {
+    if (!addingCatalogFor || !catalogDraftName.trim()) return
+    await createCatalogItem.mutateAsync({
+      name: catalogDraftName.trim(),
+      category_id: addingCatalogFor,
+      price: parseFloat(catalogDraftPrice) || 0,
+    })
+    setAddingCatalogFor(null)
+    setCatalogDraftName('')
+    setCatalogDraftPrice('')
+  }
+
+  function cancelCatalogItem() {
+    setAddingCatalogFor(null)
+    setCatalogDraftName('')
+    setCatalogDraftPrice('')
+  }
+
+  function handleCatalogKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); saveCatalogItem() }
+    if (e.key === 'Escape') cancelCatalogItem()
+  }
+
+  async function handleCatalogItemDelete(id: string) {
+    if (!confirm('¿Eliminar este item del catálogo?')) return
+    await deleteCatalogItem.mutateAsync(id)
+  }
+
+  const serviceCategories = categories.filter(c =>
+    c.name.toLowerCase() === 'servicio' || c.name.toLowerCase() === 'producto'
+  )
 
   return (
     <div className="animate-fade-in">
@@ -352,166 +442,274 @@ export function SettingsPage() {
           </section>
         )}
 
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-[var(--color-text)]">Métodos de pago</h2>
+            <button
+              onClick={startAddPm}
+              disabled={addingPm}
+              className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
+            >
+              <Plus size={12} /> Nuevo
+            </button>
+          </div>
+          <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+            {paymentMethods.length === 0 && !addingPm && (
+              <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin métodos de pago</p>
+            )}
+            {paymentMethods.map(pm => (
+              <div key={pm.id} className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Badge variant={pm.active ? 'success' : 'default'}>
+                    {pm.active ? 'Activo' : 'Inactivo'}
+                  </Badge>
+                  <InlineEditCell
+                    value={pm.name}
+                    onSave={async v => { await updatePm.mutateAsync({ id: pm.id, name: v }) }}
+                    className="text-sm text-[var(--color-text)]"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handlePmToggleActive(pm)}
+                    className="px-2 py-1 rounded-lg text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+                  >
+                    {pm.active ? 'Desactivar' : 'Activar'}
+                  </button>
+                  <button
+                    onClick={() => handlePmDelete(pm.id)}
+                    className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+            {addingPm && (
+              <div
+                className="flex items-center gap-2 px-4 py-2.5 animate-slide-in"
+                style={{
+                  background: 'var(--color-accent-light)',
+                  borderLeft: '3px solid var(--color-accent)',
+                }}
+              >
+                <span
+                  className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
+                  style={{
+                    color: 'var(--color-accent)',
+                    background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+                  }}
+                >
+                  Nuevo
+                </span>
+                <DraftInput
+                  inputRef={pmInputRef}
+                  value={pmDraft}
+                  onChange={setPmDraft}
+                  onKeyDown={handlePmKeyDown}
+                  placeholder="Nombre del método"
+                  autoFocus
+                />
+                <button
+                  onClick={savePm}
+                  disabled={createPm.isPending || !pmDraft.trim()}
+                  className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+                  style={{ background: 'var(--color-accent)', color: '#fff' }}
+                >
+                  <Check size={13} />
+                </button>
+                <button
+                  onClick={cancelPm}
+                  className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+
         {catsLoading ? (
           <div className="flex justify-center pt-10">
             <span className="w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          <>
-            <section>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-[var(--color-text)]">Categorías de ingresos</h2>
-                <button
-                  onClick={() => startAddCat('income')}
-                  disabled={addingCatType !== null}
-                  className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">Categorías</h2>
+              <button
+                onClick={startAddCat}
+                disabled={addingCat}
+                className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
+              >
+                <Plus size={12} /> Nueva
+              </button>
+            </div>
+            <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+              {categories.length === 0 && !addingCat && (
+                <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin categorías</p>
+              )}
+              {categories.map(cat => (
+                <div key={cat.id} className="flex items-center justify-between px-4 py-3">
+                  <InlineEditCell
+                    value={cat.name}
+                    onSave={async v => { await updateCat.mutateAsync({ id: cat.id, name: v }) }}
+                    className="text-sm text-[var(--color-text)]"
+                  />
+                  <button
+                    onClick={() => handleCatDelete(cat.id)}
+                    className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              {addingCat && (
+                <div
+                  className="flex items-center gap-2 px-4 py-2.5 animate-slide-in"
+                  style={{
+                    background: 'var(--color-accent-light)',
+                    borderLeft: '3px solid var(--color-accent)',
+                  }}
                 >
-                  <Plus size={12} /> Nueva
-                </button>
-              </div>
-              <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                {income.length === 0 && addingCatType !== 'income' && (
-                  <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin categorías</p>
-                )}
-                {income.map(cat => (
-                  <div key={cat.id} className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="success">Ingreso</Badge>
-                      <InlineEditCell
-                        value={cat.name}
-                        onSave={async v => { await updateCat.mutateAsync({ id: cat.id, name: v }) }}
-                        className="text-sm text-[var(--color-text)]"
-                      />
-                    </div>
-                    <button
-                      onClick={() => handleCatDelete(cat.id)}
-                      className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ))}
-                {addingCatType === 'income' && (
-                  <div
-                    className="flex items-center gap-2 px-4 py-2.5 animate-slide-in"
+                  <span
+                    className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
                     style={{
-                      background: 'var(--color-accent-light)',
-                      borderLeft: '3px solid var(--color-accent)',
+                      color: 'var(--color-accent)',
+                      background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
                     }}
                   >
-                    <span
-                      className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
-                      style={{
-                        color: 'var(--color-accent)',
-                        background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
-                      }}
-                    >
-                      Nueva
-                    </span>
-                    <DraftInput
-                      inputRef={catInputRef}
-                      value={catDraft}
-                      onChange={setCatDraft}
-                      onKeyDown={handleCatKeyDown}
-                      placeholder="Nombre de la categoría"
-                      autoFocus
-                    />
-                    <button
-                      onClick={saveCat}
-                      disabled={createCat.isPending || !catDraft.trim()}
-                      className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
-                      style={{ background: 'var(--color-accent)', color: '#fff' }}
-                    >
-                      <Check size={13} />
-                    </button>
-                    <button
-                      onClick={cancelCat}
-                      className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </section>
+                    Nueva
+                  </span>
+                  <DraftInput
+                    inputRef={catInputRef}
+                    value={catDraft}
+                    onChange={setCatDraft}
+                    onKeyDown={handleCatKeyDown}
+                    placeholder="Nombre de la categoría"
+                    autoFocus
+                  />
+                  <button
+                    onClick={saveCat}
+                    disabled={createCat.isPending || !catDraft.trim()}
+                    className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+                    style={{ background: 'var(--color-accent)', color: '#fff' }}
+                  >
+                    <Check size={13} />
+                  </button>
+                  <button
+                    onClick={cancelCat}
+                    className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
-            <section>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-[var(--color-text)]">Categorías de gastos</h2>
-                <button
-                  onClick={() => startAddCat('expense')}
-                  disabled={addingCatType !== null}
-                  className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
-                >
-                  <Plus size={12} /> Nueva
-                </button>
-              </div>
-              <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                {expense.length === 0 && addingCatType !== 'expense' && (
-                  <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin categorías</p>
-                )}
-                {expense.map(cat => (
-                  <div key={cat.id} className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="danger">Gasto</Badge>
-                      <InlineEditCell
-                        value={cat.name}
-                        onSave={async v => { await updateCat.mutateAsync({ id: cat.id, name: v }) }}
-                        className="text-sm text-[var(--color-text)]"
-                      />
+        {serviceCategories.length > 0 && (
+          <section>
+            <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Catálogo</h2>
+            <div className="space-y-4">
+              {serviceCategories.map(cat => {
+                const items = catalogItems.filter(ci => ci.category_id === cat.id)
+                return (
+                  <div key={cat.id}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+                        {cat.name}
+                      </span>
+                      <button
+                        onClick={() => startAddCatalogItem(cat.id)}
+                        disabled={addingCatalogFor !== null}
+                        className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
+                      >
+                        <Plus size={12} /> Nuevo
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleCatDelete(cat.id)}
-                      className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+                      {items.length === 0 && addingCatalogFor !== cat.id && (
+                        <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin items</p>
+                      )}
+                      {items.map(item => (
+                        <div key={item.id} className="flex items-center justify-between px-4 py-3">
+                          <div className="flex items-center gap-6 flex-1 min-w-0">
+                            <InlineEditCell
+                              value={item.name}
+                              onSave={async v => { await updateCatalogItem.mutateAsync({ id: item.id, name: v }) }}
+                              className="text-sm text-[var(--color-text)]"
+                            />
+                            <InlineEditCell
+                              value={String(item.price)}
+                              type="number"
+                              onSave={async v => { await updateCatalogItem.mutateAsync({ id: item.id, price: parseFloat(v) || 0 }) }}
+                              className="text-sm tabular-nums text-[var(--color-muted)]"
+                            />
+                          </div>
+                          <button
+                            onClick={() => handleCatalogItemDelete(item.id)}
+                            className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      {addingCatalogFor === cat.id && (
+                        <div
+                          className="flex items-center gap-2 px-4 py-2.5 animate-slide-in"
+                          style={{
+                            background: 'var(--color-accent-light)',
+                            borderLeft: '3px solid var(--color-accent)',
+                          }}
+                        >
+                          <span
+                            className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
+                            style={{
+                              color: 'var(--color-accent)',
+                              background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+                            }}
+                          >
+                            Nuevo
+                          </span>
+                          <DraftInput
+                            inputRef={catalogNameRef}
+                            value={catalogDraftName}
+                            onChange={setCatalogDraftName}
+                            onKeyDown={handleCatalogKeyDown}
+                            placeholder="Nombre *"
+                            autoFocus
+                          />
+                          <DraftInput
+                            value={catalogDraftPrice}
+                            onChange={setCatalogDraftPrice}
+                            onKeyDown={handleCatalogKeyDown}
+                            placeholder="Precio"
+                            type="number"
+                          />
+                          <button
+                            onClick={saveCatalogItem}
+                            disabled={createCatalogItem.isPending || !catalogDraftName.trim()}
+                            className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+                            style={{ background: 'var(--color-accent)', color: '#fff' }}
+                          >
+                            <Check size={13} />
+                          </button>
+                          <button
+                            onClick={cancelCatalogItem}
+                            className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                ))}
-                {addingCatType === 'expense' && (
-                  <div
-                    className="flex items-center gap-2 px-4 py-2.5 animate-slide-in"
-                    style={{
-                      background: 'var(--color-accent-light)',
-                      borderLeft: '3px solid var(--color-accent)',
-                    }}
-                  >
-                    <span
-                      className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
-                      style={{
-                        color: 'var(--color-accent)',
-                        background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
-                      }}
-                    >
-                      Nueva
-                    </span>
-                    <DraftInput
-                      inputRef={catInputRef}
-                      value={catDraft}
-                      onChange={setCatDraft}
-                      onKeyDown={handleCatKeyDown}
-                      placeholder="Nombre de la categoría"
-                      autoFocus
-                    />
-                    <button
-                      onClick={saveCat}
-                      disabled={createCat.isPending || !catDraft.trim()}
-                      className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
-                      style={{ background: 'var(--color-accent)', color: '#fff' }}
-                    >
-                      <Check size={13} />
-                    </button>
-                    <button
-                      onClick={cancelCat}
-                      className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </section>
-          </>
+                )
+              })}
+            </div>
+          </section>
         )}
       </div>
     </div>

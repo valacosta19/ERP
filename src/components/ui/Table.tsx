@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 
 interface Column<T> {
   key: string
@@ -21,13 +21,11 @@ interface TableProps<T> {
 
 export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow, pageSize = 25 }: TableProps<T>) {
   const [page, setPage] = useState(1)
-
-  useEffect(() => { setPage(1) }, [data.length])
-
   const totalPages = Math.ceil(data.length / pageSize)
-  const visible = data.slice((page - 1) * pageSize, page * pageSize)
-  const rangeStart = data.length === 0 ? 0 : (page - 1) * pageSize + 1
-  const rangeEnd = Math.min(page * pageSize, data.length)
+  const safePage = Math.min(page, Math.max(1, totalPages))
+  const visible = data.slice((safePage - 1) * pageSize, safePage * pageSize)
+  const rangeStart = data.length === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const rangeEnd = Math.min(safePage * pageSize, data.length)
 
   return (
     <div>
@@ -81,17 +79,17 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
         <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--color-border)]">
           <span className="text-xs text-[var(--color-muted)]">{rangeStart}–{rangeEnd} de {data.length}</span>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-[var(--color-muted)]">Página {page} de {totalPages}</span>
+            <span className="text-xs text-[var(--color-muted)]">Página {safePage} de {totalPages}</span>
             <button
               onClick={() => setPage(p => p - 1)}
-              disabled={page === 1}
+              disabled={safePage === 1}
               className="text-xs px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               ← Anterior
             </button>
             <button
               onClick={() => setPage(p => p + 1)}
-              disabled={page === totalPages}
+              disabled={safePage === totalPages}
               className="text-xs px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Siguiente →

@@ -39,7 +39,7 @@ export function SaleForm({ open, onClose, products }: SaleFormProps) {
 
   const categoryOptions = [
     { value: '', label: 'Sin categoría' },
-    ...categories.filter(c => c.type === 'income').map(c => ({ value: c.id, label: c.name })),
+    ...categories.map(c => ({ value: c.id, label: c.name })),
   ]
 
   const productOptions = [

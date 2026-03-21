@@ -18,7 +18,6 @@ export const ENTITY_LABELS: Record<EntityType, string> = {
 export const ENTITY_FIELDS: Record<EntityType, FieldDef[]> = {
   categories: [
     { key: 'name', label: 'Nombre', required: true },
-    { key: 'type', label: 'Tipo (income / expense)', required: true },
   ],
   suppliers: [
     { key: 'name', label: 'Nombre', required: true },
@@ -30,6 +29,7 @@ export const ENTITY_FIELDS: Record<EntityType, FieldDef[]> = {
   products: [
     { key: 'sku', label: 'SKU', required: true },
     { key: 'name', label: 'Nombre', required: true },
+    { key: 'brand', label: 'Marca', required: false },
     { key: 'unit', label: 'Unidad', required: false },
     { key: 'sale_price', label: 'Precio de venta', required: true },
     { key: 'min_stock', label: 'Stock mínimo', required: false },
@@ -46,6 +46,7 @@ export const ENTITY_FIELDS: Record<EntityType, FieldDef[]> = {
     { key: 'instrument', label: 'Instrumento', required: false },
     { key: 'is_seña', label: 'Seña', required: false },
     { key: 'professional', label: 'Profesional', required: false },
+    { key: 'catalog_item', label: 'Servicio/Producto (catálogo)', required: false },
   ],
   lots: [
     { key: 'sku', label: 'SKU del producto', required: true },
@@ -118,6 +119,8 @@ export function autoSuggestMapping(headers: string[], entityType: EntityType): R
     instrument: ['instrumento', 'instrument'],
     is_seña: ['seña', 'sena', 'señas', 'deposito', 'seña cobrada'],
     professional: ['peluquera', 'hairdresser', 'empleada', 'stylist', 'professional'],
+    brand: ['marca', 'brand'],
+    catalog_item: ['servicio', 'producto', 'catalogo', 'catálogo', 'item', 'catalog_item'],
   }
 
   for (const field of fields) {

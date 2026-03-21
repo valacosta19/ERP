@@ -128,3 +128,38 @@ export function useDeleteTransaction() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['transactions'] }),
   })
 }
+
+export interface PaymentMethodBalance {
+  method: PaymentMethod
+  balance: number
+  totalIn: number
+  totalOut: number
+}
+
+export function usePaymentMethodBalances(filters: { from?: string; to?: string } = {}) {
+  return useQuery({
+    queryKey: ['payment-method-balances', filters],
+    queryFn: async () => {
+      let query = supabase
+        .from('transaction_payments')
+        .select('payment_method, amount, type, transactions!inner(date)')
+
+      if (filters.from) query = query.gte('transactions.date', filters.from)
+      if (filters.to) query = query.lte('transactions.date', filters.to)
+
+      const { data, error } = await query
+      if (error) throw new Error(error.message)
+
+      type Row = { payment_method: PaymentMethod; amount: number; type: PaymentDirection }
+      const rows = data as unknown as Row[]
+
+      const methodSet = [...new Set(rows.map(r => r.payment_method))].sort()
+      return methodSet.map(method => {
+        const subset = rows.filter(r => r.payment_method === method)
+        const totalIn = subset.filter(r => r.type === 'entrada').reduce((s, r) => s + r.amount, 0)
+        const totalOut = subset.filter(r => r.type === 'salida').reduce((s, r) => s + r.amount, 0)
+        return { method, balance: totalIn - totalOut, totalIn, totalOut }
+      })
+    },
+  })
+}

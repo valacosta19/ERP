@@ -4,7 +4,7 @@ export type UserRole = 'admin' | 'employee'
 export type TransactionType = 'income' | 'expense'
 export type MovementType = 'in' | 'out' | 'adjustment'
 export type POStatus = 'draft' | 'received' | 'cancelled'
-export type PaymentMethod = 'MP' | 'PPY' | 'Efectivo' | 'Santander'
+export type PaymentMethod = string
 export type PaymentInstrument = 'Transferencia' | 'Tarjeta'
 export type PaymentDirection = 'entrada' | 'salida'
 
@@ -19,7 +19,6 @@ export interface Profile {
 export interface Category {
   id: string
   name: string
-  type: TransactionType
   created_at: string
 }
 
@@ -73,6 +72,7 @@ export interface Product {
   unit: string | null
   sale_price: number
   min_stock: number
+  brand: string | null
   deleted_at: string | null
   created_at: string
   stock?: number
@@ -135,4 +135,19 @@ export interface SaleItem {
   unit_sale_price: number
   created_at: string
   product?: Product
+}
+
+export interface PaymentMethodConfig {
+  id: string
+  name: string
+  active: boolean
+  created_at: string
+}
+
+export interface CatalogItem {
+  id: string
+  name: string
+  category_id: string | null
+  price: number
+  created_at: string
 }

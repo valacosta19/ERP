@@ -41,21 +41,24 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
 
   const runImport = async () => {
     try {
-      const [catRes, supRes, prodRes, hdRes] = await Promise.all([
+      const [catRes, supRes, prodRes, hdRes, catalogRes] = await Promise.all([
         supabase.from('categories').select('id, name'),
         supabase.from('suppliers').select('id, name'),
         supabase.from('products').select('id, sku').is('deleted_at', null),
         supabase.from('hairdressers').select('id, name'),
+        supabase.from('catalog_items').select('id, name, category_id'),
       ])
       if (catRes.error) throw new Error(catRes.error.message)
       if (supRes.error) throw new Error(supRes.error.message)
       if (prodRes.error) throw new Error(prodRes.error.message)
       if (hdRes.error) throw new Error(hdRes.error.message)
+      if (catalogRes.error) throw new Error(catalogRes.error.message)
 
       const catMap = new Map(catRes.data.map(c => [c.name.toLowerCase(), c.id]))
       const supMap = new Map(supRes.data.map(s => [s.name.toLowerCase(), s.id]))
       const skuMap = new Map(prodRes.data.map(p => [p.sku, p.id]))
       const hdMap = new Map(hdRes.data.map(h => [h.name.toLowerCase(), h.id]))
+      const catalogItemMap = new Map(catalogRes.data.map(ci => [ci.name.toLowerCase(), { category_id: ci.category_id }]))
 
       const importResults: ImportResult[] = []
 
@@ -73,8 +76,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               const name = getVal(row, m, 'name')
               if (!name) { result.skipped++; continue }
               if (catMap.has(name.toLowerCase())) { result.skipped++; continue }
-              const type = parseType(getVal(row, m, 'type'))
-              const { data, error } = await supabase.from('categories').insert({ name, type }).select('id, name').single()
+              const { data, error } = await supabase.from('categories').insert({ name }).select('id, name').single()
               if (error) { result.errors.push(`${name}: ${error.message}`); continue }
               catMap.set(name.toLowerCase(), data.id)
               result.inserted++
@@ -108,7 +110,8 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               const sale_price = parseNum(getVal(row, m, 'sale_price'))
               const min_stock = parseNum(getVal(row, m, 'min_stock'))
               const unit = getVal(row, m, 'unit') || null
-              const { data, error } = await supabase.from('products').insert({ sku, name, unit, sale_price, min_stock }).select('id, sku').single()
+              const brand = getVal(row, m, 'brand') || null
+              const { data, error } = await supabase.from('products').insert({ sku, name, unit, sale_price, min_stock, brand }).select('id, sku').single()
               if (error) { result.errors.push(`${sku}: ${error.message}`); continue }
               skuMap.set(sku, data.id)
               result.inserted++
@@ -138,9 +141,12 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
 
               if (!date || amount === 0) { result.skipped++; continue }
 
+              const catalogItemName = getVal(row, m, 'catalog_item')
+              const catalogItemMatch = catalogItemName ? catalogItemMap.get(catalogItemName.toLowerCase()) : undefined
+
               const categoryName = getVal(row, m, 'category')
-              const category_id = categoryName ? (catMap.get(categoryName.toLowerCase()) ?? null) : null
-              const description = getVal(row, m, 'description') || null
+              const category_id = catalogItemMatch?.category_id ?? (categoryName ? (catMap.get(categoryName.toLowerCase()) ?? null) : null)
+              const description = getVal(row, m, 'description') || (catalogItemName || null)
 
               const señaRaw = getVal(row, m, 'is_seña').toLowerCase()
               const is_seña = señaRaw !== '' && señaRaw !== '0' && señaRaw !== 'false' && señaRaw !== 'no'

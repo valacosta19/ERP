@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Pencil, Trash2, X } from 'lucide-react'
+import { Plus, Trash2, X, Check } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
@@ -8,24 +8,13 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Table } from '@/components/ui/Table'
 import { Modal } from '@/components/ui/Modal'
-import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from '@/hooks/useTransactions'
+import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction, usePaymentMethodBalances } from '@/hooks/useTransactions'
+import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useCategories } from '@/hooks/useCategories'
 import { useProfessionals } from '@/hooks/useProfessionals'
-import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, PaymentDirection } from '@/types'
+import { useCatalogItems } from '@/hooks/useCatalogItems'
+import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, PaymentDirection, CatalogItem } from '@/types'
 import type { PaymentRow } from '@/hooks/useTransactions'
-
-const TYPE_OPTIONS = [
-  { value: 'all', label: 'Todos' },
-  { value: 'income', label: 'Ingreso' },
-  { value: 'expense', label: 'Gasto' },
-]
-
-const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
-  { value: 'Efectivo', label: 'Efectivo' },
-  { value: 'MP', label: 'MP' },
-  { value: 'PPY', label: 'PPY' },
-  { value: 'Santander', label: 'Santander' },
-]
 
 const INSTRUMENT_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Sin instrumento' },
@@ -38,11 +27,11 @@ const DIRECTION_OPTIONS: { value: PaymentDirection; label: string }[] = [
   { value: 'salida', label: 'Salida' },
 ]
 
-function makeEmptyPayment(): PaymentRow {
-  return { payment_method: 'Efectivo', instrument: null, amount: 0, type: 'entrada' }
+function makeEmptyPayment(defaultMethod = 'Efectivo'): PaymentRow {
+  return { payment_method: defaultMethod, instrument: null, amount: 0, type: 'entrada' }
 }
 
-const EMPTY_FORM = {
+const EMPTY_DRAFT = {
   date: new Date().toISOString().slice(0, 10),
   type: 'income' as TransactionType,
   category_id: '',
@@ -53,14 +42,84 @@ const EMPTY_FORM = {
   professional_ids: [] as string[],
 }
 
+function calcTotal(payments: PaymentRow[]) {
+  return payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+}
+
 function formatAmount(type: TransactionType, amount: number) {
   const sign = type === 'income' ? '+' : '-'
   return `${sign}$${amount.toLocaleString('es-CO')}`
 }
 
+function DescriptionCombobox({
+  value,
+  onChange,
+  onSelect,
+  catalogItems,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onSelect: (item: CatalogItem) => void
+  catalogItems: CatalogItem[]
+}) {
+  const [open, setOpen] = useState(false)
+  const filtered = catalogItems.filter(item =>
+    value.length > 0 && item.name.toLowerCase().includes(value.toLowerCase())
+  )
 
-function calcTotal(payments: PaymentRow[]) {
-  return payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
+  return (
+    <div className="relative flex-1" style={{ minWidth: '160px' }}>
+      <input
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => { if (value.length > 0) setOpen(true) }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Descripción"
+        style={{
+          width: '100%',
+          background: 'transparent',
+          border: 'none',
+          borderBottom: '1.5px solid var(--color-border)',
+          padding: '3px 2px',
+          fontSize: '0.875rem',
+          color: 'var(--color-text)',
+          outline: 'none',
+          fontFamily: 'inherit',
+        }}
+      />
+      {open && filtered.length > 0 && (
+        <div
+          className="absolute left-0 top-full mt-1 rounded-lg border border-[var(--color-border)] shadow-lg overflow-hidden"
+          style={{ background: 'var(--color-surface)', zIndex: 50, minWidth: '200px' }}
+        >
+          {filtered.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onMouseDown={() => { onSelect(item); setOpen(false) }}
+              className="w-full flex items-center justify-between px-3 py-2 text-sm text-left hover:bg-[var(--color-bg)] transition-colors"
+            >
+              <span style={{ color: 'var(--color-text)' }}>{item.name}</span>
+              <span className="tabular-nums text-xs ml-4" style={{ color: 'var(--color-muted)' }}>
+                ${item.price.toLocaleString('es-CO')}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const INLINE_SELECT_STYLE: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  borderBottom: '1.5px solid var(--color-border)',
+  padding: '3px 2px',
+  fontSize: '0.875rem',
+  color: 'var(--color-text)',
+  outline: 'none',
+  fontFamily: 'inherit',
 }
 
 export function TransactionsPage() {
@@ -69,9 +128,10 @@ export function TransactionsPage() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
 
+  const [draft, setDraft] = useState<typeof EMPTY_DRAFT | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Transaction | null>(null)
-  const [form, setForm] = useState(EMPTY_FORM)
+  const [editForm, setEditForm] = useState(EMPTY_DRAFT)
   const [formError, setFormError] = useState('')
 
   const { data: transactions = [], isLoading } = useTransactions({
@@ -82,24 +142,44 @@ export function TransactionsPage() {
   })
   const { data: categories = [] } = useCategories()
   const { data: professionals = [] } = useProfessionals()
+  const { data: catalogItems = [] } = useCatalogItems(draft?.category_id || undefined)
   const createTx = useCreateTransaction()
   const updateTx = useUpdateTransaction()
   const deleteTx = useDeleteTransaction()
+  const { data: paymentBalances = [] } = usePaymentMethodBalances({ from: from || undefined, to: to || undefined })
+  const { data: paymentMethodsData = [] } = usePaymentMethods()
+  const paymentMethodOptions = paymentMethodsData
+    .filter(pm => pm.active)
+    .map(pm => ({ value: pm.name, label: pm.name }))
 
-  const filteredCategories = categories.filter(c =>
-    typeFilter === 'all' ? true : c.type === typeFilter
-  )
+  const activeProfessionals = professionals.filter(h => h.active)
 
-  function openCreate() {
-    setEditing(null)
-    setForm(EMPTY_FORM)
+  const allCategoryOptions = [
+    { value: '', label: 'Todas las categorías' },
+    ...categories.map(c => ({ value: c.id, label: c.name })),
+  ]
+
+  const categoryOptions = [
+    { value: '', label: 'Sin categoría' },
+    ...categories.map(c => ({ value: c.id, label: c.name })),
+  ]
+
+  const isDraftServiceCategory = categories.find(c => c.id === draft?.category_id)?.name.toLowerCase() === 'servicio'
+  const isEditServiceCategory = categories.find(c => c.id === editForm.category_id)?.name.toLowerCase() === 'servicio'
+
+  function startNew() {
     setFormError('')
-    setModalOpen(true)
+    setDraft({ ...EMPTY_DRAFT, date: new Date().toISOString().slice(0, 10) })
+  }
+
+  function cancelNew() {
+    setDraft(null)
+    setFormError('')
   }
 
   function openEdit(tx: Transaction) {
     setEditing(tx)
-    setForm({
+    setEditForm({
       date: tx.date,
       type: tx.type,
       category_id: tx.category_id ?? '',
@@ -115,64 +195,55 @@ export function TransactionsPage() {
     setModalOpen(true)
   }
 
-  function addPaymentRow() {
-    setForm(f => ({ ...f, payments: [...f.payments, makeEmptyPayment()] }))
+  function handleCatalogSelect(item: CatalogItem) {
+    setDraft(d => d && {
+      ...d,
+      description: item.name,
+      payments: [{ ...d.payments[0], amount: item.price }],
+    })
   }
 
-  function removePaymentRow(index: number) {
-    setForm(f => ({ ...f, payments: f.payments.filter((_, i) => i !== index) }))
-  }
-
-  function updatePaymentRow(index: number, patch: Partial<PaymentRow>) {
-    setForm(f => ({
-      ...f,
-      payments: f.payments.map((p, i) => i === index ? { ...p, ...patch } : p),
-    }))
-  }
-
-  function toggleProfessional(id: string) {
-    setForm(f => ({
-      ...f,
-      professional_ids: f.professional_ids.includes(id)
-        ? f.professional_ids.filter(hid => hid !== id)
-        : [...f.professional_ids, id],
-    }))
-  }
-
-  async function handleSubmit() {
-    const total = calcTotal(form.payments)
-    if (!form.date || !form.type || total <= 0) {
-      setFormError('Fecha, tipo y al menos un pago con monto son obligatorios.')
+  async function handleCreate() {
+    if (!draft) return
+    const total = calcTotal(draft.payments)
+    if (!draft.date || total <= 0) {
+      setFormError('Fecha y al menos un pago con monto son obligatorios.')
       return
     }
+    await createTx.mutateAsync({
+      date: draft.date,
+      type: draft.type,
+      category_id: draft.category_id || null,
+      description: draft.description || null,
+      is_seña: draft.is_seña,
+      seña_amount: draft.is_seña ? total : (draft.seña_amount ? parseFloat(draft.seña_amount) : null),
+      payments: draft.payments.map(p => ({
+        ...p,
+        instrument: p.instrument || null,
+        amount: Number(p.amount),
+      })),
+      professional_ids: draft.professional_ids,
+    })
+    setDraft(null)
+    setFormError('')
+  }
 
-    if (editing) {
-      await updateTx.mutateAsync({
-        id: editing.id,
-        date: form.date,
-        type: form.type,
-        amount: total,
-        category_id: form.category_id || null,
-        description: form.description || null,
-        is_seña: form.is_seña,
-        seña_amount: form.is_seña ? total : (form.seña_amount ? parseFloat(form.seña_amount) : null),
-      })
-    } else {
-      await createTx.mutateAsync({
-        date: form.date,
-        type: form.type,
-        category_id: form.category_id || null,
-        description: form.description || null,
-        is_seña: form.is_seña,
-        seña_amount: form.is_seña ? total : (form.seña_amount ? parseFloat(form.seña_amount) : null),
-        payments: form.payments.map(p => ({
-          ...p,
-          instrument: p.instrument || null,
-          amount: Number(p.amount),
-        })),
-        professional_ids: form.professional_ids,
-      })
+  async function handleUpdate() {
+    const total = calcTotal(editForm.payments)
+    if (!editForm.date || total <= 0) {
+      setFormError('Fecha y al menos un pago con monto son obligatorios.')
+      return
     }
+    await updateTx.mutateAsync({
+      id: editing!.id,
+      date: editForm.date,
+      type: editForm.type,
+      amount: total,
+      category_id: editForm.category_id || null,
+      description: editForm.description || null,
+      is_seña: editForm.is_seña,
+      seña_amount: editForm.is_seña ? total : (editForm.seña_amount ? parseFloat(editForm.seña_amount) : null),
+    })
     setModalOpen(false)
   }
 
@@ -181,17 +252,190 @@ export function TransactionsPage() {
     await deleteTx.mutateAsync(id)
   }
 
-  const categoryOptions = [
-    { value: '', label: 'Sin categoría' },
-    ...filteredCategories.map(c => ({ value: c.id, label: c.name })),
-  ]
+  const newRow = draft ? (
+    <tr
+      className="animate-slide-in"
+      style={{
+        background: 'var(--color-accent-light)',
+        borderBottom: '2px solid var(--color-accent)',
+      }}
+    >
+      <td
+        colSpan={8}
+        style={{ borderLeft: '3px solid var(--color-accent)', padding: '12px 16px' }}
+      >
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span
+              className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
+              style={{
+                color: 'var(--color-accent)',
+                background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+              }}
+            >
+              Nueva
+            </span>
+            <input
+              type="date"
+              value={draft.date}
+              onChange={e => setDraft(d => d && { ...d, date: e.target.value })}
+              style={{ ...INLINE_SELECT_STYLE, width: '130px' }}
+            />
+            <select
+              value={draft.type}
+              onChange={e => setDraft(d => d && { ...d, type: e.target.value as TransactionType, category_id: '' })}
+              style={INLINE_SELECT_STYLE}
+            >
+              <option value="income">Ingreso</option>
+              <option value="expense">Gasto</option>
+            </select>
+            <select
+              value={draft.category_id}
+              onChange={e => setDraft(d => d && { ...d, category_id: e.target.value })}
+              style={INLINE_SELECT_STYLE}
+            >
+              <option value="">Sin categoría</option>
+              {categories.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <DescriptionCombobox
+              value={draft.description}
+              onChange={v => setDraft(d => d && { ...d, description: v })}
+              onSelect={handleCatalogSelect}
+              catalogItems={catalogItems}
+            />
+          </div>
 
-  const allCategoryOptions = [
-    { value: '', label: 'Todas las categorías' },
-    ...categories.map(c => ({ value: c.id, label: c.name })),
-  ]
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-[var(--color-muted)]">Métodos de pago</span>
+              <button
+                type="button"
+                onClick={() => setDraft(d => d && { ...d, payments: [...d.payments, makeEmptyPayment()] })}
+                className="text-xs text-[var(--color-accent)] hover:underline"
+              >
+                + Agregar fila
+              </button>
+            </div>
+            {draft.payments.map((p, i) => (
+              <div key={i} className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={p.payment_method}
+                  onChange={e => setDraft(d => d && { ...d, payments: d.payments.map((pp, ii) => ii === i ? { ...pp, payment_method: e.target.value as PaymentMethod } : pp) })}
+                  style={INLINE_SELECT_STYLE}
+                >
+                  {paymentMethodOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <select
+                  value={p.instrument ?? ''}
+                  onChange={e => setDraft(d => d && { ...d, payments: d.payments.map((pp, ii) => ii === i ? { ...pp, instrument: (e.target.value as PaymentInstrument) || null } : pp) })}
+                  style={INLINE_SELECT_STYLE}
+                >
+                  {INSTRUMENT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={p.amount === 0 ? '' : String(p.amount)}
+                  onChange={e => setDraft(d => d && { ...d, payments: d.payments.map((pp, ii) => ii === i ? { ...pp, amount: parseFloat(e.target.value) || 0 } : pp) })}
+                  placeholder="$0"
+                  style={{ ...INLINE_SELECT_STYLE, width: '80px', textAlign: 'right' }}
+                />
+                <select
+                  value={p.type}
+                  onChange={e => setDraft(d => d && { ...d, payments: d.payments.map((pp, ii) => ii === i ? { ...pp, type: e.target.value as PaymentDirection } : pp) })}
+                  style={INLINE_SELECT_STYLE}
+                >
+                  {DIRECTION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                {draft.payments.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setDraft(d => d && { ...d, payments: d.payments.filter((_, ii) => ii !== i) })}
+                    className="text-[var(--color-muted)] hover:text-[var(--color-danger)] transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
 
-  const activeProfessionals = professionals.filter(h => h.active)
+          {isDraftServiceCategory && activeProfessionals.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-medium text-[var(--color-muted)]">Profesionales</span>
+              {activeProfessionals.map(hd => (
+                <button
+                  key={hd.id}
+                  type="button"
+                  onClick={() => setDraft(d => d && {
+                    ...d,
+                    professional_ids: d.professional_ids.includes(hd.id)
+                      ? d.professional_ids.filter(id => id !== hd.id)
+                      : [...d.professional_ids, hd.id],
+                  })}
+                  className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
+                    draft.professional_ids.includes(hd.id)
+                      ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]'
+                      : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-accent)]'
+                  }`}
+                >
+                  {hd.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-[var(--color-text)]">
+              <input
+                type="checkbox"
+                checked={draft.is_seña}
+                onChange={e => setDraft(d => d && { ...d, is_seña: e.target.checked, seña_amount: '' })}
+                className="w-4 h-4 rounded border-[var(--color-border)] accent-[var(--color-accent)]"
+              />
+              Es una seña
+            </label>
+            {!draft.is_seña && (
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={draft.seña_amount}
+                onChange={e => setDraft(d => d && { ...d, seña_amount: e.target.value })}
+                placeholder="Seña cobrada previamente"
+                style={{ ...INLINE_SELECT_STYLE, width: '190px' }}
+              />
+            )}
+            <span className="text-sm font-semibold text-[var(--color-text)] ml-auto tabular-nums">
+              Total: ${calcTotal(draft.payments).toLocaleString('es-CO')}
+            </span>
+            {formError && (
+              <span className="text-xs text-[var(--color-danger)]">{formError}</span>
+            )}
+            <button
+              onClick={handleCreate}
+              disabled={createTx.isPending}
+              title="Guardar"
+              className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+              style={{ background: 'var(--color-accent)', color: '#fff' }}
+            >
+              <Check size={13} />
+            </button>
+            <button
+              onClick={cancelNew}
+              title="Cancelar"
+              className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  ) : undefined
 
   const columns = [
     {
@@ -238,20 +482,34 @@ export function TransactionsPage() {
       ),
     },
     {
-      key: 'type',
-      header: 'Tipo',
+      key: 'seña_amount',
+      header: 'Seña',
+      className: 'text-right',
       render: (tx: Transaction) => (
-        <Badge variant={tx.type === 'income' ? 'success' : 'danger'}>
-          {tx.type === 'income' ? 'Ingreso' : 'Gasto'}
-        </Badge>
+        tx.seña_amount != null && tx.seña_amount > 0
+          ? <span className="tabular-nums text-xs" style={{ color: 'var(--color-muted)' }}>${tx.seña_amount.toLocaleString('es-CO')}</span>
+          : <span style={{ color: 'var(--color-muted)' }}>—</span>
       ),
     },
     {
+      key: 'total_cobrado',
+      header: 'Total cobrado',
+      className: 'text-right',
+      render: (tx: Transaction) => {
+        const total = tx.amount + (tx.seña_amount ?? 0)
+        return (
+          <span className={`font-semibold tabular-nums ${tx.type === 'income' ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+            {formatAmount(tx.type, total)}
+          </span>
+        )
+      },
+    },
+    {
       key: 'amount',
-      header: 'Monto',
+      header: 'Pagado ahora',
       className: 'text-right',
       render: (tx: Transaction) => (
-        <span className={`font-semibold tabular-nums ${tx.type === 'income' ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+        <span className="tabular-nums text-xs" style={{ color: 'var(--color-muted)' }}>
           {formatAmount(tx.type, tx.amount)}
         </span>
       ),
@@ -266,7 +524,7 @@ export function TransactionsPage() {
             onClick={() => openEdit(tx)}
             className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
           >
-            <Pencil size={14} />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
           <button
             onClick={() => handleDelete(tx.id)}
@@ -285,7 +543,7 @@ export function TransactionsPage() {
         title="Transacciones"
         subtitle={`${transactions.length} registros`}
         actions={
-          <Button onClick={openCreate} size="sm">
+          <Button onClick={startNew} size="sm" disabled={!!draft}>
             <Plus size={14} />
             Nueva transacción
           </Button>
@@ -295,7 +553,11 @@ export function TransactionsPage() {
       <div className="p-6 space-y-4">
         <div className="flex flex-wrap gap-3">
           <Select
-            options={TYPE_OPTIONS}
+            options={[
+              { value: 'all', label: 'Todos' },
+              { value: 'income', label: 'Ingreso' },
+              { value: 'expense', label: 'Gasto' },
+            ]}
             value={typeFilter}
             onChange={e => { setTypeFilter(e.target.value as typeof typeFilter); setCategoryFilter('') }}
             className="w-36"
@@ -331,6 +593,27 @@ export function TransactionsPage() {
           )}
         </div>
 
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {paymentBalances.map(b => (
+            <div
+              key={b.method}
+              className="rounded-xl border border-[var(--color-border)] p-4"
+              style={{ background: 'var(--color-surface)' }}
+            >
+              <div className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: 'var(--color-muted)' }}>
+                {b.method}
+              </div>
+              <div className={`text-lg font-bold tabular-nums ${b.balance >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                ${b.balance.toLocaleString('es-CO')}
+              </div>
+              <div className="flex gap-3 mt-1 text-xs" style={{ color: 'var(--color-muted)' }}>
+                <span>+${b.totalIn.toLocaleString('es-CO')}</span>
+                <span>-${b.totalOut.toLocaleString('es-CO')}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
         <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
           <Table
             columns={columns}
@@ -338,6 +621,7 @@ export function TransactionsPage() {
             keyField="id"
             loading={isLoading}
             emptyMessage="No hay transacciones para los filtros seleccionados"
+            prependRow={newRow}
           />
         </div>
       </div>
@@ -345,15 +629,15 @@ export function TransactionsPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? 'Editar transacción' : 'Nueva transacción'}
+        title="Editar transacción"
       >
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Input
               label="Fecha"
               type="date"
-              value={form.date}
-              onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+              value={editForm.date}
+              onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
             />
             <Select
               label="Tipo"
@@ -361,23 +645,23 @@ export function TransactionsPage() {
                 { value: 'income', label: 'Ingreso' },
                 { value: 'expense', label: 'Gasto' },
               ]}
-              value={form.type}
-              onChange={e => setForm(f => ({ ...f, type: e.target.value as TransactionType, category_id: '' }))}
+              value={editForm.type}
+              onChange={e => setEditForm(f => ({ ...f, type: e.target.value as TransactionType, category_id: '' }))}
             />
           </div>
 
           <Select
             label="Categoría"
             options={categoryOptions}
-            value={form.category_id}
-            onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}
+            value={editForm.category_id}
+            onChange={e => setEditForm(f => ({ ...f, category_id: e.target.value }))}
             placeholder="Sin categoría"
           />
 
           <Input
             label="Descripción"
-            value={form.description}
-            onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+            value={editForm.description}
+            onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
             placeholder="Opcional"
           />
 
@@ -386,27 +670,27 @@ export function TransactionsPage() {
               <span className="text-sm font-medium text-[var(--color-text)]">Métodos de pago</span>
               <button
                 type="button"
-                onClick={addPaymentRow}
+                onClick={() => setEditForm(f => ({ ...f, payments: [...f.payments, makeEmptyPayment()] }))}
                 className="text-xs text-[var(--color-accent)] hover:underline"
               >
                 + Agregar fila
               </button>
             </div>
             <div className="space-y-2">
-              {form.payments.map((p, i) => (
+              {editForm.payments.map((p, i) => (
                 <div key={i} className="flex items-end gap-2">
                   <div className="flex-1">
                     <Select
-                      options={PAYMENT_METHOD_OPTIONS}
+                      options={paymentMethodOptions}
                       value={p.payment_method}
-                      onChange={e => updatePaymentRow(i, { payment_method: e.target.value as PaymentMethod })}
+                      onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, payment_method: e.target.value as PaymentMethod } : pp) }))}
                     />
                   </div>
                   <div className="flex-1">
                     <Select
                       options={INSTRUMENT_OPTIONS}
                       value={p.instrument ?? ''}
-                      onChange={e => updatePaymentRow(i, { instrument: (e.target.value as PaymentInstrument) || null })}
+                      onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, instrument: (e.target.value as PaymentInstrument) || null } : pp) }))}
                     />
                   </div>
                   <div className="w-28">
@@ -415,7 +699,7 @@ export function TransactionsPage() {
                       min="0"
                       step="0.01"
                       value={p.amount === 0 ? '' : String(p.amount)}
-                      onChange={e => updatePaymentRow(i, { amount: parseFloat(e.target.value) || 0 })}
+                      onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, amount: parseFloat(e.target.value) || 0 } : pp) }))}
                       placeholder="Monto"
                       prefix="$"
                     />
@@ -424,13 +708,13 @@ export function TransactionsPage() {
                     <Select
                       options={DIRECTION_OPTIONS}
                       value={p.type}
-                      onChange={e => updatePaymentRow(i, { type: e.target.value as PaymentDirection })}
+                      onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, type: e.target.value as PaymentDirection } : pp) }))}
                     />
                   </div>
-                  {form.payments.length > 1 && (
+                  {editForm.payments.length > 1 && (
                     <button
                       type="button"
-                      onClick={() => removePaymentRow(i)}
+                      onClick={() => setEditForm(f => ({ ...f, payments: f.payments.filter((_, ii) => ii !== i) }))}
                       className="p-1.5 mb-0.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
                     >
                       <X size={14} />
@@ -440,11 +724,11 @@ export function TransactionsPage() {
               ))}
             </div>
             <div className="mt-2 text-right text-sm font-semibold text-[var(--color-text)]">
-              Total: ${calcTotal(form.payments).toLocaleString('es-CO')}
+              Total: ${calcTotal(editForm.payments).toLocaleString('es-CO')}
             </div>
           </div>
 
-          {activeProfessionals.length > 0 && (
+          {isEditServiceCategory && activeProfessionals.length > 0 && (
             <div>
               <span className="text-sm font-medium text-[var(--color-text)] block mb-2">Profesionales</span>
               <div className="flex flex-wrap gap-2">
@@ -452,9 +736,14 @@ export function TransactionsPage() {
                   <button
                     key={hd.id}
                     type="button"
-                    onClick={() => toggleProfessional(hd.id)}
+                    onClick={() => setEditForm(f => ({
+                      ...f,
+                      professional_ids: f.professional_ids.includes(hd.id)
+                        ? f.professional_ids.filter(id => id !== hd.id)
+                        : [...f.professional_ids, hd.id],
+                    }))}
                     className={`px-3 py-1 rounded-lg text-sm border transition-colors ${
-                      form.professional_ids.includes(hd.id)
+                      editForm.professional_ids.includes(hd.id)
                         ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]'
                         : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-accent)]'
                     }`}
@@ -470,19 +759,19 @@ export function TransactionsPage() {
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={form.is_seña}
-                onChange={e => setForm(f => ({ ...f, is_seña: e.target.checked, seña_amount: '' }))}
+                checked={editForm.is_seña}
+                onChange={e => setEditForm(f => ({ ...f, is_seña: e.target.checked, seña_amount: '' }))}
                 className="w-4 h-4 rounded border-[var(--color-border)] accent-[var(--color-accent)]"
               />
               <span className="text-sm text-[var(--color-text)]">Es una seña</span>
             </label>
-            {!form.is_seña && (
+            {!editForm.is_seña && (
               <Input
                 type="number"
                 min="0"
                 step="0.01"
-                value={form.seña_amount}
-                onChange={e => setForm(f => ({ ...f, seña_amount: e.target.value }))}
+                value={editForm.seña_amount}
+                onChange={e => setEditForm(f => ({ ...f, seña_amount: e.target.value }))}
                 placeholder="Seña cobrada previamente"
                 prefix="$"
                 className="w-40"
@@ -495,11 +784,8 @@ export function TransactionsPage() {
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
               Cancelar
             </Button>
-            <Button
-              onClick={handleSubmit}
-              loading={createTx.isPending || updateTx.isPending}
-            >
-              {editing ? 'Guardar cambios' : 'Crear transacción'}
+            <Button onClick={handleUpdate} loading={updateTx.isPending}>
+              Guardar cambios
             </Button>
           </div>
         </div>
