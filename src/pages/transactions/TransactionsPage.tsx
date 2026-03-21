@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Plus, Pencil, Trash2, X } from 'lucide-react'
+import { formatDate } from '@/lib/formatDate'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -57,13 +58,6 @@ function formatAmount(type: TransactionType, amount: number) {
   return `${sign}$${amount.toLocaleString('es-CO')}`
 }
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('es-CO', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
-}
 
 function calcTotal(payments: PaymentRow[]) {
   return payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)

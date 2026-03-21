@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Plus, Trash2, PackageCheck, Ban, ChevronDown, ChevronRight } from 'lucide-react'
+import { formatDate } from '@/lib/formatDate'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -23,13 +24,6 @@ const STATUS_VARIANTS: Record<string, 'warning' | 'success' | 'danger' | 'defaul
   cancelled: 'danger',
 }
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('es-CO', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
-}
 
 function formatCurrency(amount: number) {
   return `$${amount.toLocaleString('es-CO')}`

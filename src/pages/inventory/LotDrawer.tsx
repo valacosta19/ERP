@@ -1,6 +1,7 @@
 import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { useInventoryLots } from '@/hooks/useInventoryLots'
+import { formatDate } from '@/lib/formatDate'
 import type { Product } from '@/types'
 
 interface LotDrawerProps {
@@ -8,13 +9,6 @@ interface LotDrawerProps {
   onClose: () => void
 }
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('es-CO', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
-}
 
 export function LotDrawer({ product, onClose }: LotDrawerProps) {
   const { data: lots = [], isLoading } = useInventoryLots(product?.id ?? null)
