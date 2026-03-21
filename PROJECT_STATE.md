@@ -10,7 +10,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
-**Phase 8** — Transactions v2: payment methods, hairdressers, señas, commission reports.
+**Phase 9** — Inline editing: Excel-style cell-by-cell editing across all main views.
 
 ---
 
@@ -24,6 +24,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 5 | ReportsPage: gross profit per product + inventory valuation; `useReports` hook |
 | 6 | Import wizard (5 steps): upload → sheets → mapping → preview → batch import for all entity types |
 | 7 | ✅ Atomic sale + receive-PO RPCs, responsive AppShell sidebar, ErrorBoundary on all routes |
+| 8 | ✅ Payment methods, hairdressers, señas, commission reports (Transactions v2) |
 
 ---
 
@@ -59,7 +60,9 @@ Postgres (Supabase)
 | Module | Hook(s) | Page |
 |--------|---------|------|
 | Auth | `useAuth` | `LoginPage` |
-| Transactions | `useTransactions`, `useCategories` | `TransactionsPage` |
+| Transactions | `useTransactions`, `useCategories`, `useTransactionPayments` | `TransactionsPage` |
+| Hairdressers | `useHairdressers` | `SettingsPage` (Peluqueras section) |
+| Commissions | `useCommissionsReport` | `ReportsPage` (Comisiones tab) |
 | Dashboard | — | `DashboardPage` (KPIs + charts) |
 | Suppliers | `useSuppliers` | `SuppliersPage` |
 | Purchase Orders | `usePurchaseOrders` | `PurchaseOrdersPage` |

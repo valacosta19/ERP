@@ -53,6 +53,8 @@ export interface Database {
           description: string | null
           created_by: string | null
           created_at: string
+          is_seña: boolean
+          seña_amount: number | null
         }
         Insert: {
           id?: string
@@ -63,6 +65,8 @@ export interface Database {
           description?: string | null
           created_by?: string | null
           created_at?: string
+          is_seña?: boolean
+          seña_amount?: number | null
         }
         Update: {
           id?: string
@@ -71,7 +75,63 @@ export interface Database {
           amount?: number
           category_id?: string | null
           description?: string | null
+          is_seña?: boolean
+          seña_amount?: number | null
         }
+        Relationships: []
+      }
+      hairdressers: {
+        Row: {
+          id: string
+          name: string
+          active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          active?: boolean
+        }
+        Relationships: []
+      }
+      transaction_payments: {
+        Row: {
+          id: string
+          transaction_id: string
+          payment_method: string
+          instrument: string | null
+          amount: number
+          type: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          transaction_id: string
+          payment_method: string
+          instrument?: string | null
+          amount: number
+          type: string
+          created_at?: string
+        }
+        Update: never
+        Relationships: []
+      }
+      transaction_hairdressers: {
+        Row: {
+          transaction_id: string
+          hairdresser_id: string
+        }
+        Insert: {
+          transaction_id: string
+          hairdresser_id: string
+        }
+        Update: never
         Relationships: []
       }
       suppliers: {

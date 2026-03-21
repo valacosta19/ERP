@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -9,7 +9,9 @@ import { Table } from '@/components/ui/Table'
 import { Modal } from '@/components/ui/Modal'
 import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction } from '@/hooks/useTransactions'
 import { useCategories } from '@/hooks/useCategories'
-import type { Transaction, TransactionType } from '@/types'
+import { useHairdressers } from '@/hooks/useHairdressers'
+import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, PaymentDirection } from '@/types'
+import type { PaymentRow } from '@/hooks/useTransactions'
 
 const TYPE_OPTIONS = [
   { value: 'all', label: 'Todos' },
@@ -17,12 +19,37 @@ const TYPE_OPTIONS = [
   { value: 'expense', label: 'Gasto' },
 ]
 
+const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
+  { value: 'Efectivo', label: 'Efectivo' },
+  { value: 'MP', label: 'MP' },
+  { value: 'PPY', label: 'PPY' },
+  { value: 'Santander', label: 'Santander' },
+]
+
+const INSTRUMENT_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Sin instrumento' },
+  { value: 'Transferencia', label: 'Transferencia' },
+  { value: 'Tarjeta', label: 'Tarjeta' },
+]
+
+const DIRECTION_OPTIONS: { value: PaymentDirection; label: string }[] = [
+  { value: 'entrada', label: 'Entrada' },
+  { value: 'salida', label: 'Salida' },
+]
+
+function makeEmptyPayment(): PaymentRow {
+  return { payment_method: 'Efectivo', instrument: null, amount: 0, type: 'entrada' }
+}
+
 const EMPTY_FORM = {
   date: new Date().toISOString().slice(0, 10),
   type: 'income' as TransactionType,
-  amount: '',
   category_id: '',
   description: '',
+  is_seña: false,
+  seña_amount: '',
+  payments: [makeEmptyPayment()] as PaymentRow[],
+  hairdresser_ids: [] as string[],
 }
 
 function formatAmount(type: TransactionType, amount: number) {
@@ -36,6 +63,10 @@ function formatDate(dateStr: string) {
     month: 'short',
     year: 'numeric',
   })
+}
+
+function calcTotal(payments: PaymentRow[]) {
+  return payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
 }
 
 export function TransactionsPage() {
@@ -56,6 +87,7 @@ export function TransactionsPage() {
     to: to || undefined,
   })
   const { data: categories = [] } = useCategories()
+  const { data: hairdressers = [] } = useHairdressers()
   const createTx = useCreateTransaction()
   const updateTx = useUpdateTransaction()
   const deleteTx = useDeleteTransaction()
@@ -76,33 +108,76 @@ export function TransactionsPage() {
     setForm({
       date: tx.date,
       type: tx.type,
-      amount: String(tx.amount),
       category_id: tx.category_id ?? '',
       description: tx.description ?? '',
+      is_seña: tx.is_seña,
+      seña_amount: tx.seña_amount != null ? String(tx.seña_amount) : '',
+      payments: tx.payments && tx.payments.length > 0
+        ? tx.payments.map(p => ({ payment_method: p.payment_method, instrument: p.instrument, amount: p.amount, type: p.type }))
+        : [makeEmptyPayment()],
+      hairdresser_ids: tx.hairdressers?.map(h => h.id) ?? [],
     })
     setFormError('')
     setModalOpen(true)
   }
 
+  function addPaymentRow() {
+    setForm(f => ({ ...f, payments: [...f.payments, makeEmptyPayment()] }))
+  }
+
+  function removePaymentRow(index: number) {
+    setForm(f => ({ ...f, payments: f.payments.filter((_, i) => i !== index) }))
+  }
+
+  function updatePaymentRow(index: number, patch: Partial<PaymentRow>) {
+    setForm(f => ({
+      ...f,
+      payments: f.payments.map((p, i) => i === index ? { ...p, ...patch } : p),
+    }))
+  }
+
+  function toggleHairdresser(id: string) {
+    setForm(f => ({
+      ...f,
+      hairdresser_ids: f.hairdresser_ids.includes(id)
+        ? f.hairdresser_ids.filter(hid => hid !== id)
+        : [...f.hairdresser_ids, id],
+    }))
+  }
+
   async function handleSubmit() {
-    const amount = parseFloat(form.amount)
-    if (!form.date || !form.type || isNaN(amount) || amount <= 0) {
-      setFormError('Fecha, tipo y monto son obligatorios.')
+    const total = calcTotal(form.payments)
+    if (!form.date || !form.type || total <= 0) {
+      setFormError('Fecha, tipo y al menos un pago con monto son obligatorios.')
       return
     }
 
-    const payload = {
-      date: form.date,
-      type: form.type,
-      amount,
-      category_id: form.category_id || null,
-      description: form.description || null,
-    }
-
     if (editing) {
-      await updateTx.mutateAsync({ id: editing.id, ...payload })
+      await updateTx.mutateAsync({
+        id: editing.id,
+        date: form.date,
+        type: form.type,
+        amount: total,
+        category_id: form.category_id || null,
+        description: form.description || null,
+        is_seña: form.is_seña,
+        seña_amount: form.is_seña ? total : (form.seña_amount ? parseFloat(form.seña_amount) : null),
+      })
     } else {
-      await createTx.mutateAsync(payload)
+      await createTx.mutateAsync({
+        date: form.date,
+        type: form.type,
+        category_id: form.category_id || null,
+        description: form.description || null,
+        is_seña: form.is_seña,
+        seña_amount: form.is_seña ? total : (form.seña_amount ? parseFloat(form.seña_amount) : null),
+        payments: form.payments.map(p => ({
+          ...p,
+          instrument: p.instrument || null,
+          amount: Number(p.amount),
+        })),
+        hairdresser_ids: form.hairdresser_ids,
+      })
     }
     setModalOpen(false)
   }
@@ -122,6 +197,8 @@ export function TransactionsPage() {
     ...categories.map(c => ({ value: c.id, label: c.name })),
   ]
 
+  const activeHairdressers = hairdressers.filter(h => h.active)
+
   const columns = [
     {
       key: 'date',
@@ -134,7 +211,14 @@ export function TransactionsPage() {
       key: 'description',
       header: 'Descripción',
       render: (tx: Transaction) => (
-        <span className="text-[var(--color-text)]">{tx.description || '—'}</span>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[var(--color-text)]">{tx.description || '—'}</span>
+          {tx.hairdressers && tx.hairdressers.length > 0 && (
+            <span className="text-xs text-[var(--color-muted)]">
+              {tx.hairdressers.map(h => h.name).join(', ')}
+            </span>
+          )}
+        </div>
       ),
     },
     {
@@ -142,6 +226,21 @@ export function TransactionsPage() {
       header: 'Categoría',
       render: (tx: Transaction) => (
         <span className="text-[var(--color-muted)] text-xs">{tx.category?.name || '—'}</span>
+      ),
+    },
+    {
+      key: 'payments',
+      header: 'Métodos',
+      render: (tx: Transaction) => (
+        <div className="flex flex-wrap gap-1">
+          {tx.is_seña && <Badge variant="warning">Seña</Badge>}
+          {tx.payments && tx.payments.length > 0
+            ? tx.payments.map((p, i) => (
+                <Badge key={i} variant="default">{p.payment_method}</Badge>
+              ))
+            : <span className="text-[var(--color-muted)] text-xs">—</span>
+          }
+        </div>
       ),
     },
     {
@@ -272,15 +371,7 @@ export function TransactionsPage() {
               onChange={e => setForm(f => ({ ...f, type: e.target.value as TransactionType, category_id: '' }))}
             />
           </div>
-          <Input
-            label="Monto"
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.amount}
-            onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
-            prefix="$"
-          />
+
           <Select
             label="Categoría"
             options={categoryOptions}
@@ -288,12 +379,123 @@ export function TransactionsPage() {
             onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}
             placeholder="Sin categoría"
           />
+
           <Input
             label="Descripción"
             value={form.description}
             onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
             placeholder="Opcional"
           />
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-[var(--color-text)]">Métodos de pago</span>
+              <button
+                type="button"
+                onClick={addPaymentRow}
+                className="text-xs text-[var(--color-accent)] hover:underline"
+              >
+                + Agregar fila
+              </button>
+            </div>
+            <div className="space-y-2">
+              {form.payments.map((p, i) => (
+                <div key={i} className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Select
+                      options={PAYMENT_METHOD_OPTIONS}
+                      value={p.payment_method}
+                      onChange={e => updatePaymentRow(i, { payment_method: e.target.value as PaymentMethod })}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Select
+                      options={INSTRUMENT_OPTIONS}
+                      value={p.instrument ?? ''}
+                      onChange={e => updatePaymentRow(i, { instrument: (e.target.value as PaymentInstrument) || null })}
+                    />
+                  </div>
+                  <div className="w-28">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={p.amount === 0 ? '' : String(p.amount)}
+                      onChange={e => updatePaymentRow(i, { amount: parseFloat(e.target.value) || 0 })}
+                      placeholder="Monto"
+                      prefix="$"
+                    />
+                  </div>
+                  <div className="w-24">
+                    <Select
+                      options={DIRECTION_OPTIONS}
+                      value={p.type}
+                      onChange={e => updatePaymentRow(i, { type: e.target.value as PaymentDirection })}
+                    />
+                  </div>
+                  {form.payments.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removePaymentRow(i)}
+                      className="p-1.5 mb-0.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 text-right text-sm font-semibold text-[var(--color-text)]">
+              Total: ${calcTotal(form.payments).toLocaleString('es-CO')}
+            </div>
+          </div>
+
+          {activeHairdressers.length > 0 && (
+            <div>
+              <span className="text-sm font-medium text-[var(--color-text)] block mb-2">Peluqueras</span>
+              <div className="flex flex-wrap gap-2">
+                {activeHairdressers.map(hd => (
+                  <button
+                    key={hd.id}
+                    type="button"
+                    onClick={() => toggleHairdresser(hd.id)}
+                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${
+                      form.hairdresser_ids.includes(hd.id)
+                        ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]'
+                        : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-accent)]'
+                    }`}
+                  >
+                    {hd.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.is_seña}
+                onChange={e => setForm(f => ({ ...f, is_seña: e.target.checked, seña_amount: '' }))}
+                className="w-4 h-4 rounded border-[var(--color-border)] accent-[var(--color-accent)]"
+              />
+              <span className="text-sm text-[var(--color-text)]">Es una seña</span>
+            </label>
+            {!form.is_seña && (
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.seña_amount}
+                onChange={e => setForm(f => ({ ...f, seña_amount: e.target.value }))}
+                placeholder="Seña cobrada previamente"
+                prefix="$"
+                className="w-40"
+              />
+            )}
+          </div>
+
           {formError && <p className="text-xs text-[var(--color-danger)]">{formError}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>

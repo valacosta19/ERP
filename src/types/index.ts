@@ -4,6 +4,9 @@ export type UserRole = 'admin' | 'employee'
 export type TransactionType = 'income' | 'expense'
 export type MovementType = 'in' | 'out' | 'adjustment'
 export type POStatus = 'draft' | 'received' | 'cancelled'
+export type PaymentMethod = 'MP' | 'PPY' | 'Efectivo' | 'Santander'
+export type PaymentInstrument = 'Transferencia' | 'Tarjeta'
+export type PaymentDirection = 'entrada' | 'salida'
 
 export interface Profile {
   id: string
@@ -19,6 +22,23 @@ export interface Category {
   created_at: string
 }
 
+export interface Hairdresser {
+  id: string
+  name: string
+  active: boolean
+  created_at: string
+}
+
+export interface TransactionPayment {
+  id: string
+  transaction_id: string
+  payment_method: PaymentMethod
+  instrument: PaymentInstrument | null
+  amount: number
+  type: PaymentDirection
+  created_at: string
+}
+
 export interface Transaction {
   id: string
   date: string
@@ -28,7 +48,11 @@ export interface Transaction {
   description: string | null
   created_by: string | null
   created_at: string
+  is_seña: boolean
+  seña_amount: number | null
   category?: Category
+  payments?: TransactionPayment[]
+  hairdressers?: Hairdresser[]
 }
 
 export interface Supplier {
