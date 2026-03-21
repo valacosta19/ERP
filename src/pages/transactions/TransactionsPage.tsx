@@ -15,7 +15,7 @@ import { useProfessionals } from '@/hooks/useProfessionals'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useProducts } from '@/hooks/useProducts'
 import { supabase } from '@/lib/supabaseClient'
-import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, PaymentDirection, CatalogItem, Product } from '@/types'
+import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, CatalogItem, Product } from '@/types'
 import type { PaymentRow } from '@/hooks/useTransactions'
 
 const INSTRUMENT_OPTIONS: { value: string; label: string }[] = [
@@ -24,13 +24,8 @@ const INSTRUMENT_OPTIONS: { value: string; label: string }[] = [
   { value: 'Tarjeta', label: 'Tarjeta' },
 ]
 
-const DIRECTION_OPTIONS: { value: PaymentDirection; label: string }[] = [
-  { value: 'entrada', label: 'Entrada' },
-  { value: 'salida', label: 'Salida' },
-]
-
 function makeEmptyPayment(defaultMethod = 'Efectivo'): PaymentRow {
-  return { payment_method: defaultMethod, instrument: null, amount: 0, type: 'entrada' }
+  return { payment_method: defaultMethod, instrument: null, amount: 0 }
 }
 
 const EMPTY_DRAFT = {
@@ -198,7 +193,7 @@ export function TransactionsPage() {
       is_seña: tx.is_seña,
       seña_amount: tx.seña_amount != null ? String(tx.seña_amount) : '',
       payments: tx.payments && tx.payments.length > 0
-        ? tx.payments.map(p => ({ payment_method: p.payment_method, instrument: p.instrument, amount: p.amount, type: p.type }))
+        ? tx.payments.map(p => ({ payment_method: p.payment_method, instrument: p.instrument, amount: p.amount }))
         : [makeEmptyPayment()],
       professional_ids: tx.professionals?.map(h => h.id) ?? [],
       product_id: null,
@@ -367,13 +362,6 @@ export function TransactionsPage() {
                   placeholder="$0"
                   style={{ ...INLINE_SELECT_STYLE, width: '80px', textAlign: 'right' }}
                 />
-                <select
-                  value={p.type}
-                  onChange={e => setDraft(d => d && { ...d, payments: d.payments.map((pp, ii) => ii === i ? { ...pp, type: e.target.value as PaymentDirection } : pp) })}
-                  style={INLINE_SELECT_STYLE}
-                >
-                  {DIRECTION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
                 {draft.payments.length > 1 && (
                   <button
                     type="button"
@@ -629,10 +617,6 @@ export function TransactionsPage() {
               </div>
               <div className={`text-lg font-bold tabular-nums ${b.balance >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
                 ${b.balance.toLocaleString('es-CO')}
-              </div>
-              <div className="flex gap-3 mt-1 text-xs" style={{ color: 'var(--color-muted)' }}>
-                <span>+${b.totalIn.toLocaleString('es-CO')}</span>
-                <span>-${b.totalOut.toLocaleString('es-CO')}</span>
               </div>
             </div>
           ))}

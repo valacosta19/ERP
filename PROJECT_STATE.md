@@ -161,6 +161,8 @@ Replace the simple `amount` + `type` model with a richer structure that mirrors 
 - `useProducts` fires two sequential queries (products + lots). A `products_with_stock` view would consolidate this — deferred, not in Phase 7 scope.
 - No optimistic updates anywhere — UI shows stale data until `invalidateQueries` refetches.
 - Migrations 002 and 003 must be run manually in Supabase SQL editor for production environments.
+- Modal de edición de transacción no está bien centrado en pantalla.
+- Checkbox `is_seña` debe eliminarse del formulario. La detección debe ser automática: si `description.trim().toLowerCase() === 'seña'`, la transacción es una seña (`is_seña=true`, `seña_amount=total`). Para cualquier otra transacción de categoría Servicio, mostrar siempre el input "Seña cobrada previamente". Para gastos/productos, no mostrar nada. El campo `is_seña` se mantiene en la DB (lo usa el badge en la lista y el cálculo de comisiones).
 
 ---
 
@@ -173,13 +175,14 @@ npm run dev     # then:
 - `/transactions` — list loads, create/edit modal works
 - `/suppliers` — CRUD works
 - `/purchase-orders` — create PO, receive it, stock increases on `/inventory`
-- `/inventory` — stock column correct, "Ver lotes" opens drawer, "Nueva venta" creates sale and decrements stock
+- `/inventory` — stock column correct, "Ver lotes" opens drawer (lotes editables inline), NO botón "Nueva venta" — el descuento de inventario ocurre automáticamente al registrar una transacción Gasto con categoría "Producto"
 
 ---
 
 ## Upcoming phases (MVP)
 | Phase | What |
 |-------|------|
+| 10.pending | **Inventario**: (1) Eliminar botón "Nueva venta" de InventoryPage — el descuento ocurre vía transacción Gasto con categoría "Producto". Borrar `SaleForm.tsx` y `useSales.ts`. (2) Hacer LotDrawer editable inline: `received_date`, `initial_quantity`, `remaining_quantity`, `unit_cost`, `notes`. Agregar `useUpdateInventoryLot` hook. Expandir `inventory_lots.Update` en `database.ts`. |
 | 11 | Multi-tenant foundation |
 
 ---

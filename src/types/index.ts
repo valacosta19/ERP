@@ -6,7 +6,6 @@ export type MovementType = 'in' | 'out' | 'adjustment'
 export type POStatus = 'draft' | 'received' | 'cancelled'
 export type PaymentMethod = string
 export type PaymentInstrument = 'Transferencia' | 'Tarjeta'
-export type PaymentDirection = 'entrada' | 'salida'
 
 export interface Profile {
   id: string
@@ -35,7 +34,6 @@ export interface TransactionPayment {
   payment_method: PaymentMethod
   instrument: PaymentInstrument | null
   amount: number
-  type: PaymentDirection
   created_at: string
 }
 

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
-import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, PaymentDirection, Professional } from '@/types'
+import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, Professional } from '@/types'
 
 interface TransactionFilters {
   type?: TransactionType | 'all'
@@ -43,7 +43,6 @@ export interface PaymentRow {
   payment_method: PaymentMethod
   instrument: PaymentInstrument | null
   amount: number
-  type: PaymentDirection
 }
 
 interface TransactionPayload {
@@ -82,9 +81,10 @@ export function useCreateTransaction() {
       if (txError) throw new Error(txError.message)
 
       if (payload.payments.length > 0) {
+        const direction = payload.type === 'income' ? 'entrada' : 'salida'
         const { error: pmtError } = await supabase
           .from('transaction_payments')
-          .insert(payload.payments.map(p => ({ ...p, transaction_id: tx.id })))
+          .insert(payload.payments.map(p => ({ ...p, type: direction, transaction_id: tx.id })))
         if (pmtError) throw new Error(pmtError.message)
       }
 
@@ -132,8 +132,6 @@ export function useDeleteTransaction() {
 export interface PaymentMethodBalance {
   method: PaymentMethod
   balance: number
-  totalIn: number
-  totalOut: number
 }
 
 export function usePaymentMethodBalances(filters: { from?: string; to?: string } = {}) {
@@ -142,7 +140,7 @@ export function usePaymentMethodBalances(filters: { from?: string; to?: string }
     queryFn: async () => {
       let query = supabase
         .from('transaction_payments')
-        .select('payment_method, amount, type, transactions!inner(date)')
+        .select('payment_method, amount, transactions!inner(date)')
 
       if (filters.from) query = query.gte('transactions.date', filters.from)
       if (filters.to) query = query.lte('transactions.date', filters.to)
@@ -150,15 +148,14 @@ export function usePaymentMethodBalances(filters: { from?: string; to?: string }
       const { data, error } = await query
       if (error) throw new Error(error.message)
 
-      type Row = { payment_method: PaymentMethod; amount: number; type: PaymentDirection }
+      type Row = { payment_method: PaymentMethod; amount: number; }
       const rows = data as unknown as Row[]
 
       const methodSet = [...new Set(rows.map(r => r.payment_method))].sort()
       return methodSet.map(method => {
         const subset = rows.filter(r => r.payment_method === method)
-        const totalIn = subset.filter(r => r.type === 'entrada').reduce((s, r) => s + r.amount, 0)
-        const totalOut = subset.filter(r => r.type === 'salida').reduce((s, r) => s + r.amount, 0)
-        return { method, balance: totalIn - totalOut, totalIn, totalOut }
+        const balance = subset.reduce((sum, r) => sum + r.amount, 0)
+        return { method, balance }
       })
     },
   })

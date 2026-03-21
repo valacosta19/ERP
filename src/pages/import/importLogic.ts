@@ -46,8 +46,6 @@ export const ENTITY_FIELDS: Record<EntityType, FieldDef[]> = {
     { key: 'amount', label: 'Monto', required: false },
     { key: 'category', label: 'Categoría (nombre)', required: false },
     { key: 'description', label: 'Descripción', required: false },
-    { key: 'entrada', label: 'Entrada (ingreso)', required: false },
-    { key: 'salida', label: 'Salida (egreso)', required: false },
     { key: 'payment_method', label: 'Medio de pago', required: false },
     { key: 'instrument', label: 'Instrumento', required: false },
     { key: 'is_seña', label: 'Seña', required: false },
