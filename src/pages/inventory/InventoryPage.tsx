@@ -31,9 +31,20 @@ export function InventoryPage() {
   const [lotProductId, setLotProductId] = useState<string | null>(null)
   const [editProduct, setEditProduct] = useState<Product | null>(null)
   const [editForm, setEditForm] = useState<EditForm>({ name: '', sku: '', brand: '', unit: '', sale_price: '', min_stock: '' })
+  const [brandFilter, setBrandFilter] = useState<string>('')
+  const [stockFilter, setStockFilter] = useState<'all' | 'with' | 'without'>('all')
 
   const { data: products = [], isLoading } = useProducts()
   const updateProduct = useUpdateProduct()
+
+  const brands = Array.from(new Set(products.map(p => p.brand).filter(Boolean) as string[])).sort()
+
+  const filteredProducts = products.filter(p => {
+    if (brandFilter && p.brand !== brandFilter) return false
+    if (stockFilter === 'with' && (p.stock ?? 0) === 0) return false
+    if (stockFilter === 'without' && (p.stock ?? 0) > 0) return false
+    return true
+  })
 
   async function saveProductField(p: Product, field: 'name' | 'sale_price', value: string) {
     await updateProduct.mutateAsync({
@@ -90,6 +101,13 @@ export function InventoryPage() {
       ),
     },
     {
+      key: 'brand',
+      header: 'Marca',
+      render: (p: Product) => (
+        <span className="text-[var(--color-muted)]">{p.brand || '—'}</span>
+      ),
+    },
+    {
       key: 'unit',
       header: 'Unidad',
       render: (p: Product) => (
@@ -124,7 +142,13 @@ export function InventoryPage() {
       header: 'Stock actual',
       className: 'text-right',
       render: (p: Product) => (
-        <span className="tabular-nums">{(p.stock ?? 0).toLocaleString('es-CO')}</span>
+        <button
+          onClick={() => setLotProductId(p.id)}
+          className="tabular-nums underline decoration-dotted underline-offset-2 text-[var(--color-text)] hover:text-[var(--color-accent)] transition-colors cursor-pointer"
+          title="Editar stock en lotes"
+        >
+          {(p.stock ?? 0).toLocaleString('es-CO')}
+        </button>
       ),
     },
     {
@@ -175,14 +199,35 @@ export function InventoryPage() {
     <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar
         title="Inventario"
-        subtitle={`${products.length} productos`}
+        subtitle={`${filteredProducts.length} productos`}
       />
 
-      <div className="flex-1 min-h-0 flex flex-col p-6">
+      <div className="flex-1 min-h-0 flex flex-col p-6 gap-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <select
+            value={brandFilter}
+            onChange={e => setBrandFilter(e.target.value)}
+            className="h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] px-3 text-sm"
+          >
+            <option value="">Todas las marcas</option>
+            {brands.map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+          <select
+            value={stockFilter}
+            onChange={e => setStockFilter(e.target.value as 'all' | 'with' | 'without')}
+            className="h-9 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] px-3 text-sm"
+          >
+            <option value="all">Todo el stock</option>
+            <option value="with">Con stock</option>
+            <option value="without">Sin stock</option>
+          </select>
+        </div>
         <div className="flex-1 min-h-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
           <Table
             columns={columns}
-            data={products}
+            data={filteredProducts}
             keyField="id"
             loading={isLoading}
             emptyMessage="No hay productos registrados"

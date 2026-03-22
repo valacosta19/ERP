@@ -10,7 +10,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
-**Phase 14** — En curso
+**Phase 14** — ✅ Completa
 
 ### Cambios implementados en Phase 14
 
@@ -136,7 +136,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 11 | ✅ Auto-detect seña desde description, fix Total cobrado double-count, modal overflow fix |
 | 12 | ✅ `products_with_stock` view, `useProducts` una sola query, `database.ts` Views tipado |
 | 13 | ✅ Fix import parseNum, multicurrency (ARS/USD/EUR), fix edición de payments, cards de balance agrupadas por método+moneda |
-| 14 | En curso — comisiones con % libre por profesional, rango precio compra en inventario, modal edición de productos, fix auto-mapeo import |
+| 14 | ✅ Comisiones con % libre por profesional, rango precio compra en inventario, modal edición de productos, fix auto-mapeo import |
 
 ---
 

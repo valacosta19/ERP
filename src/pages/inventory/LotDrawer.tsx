@@ -1,8 +1,12 @@
 import { useState } from 'react'
+import { Plus } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
 import { useInventoryLots } from '@/hooks/useInventoryLots'
 import { useUpdateInventoryLot } from '@/hooks/useUpdateInventoryLot'
+import { useCreateInventoryLot } from '@/hooks/useCreateInventoryLot'
 import type { Product, InventoryLot } from '@/types'
 
 interface LotDrawerProps {
@@ -51,11 +55,35 @@ function EditableCell({
   )
 }
 
+type NewLotForm = { received_date: string; initial_quantity: string; unit_cost: string; notes: string }
+
+const EMPTY_FORM: NewLotForm = { received_date: new Date().toISOString().slice(0, 10), initial_quantity: '', unit_cost: '', notes: '' }
+
 export function LotDrawer({ product, onClose }: LotDrawerProps) {
   const { data: lots = [], isLoading } = useInventoryLots(product?.id ?? null)
   const updateLot = useUpdateInventoryLot()
+  const createLot = useCreateInventoryLot()
   const [savingId, setSavingId] = useState<string | null>(null)
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null)
+  const [showNewLot, setShowNewLot] = useState(false)
+  const [newForm, setNewForm] = useState<NewLotForm>(EMPTY_FORM)
+
+  async function handleCreateLot() {
+    if (!product) return
+    const qty = parseFloat(newForm.initial_quantity)
+    const cost = parseFloat(newForm.unit_cost)
+    if (!newForm.received_date || isNaN(qty) || qty <= 0 || isNaN(cost) || cost < 0) return
+    await createLot.mutateAsync({
+      product_id: product.id,
+      received_date: newForm.received_date,
+      initial_quantity: qty,
+      remaining_quantity: qty,
+      unit_cost: cost,
+      notes: newForm.notes.trim() || null,
+    })
+    setNewForm(EMPTY_FORM)
+    setShowNewLot(false)
+  }
 
   async function save(lot: InventoryLot, field: EditingCell['field'], rawValue: string) {
     setEditingCell(null)
@@ -86,8 +114,11 @@ export function LotDrawer({ product, onClose }: LotDrawerProps) {
     >
       {isLoading ? (
         <p className="text-sm text-[var(--color-muted)]">Cargando...</p>
-      ) : lots.length === 0 ? (
-        <p className="text-sm text-[var(--color-muted)]">No hay lotes registrados para este producto.</p>
+      ) : lots.length === 0 && !showNewLot ? (
+        <div className="flex flex-col items-center gap-3 py-6">
+          <p className="text-sm text-[var(--color-muted)]">No hay lotes registrados para este producto.</p>
+          <Button size="sm" onClick={() => setShowNewLot(true)}><Plus size={14} className="mr-1" />Agregar lote</Button>
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -197,6 +228,28 @@ export function LotDrawer({ product, onClose }: LotDrawerProps) {
               ))}
             </tbody>
           </table>
+
+          {showNewLot ? (
+            <div className="mt-4 p-3 border border-[var(--color-border)] rounded-lg space-y-3">
+              <p className="text-sm font-medium text-[var(--color-text)]">Nuevo lote</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Fecha recibido" type="date" value={newForm.received_date} onChange={e => setNewForm(f => ({ ...f, received_date: e.target.value }))} />
+                <Input label="Cantidad" type="number" value={newForm.initial_quantity} onChange={e => setNewForm(f => ({ ...f, initial_quantity: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Costo unitario" type="number" value={newForm.unit_cost} onChange={e => setNewForm(f => ({ ...f, unit_cost: e.target.value }))} prefix="$" />
+                <Input label="Notas" value={newForm.notes} onChange={e => setNewForm(f => ({ ...f, notes: e.target.value }))} placeholder="Opcional" />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" size="sm" onClick={() => { setShowNewLot(false); setNewForm(EMPTY_FORM) }}>Cancelar</Button>
+                <Button size="sm" onClick={handleCreateLot} loading={createLot.isPending}>Guardar lote</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 flex justify-end">
+              <Button variant="secondary" size="sm" onClick={() => setShowNewLot(true)}><Plus size={14} className="mr-1" />Agregar lote</Button>
+            </div>
+          )}
         </div>
       )}
     </Modal>
