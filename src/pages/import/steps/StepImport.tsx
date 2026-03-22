@@ -27,6 +27,15 @@ function parseType(s: string): 'income' | 'expense' {
   return 'expense'
 }
 
+function parseDate(s: string): string {
+  const ddmmyyyy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (ddmmyyyy) {
+    const [, d, m, y] = ddmmyyyy
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+  return s
+}
+
 const IMPORT_ORDER: EntityType[] = ['categories', 'professionals', 'suppliers', 'products', 'services', 'transactions', 'lots']
 
 export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
@@ -125,10 +134,11 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
 
           if (entityType === 'transactions') {
             for (const row of sheet.rows) {
-              const date = getVal(row, m, 'date')
+              const date = parseDate(getVal(row, m, 'date'))
 
               const entradaVal = parseNum(getVal(row, m, 'entrada'))
               const salidaVal = parseNum(getVal(row, m, 'salida'))
+              const rawAmount = parseNum(getVal(row, m, 'amount'))
 
               let amount: number
               let type: 'income' | 'expense'
@@ -139,8 +149,11 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               } else if (salidaVal > 0) {
                 amount = salidaVal
                 type = 'expense'
+              } else if (rawAmount < 0) {
+                amount = Math.abs(rawAmount)
+                type = 'expense'
               } else {
-                amount = parseNum(getVal(row, m, 'amount'))
+                amount = rawAmount
                 type = parseType(getVal(row, m, 'type'))
               }
 
@@ -223,7 +236,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
           if (entityType === 'lots') {
             for (const row of sheet.rows) {
               const sku = getVal(row, m, 'sku')
-              const received_date = getVal(row, m, 'received_date')
+              const received_date = parseDate(getVal(row, m, 'received_date'))
               const initial_quantity = parseNum(getVal(row, m, 'initial_quantity'))
               const unit_cost = parseNum(getVal(row, m, 'unit_cost'))
               if (!sku || !received_date || initial_quantity === 0) { result.skipped++; continue }
