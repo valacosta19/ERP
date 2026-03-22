@@ -10,6 +10,41 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 14** — En curso
+
+### Cambios implementados en Phase 14
+
+#### Feature: comisiones con porcentaje libre por profesional
+- **Migration 015**: `ALTER TABLE transaction_hairdressers ADD COLUMN commission_rate numeric NOT NULL DEFAULT 0`. Correr en Supabase SQL editor.
+- **`database.ts`**: `commission_rate` en Row/Insert de `transaction_hairdressers`.
+- **`types/index.ts`**: nuevo tipo `ProfessionalAssignment extends Professional { commission_rate }`. `Transaction.professionals` ahora tipado como `ProfessionalAssignment[]`.
+- **`useTransactions`**: `TransactionPayload.professional_ids: string[]` reemplazado por `professionals: { id: string; commission_rate: number }[]`. Query incluye `commission_rate` en el select de `transaction_hairdressers`. `useUpdateTransaction` ahora también elimina y re-inserta `transaction_hairdressers` (mismo patrón que payments).
+- **`useCommissionsReport`**: eliminada lógica hardcodeada (40%/20%). Usa `row.commission_rate / 100` del campo guardado. Retorna filas individuales (`CommissionDetailRow`) en lugar de agregadas.
+- **`TransactionsPage`**: sección de profesionales reemplazada por filas `[select ▾] [% input] [×]` con `+ Agregar profesional`, en form inline y modal de edición.
+- **`ReportsPage` (tab Comisiones)**: tabla plana (una fila por comisión), filtro por profesional, cards de total general y por profesional.
+
+#### Feature: rango de precio de compra en inventario
+- **Migration 016**: `CREATE OR REPLACE VIEW products_with_stock` agrega `min_cost` y `max_cost` (mín/máx de `unit_cost` de lotes activos). Correr en Supabase SQL editor.
+- **`database.ts` / `types/index.ts`**: `min_cost: number | null`, `max_cost: number | null` en `products_with_stock` y `Product`.
+- **`InventoryPage`**: nueva columna "Precio compra" muestra rango min–max (ej. `$100 – $120`). Si todos los lotes tienen el mismo costo muestra uno solo.
+
+#### Feature: modal de edición de productos
+- **`InventoryPage`**: botón ✏️ por fila que abre modal con todos los campos: nombre, SKU, marca, unidad, precio venta, stock mínimo.
+- **`useProducts`**: `ProductPayload` ahora incluye `brand`.
+
+#### Fix: import wizard — mapeo automático de columnas
+- **`importLogic.ts`**: nuevos aliases para auto-detectar headers del Excel de la usuaria:
+  - `name`: agrega `'productos'`, `'producto'`, `'descripcion'`
+  - `brand`: agrega `'linea'`, `'línea'`, `'fabricante'`, `'proveedor'`
+  - `received_date`: agrega `'fecha compra'`, `'fecha de compra'`, `'fecha'`
+  - `initial_quantity`: agrega `'existencia'`, `'existencias'`, `'qty'`, `'unidades'`
+  - `unit_cost`: agrega `'precio de compra'`, `'p. compra'`, `'precio costo'`
+- Entity `products` ahora incluye campos opcionales `unit_cost`, `initial_quantity`, `received_date` — al importar, si `unit_cost > 0` o `initial_quantity > 0` se crea automáticamente un lote inicial.
+- Entity `lots` ahora incluye campo opcional `sale_price` — si está presente, actualiza el `sale_price` del producto al importar el lote.
+
+---
+
+## Current phase (anterior)
 **Phase 13** — ✅ Completa
 
 ### Cambios implementados en Phase 13
@@ -101,6 +136,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 11 | ✅ Auto-detect seña desde description, fix Total cobrado double-count, modal overflow fix |
 | 12 | ✅ `products_with_stock` view, `useProducts` una sola query, `database.ts` Views tipado |
 | 13 | ✅ Fix import parseNum, multicurrency (ARS/USD/EUR), fix edición de payments, cards de balance agrupadas por método+moneda |
+| 14 | En curso — comisiones con % libre por profesional, rango precio compra en inventario, modal edición de productos, fix auto-mapeo import |
 
 ---
 
@@ -136,16 +172,16 @@ Postgres (Supabase)
 | Module | Hook(s) | Page |
 |--------|---------|------|
 | Auth | `useAuth` | `LoginPage` |
-| Transactions | `useTransactions`, `useCategories`, `useTransactionPayments` | `TransactionsPage` |
-| Hairdressers | `useHairdressers` | `SettingsPage` (Peluqueras section) |
+| Transactions | `useTransactions`, `useCategories` | `TransactionsPage` |
+| Professionals | `useProfessionals` | `SettingsPage` (Profesionales section) |
 | Commissions | `useCommissionsReport` | `ReportsPage` (Comisiones tab) |
 | Dashboard | — | `DashboardPage` (KPIs + charts) |
 | Suppliers | `useSuppliers` | `SuppliersPage` |
 | Purchase Orders | `usePurchaseOrders` | `PurchaseOrdersPage` |
-| Inventory / Sales | `useProducts`, `useInventoryLots`, `useSales` | `InventoryPage`, `LotDrawer`, `SaleForm` |
-| Reports | `useGrossProfitReport`, `useInventoryValuation` | `ReportsPage` |
+| Inventory | `useProducts`, `useInventoryLots`, `useUpdateInventoryLot` | `InventoryPage`, `LotDrawer` |
+| Reports | `useFinancialReport`, `useInventoryValuation`, `useCommissionsReport` | `ReportsPage` |
 | Import | — | `ImportPage` (5-step wizard) |
-| Settings | — | `SettingsPage` (category management) |
+| Settings | — | `SettingsPage` (categories, payment methods, catalog, professionals) |
 
 ---
 
@@ -262,9 +298,6 @@ Features discussed or requested that are explicitly deferred. Pick them up when 
 | Seña ↔ service linking | Link a seña transaction to the service transaction it was applied to |
 | Per-category commission rates | Currently fixed at 40% solo / 20% each for 2+ hairdressers |
 | ~~`products_with_stock` DB view~~ | Implementado en Phase 12 |
+| ~~Per-category commission rates~~ | Implementado en Phase 14 — porcentaje libre por profesional por transacción |
 | Optimistic UI updates | Currently refetches on every mutation via `invalidateQueries` |
-
-## TODO
-~~1. Fix import parseNum: "4,984.00" ahora se interpreta como 4984 (detecta separador decimal por posición).~~
-~~2. Multicurrency: columna `currency` en `transactions` (migration 013). Filtro ARS/USD/EUR en TransactionsPage. Balances agrupados por moneda activa. Selector en form inline y modal de edición. Soporte en import wizard.~~
-~~3. Reportes financieros y comisiones se debe popular con la información de "transacciones". Reemplazado `useGrossProfitReport` (leía de `sale_items` vacía) por `useFinancialReport` que lee de `transactions`. KPIs: ingresos, gastos, balance. Tabla: por categoría. Filtros: fecha + moneda.~~
+| Seña ↔ service linking | Link a seña transaction to the service transaction it was applied to |
