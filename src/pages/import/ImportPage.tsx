@@ -46,9 +46,9 @@ export function ImportPage() {
   }
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar title="Importar Excel" />
-      <div className="p-6 max-w-3xl mx-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 max-w-3xl mx-auto">
         <div className="flex items-center gap-2 mb-8">
           {STEP_LABELS.map((label, i) => {
             const n = (i + 1) as 1 | 2 | 3 | 4 | 5

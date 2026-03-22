@@ -98,9 +98,9 @@ export function ReportsPage() {
   const totalCommissions = commissions.data?.reduce((s, r) => s + r.commission_amount, 0) ?? 0
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar title="Reportes" />
-      <div className="p-6 space-y-6">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
         <div className="flex gap-1 border-b border-[var(--color-border)]">
           <button
             onClick={() => setActiveTab('financiero')}

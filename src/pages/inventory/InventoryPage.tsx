@@ -119,13 +119,13 @@ export function InventoryPage() {
   const selectedProduct = products.find(p => p.id === lotProductId) ?? null
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar
         title="Inventario"
         subtitle={`${products.length} productos`}
       />
 
-      <div className="p-6">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6">
         <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
           <Table
             columns={columns}

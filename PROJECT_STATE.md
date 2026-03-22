@@ -10,7 +10,15 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
-**Phase 10** — ✅ Completa
+**Phase 11** — ✅ Completa
+
+### Cambios implementados en Phase 11
+- **Auto-detect seña**: checkbox `is_seña` eliminado del formulario. Si `description.trim().toLowerCase() === 'seña'` → `is_seña=true`, `seña_amount=total` automáticamente.
+- **Input seña_amount condicional**: solo aparece cuando categoría es "Servicio" y descripción ≠ 'seña'. Gastos/Productos no muestran nada.
+- **Fix bug "Total cobrado"**: para transacciones `is_seña=true`, `total_cobrado = amount` (sin sumar `seña_amount` que causaba doble conteo).
+- **Modal overflow fix**: `max-h-[90vh]` + `overflow-y-auto` en el contenido. Header siempre visible con `shrink-0`.
+
+---
 
 ### Cambios implementados en Phase 10
 - **Inline transaction form**: creación de transacciones reemplaza modal con `prependRow` inline (patrón Proveedores). Modal conservado solo para edición.
@@ -24,6 +32,8 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 - **10.x — Balance por método de pago**: panel de 4 tarjetas en `TransactionsPage` con saldo por método de pago (Σ entradas − Σ salidas de `transaction_payments`), filtrable por rango de fechas.
 - **10.z — Métodos de pago configurables**: nueva tabla `payment_methods` (migration 010) con CRUD en Ajustes. `TransactionsPage` carga métodos desde DB. `PaymentMethod` widened a `string`.
 - **10.y — Seña como concepto separado**: columnas "Seña" y "Total cobrado" en la lista de transacciones. Comisión calculada sobre `amount + seña_amount`. La seña no es un método de pago.
+- **Inventario editable + limpieza**: `LotDrawer` con edición inline de `received_date`, `initial_quantity`, `remaining_quantity`, `unit_cost`, `notes`. Nuevo hook `useUpdateInventoryLot`. Eliminados `SaleForm.tsx` y `useSales.ts`. Botón "Nueva venta" removido de `InventoryPage`.
+- **Payment direction derivada**: campo `type` (entrada/salida) eliminado de la UI de métodos de pago; se deriva automáticamente del tipo de transacción al guardar. `PaymentDirection` removido de `types/index.ts`.
 - **Lint fixes**: `ErrorBoundary`, `Table` (page clamping sin useEffect), `useAuth` (hoisted fetchProfile).
 
 ---
@@ -40,7 +50,8 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 7 | ✅ Atomic sale + receive-PO RPCs, responsive AppShell sidebar, ErrorBoundary on all routes |
 | 8 | ✅ Payment methods, hairdressers, señas, commission reports (Transactions v2) |
 | 9 | ✅ Inline editing + inline row creation (no modals), import wizard extended for Entrada/Salida/payment/professional columns, hairdresser→professional rename, dynamic business_name in sidebar |
-| 10 | ✅ Catálogo, inline form, DescriptionCombobox, professional selector, import extensions, balance por método de pago, indicador visual de tipo, métodos de pago configurables (DB), seña como concepto separado, lint fixes |
+| 10 | ✅ Catálogo, inline form, DescriptionCombobox, professional selector, import extensions, balance por método de pago, indicador visual de tipo, métodos de pago configurables (DB), seña como concepto separado, LotDrawer editable inline, SaleForm eliminado, payment direction derivada, lint fixes |
+| 11 | ✅ Auto-detect seña desde description, fix Total cobrado double-count, modal overflow fix |
 
 ---
 
@@ -158,11 +169,9 @@ Replace the simple `amount` + `type` model with a richer structure that mirrors 
 ---
 
 ## Open risks / tech debt
-- `useProducts` fires two sequential queries (products + lots). A `products_with_stock` view would consolidate this — deferred, not in Phase 7 scope.
+- `useProducts` fires two sequential queries (products + lots). A `products_with_stock` view would consolidate this — deferred.
 - No optimistic updates anywhere — UI shows stale data until `invalidateQueries` refetches.
 - Migrations 002 and 003 must be run manually in Supabase SQL editor for production environments.
-- Modal de edición de transacción no está bien centrado en pantalla.
-- Checkbox `is_seña` debe eliminarse del formulario. La detección debe ser automática: si `description.trim().toLowerCase() === 'seña'`, la transacción es una seña (`is_seña=true`, `seña_amount=total`). Para cualquier otra transacción de categoría Servicio, mostrar siempre el input "Seña cobrada previamente". Para gastos/productos, no mostrar nada. El campo `is_seña` se mantiene en la DB (lo usa el badge en la lista y el cálculo de comisiones).
 
 ---
 
@@ -176,14 +185,6 @@ npm run dev     # then:
 - `/suppliers` — CRUD works
 - `/purchase-orders` — create PO, receive it, stock increases on `/inventory`
 - `/inventory` — stock column correct, "Ver lotes" opens drawer (lotes editables inline), NO botón "Nueva venta" — el descuento de inventario ocurre automáticamente al registrar una transacción Gasto con categoría "Producto"
-
----
-
-## Upcoming phases (MVP)
-| Phase | What |
-|-------|------|
-| 10.pending | **Inventario**: (1) Eliminar botón "Nueva venta" de InventoryPage — el descuento ocurre vía transacción Gasto con categoría "Producto". Borrar `SaleForm.tsx` y `useSales.ts`. (2) Hacer LotDrawer editable inline: `received_date`, `initial_quantity`, `remaining_quantity`, `unit_cost`, `notes`. Agregar `useUpdateInventoryLot` hook. Expandir `inventory_lots.Update` en `database.ts`. |
-| 11 | Multi-tenant foundation |
 
 ---
 

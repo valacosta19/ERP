@@ -20,7 +20,7 @@ export function AppShell() {
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
 
-      <main className="flex-1 flex flex-col overflow-auto bg-[var(--color-bg)] min-w-0">
+      <main className="flex-1 flex flex-col overflow-hidden bg-[var(--color-bg)] min-w-0">
         <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] md:hidden">
           <button
             onClick={() => setSidebarOpen(true)}

@@ -72,9 +72,9 @@ export function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="animate-fade-in">
+      <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
         <TopBar title="Dashboard" subtitle="Resumen general del negocio" />
-        <div className="p-6 flex justify-center pt-20">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 flex justify-center pt-20">
           <span className="w-6 h-6 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
         </div>
       </div>
@@ -82,10 +82,10 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar title="Dashboard" subtitle={`Resumen de ${monthLabel}`} />
 
-      <div className="p-6 space-y-6">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {kpiCard(
             'Ingresos del mes',

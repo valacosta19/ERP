@@ -205,7 +205,12 @@ export function SuppliersPage() {
       key: 'contact',
       header: 'Contacto',
       render: (s: Supplier) => (
-        <span className="text-[var(--color-muted)]">{s.contact || '—'}</span>
+        <InlineEditCell
+          value={s.contact ?? ''}
+          onSave={v => saveField(s, 'contact', v)}
+          placeholder="—"
+          className="text-[var(--color-muted)]"
+        />
       ),
     },
     {
@@ -251,7 +256,7 @@ export function SuppliersPage() {
   ]
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar
         title="Proveedores"
         subtitle={`${suppliers.length} registros`}
@@ -262,7 +267,7 @@ export function SuppliersPage() {
           </Button>
         }
       />
-      <div className="p-6">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6">
         <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
           <Table
             columns={columns}

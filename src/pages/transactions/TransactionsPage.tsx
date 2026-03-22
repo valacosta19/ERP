@@ -33,7 +33,6 @@ const EMPTY_DRAFT = {
   type: 'income' as TransactionType,
   category_id: '',
   description: '',
-  is_seña: false,
   seña_amount: '',
   payments: [makeEmptyPayment()] as PaymentRow[],
   professional_ids: [] as string[],
@@ -160,10 +159,7 @@ export function TransactionsPage() {
     ...categories.map(c => ({ value: c.id, label: c.name })),
   ]
 
-  const categoryOptions = [
-    { value: '', label: 'Sin categoría' },
-    ...categories.map(c => ({ value: c.id, label: c.name })),
-  ]
+  const categoryOptions = categories.map(c => ({ value: c.id, label: c.name }))
 
   const isDraftServiceCategory = categories.find(c => c.id === draft?.category_id)?.name.toLowerCase() === 'servicio'
   const isEditServiceCategory = categories.find(c => c.id === editForm.category_id)?.name.toLowerCase() === 'servicio'
@@ -190,7 +186,6 @@ export function TransactionsPage() {
       type: tx.type,
       category_id: tx.category_id ?? '',
       description: tx.description ?? '',
-      is_seña: tx.is_seña,
       seña_amount: tx.seña_amount != null ? String(tx.seña_amount) : '',
       payments: tx.payments && tx.payments.length > 0
         ? tx.payments.map(p => ({ payment_method: p.payment_method, instrument: p.instrument, amount: p.amount }))
@@ -218,13 +213,14 @@ export function TransactionsPage() {
       setFormError('Fecha y al menos un pago con monto son obligatorios.')
       return
     }
+    const isSeña = draft.description.trim().toLowerCase() === 'seña'
     const tx = await createTx.mutateAsync({
       date: draft.date,
       type: draft.type,
       category_id: draft.category_id || null,
       description: draft.description || null,
-      is_seña: draft.is_seña,
-      seña_amount: draft.is_seña ? total : (draft.seña_amount ? parseFloat(draft.seña_amount) : null),
+      is_seña: isSeña,
+      seña_amount: isSeña ? total : (isDraftServiceCategory && draft.seña_amount ? parseFloat(draft.seña_amount) : null),
       payments: draft.payments.map(p => ({
         ...p,
         instrument: p.instrument || null,
@@ -253,6 +249,7 @@ export function TransactionsPage() {
       setFormError('Fecha y al menos un pago con monto son obligatorios.')
       return
     }
+    const isSeña = editForm.description.trim().toLowerCase() === 'seña'
     await updateTx.mutateAsync({
       id: editing!.id,
       date: editForm.date,
@@ -260,8 +257,8 @@ export function TransactionsPage() {
       amount: total,
       category_id: editForm.category_id || null,
       description: editForm.description || null,
-      is_seña: editForm.is_seña,
-      seña_amount: editForm.is_seña ? total : (editForm.seña_amount ? parseFloat(editForm.seña_amount) : null),
+      is_seña: isSeña,
+      seña_amount: isSeña ? total : (isEditServiceCategory && editForm.seña_amount ? parseFloat(editForm.seña_amount) : null),
     })
     setModalOpen(false)
   }
@@ -401,16 +398,7 @@ export function TransactionsPage() {
           )}
 
           <div className="flex items-center gap-3 flex-wrap">
-            <label className="flex items-center gap-2 cursor-pointer text-sm text-[var(--color-text)]">
-              <input
-                type="checkbox"
-                checked={draft.is_seña}
-                onChange={e => setDraft(d => d && { ...d, is_seña: e.target.checked, seña_amount: '' })}
-                className="w-4 h-4 rounded border-[var(--color-border)] accent-[var(--color-accent)]"
-              />
-              Es una seña
-            </label>
-            {!draft.is_seña && (
+            {isDraftServiceCategory && draft.description.trim().toLowerCase() !== 'seña' && (
               <input
                 type="number"
                 min="0"
@@ -508,7 +496,7 @@ export function TransactionsPage() {
       header: 'Total cobrado',
       className: 'text-right',
       render: (tx: Transaction) => {
-        const total = tx.amount + (tx.seña_amount ?? 0)
+        const total = tx.is_seña ? tx.amount : tx.amount + (tx.seña_amount ?? 0)
         return (
           <span className={`font-semibold tabular-nums ${tx.type === 'income' ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
             {formatAmount(tx.type, total)}
@@ -550,7 +538,7 @@ export function TransactionsPage() {
   ]
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar
         title="Transacciones"
         subtitle={`${transactions.length} registros`}
@@ -562,7 +550,7 @@ export function TransactionsPage() {
         }
       />
 
-      <div className="p-6 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
         <div className="flex flex-wrap gap-3">
           <Select
             options={[
@@ -756,29 +744,18 @@ export function TransactionsPage() {
             </div>
           )}
 
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={editForm.is_seña}
-                onChange={e => setEditForm(f => ({ ...f, is_seña: e.target.checked, seña_amount: '' }))}
-                className="w-4 h-4 rounded border-[var(--color-border)] accent-[var(--color-accent)]"
-              />
-              <span className="text-sm text-[var(--color-text)]">Es una seña</span>
-            </label>
-            {!editForm.is_seña && (
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={editForm.seña_amount}
-                onChange={e => setEditForm(f => ({ ...f, seña_amount: e.target.value }))}
-                placeholder="Seña cobrada previamente"
-                prefix="$"
-                className="w-40"
-              />
-            )}
-          </div>
+          {isEditServiceCategory && editForm.description.trim().toLowerCase() !== 'seña' && (
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={editForm.seña_amount}
+              onChange={e => setEditForm(f => ({ ...f, seña_amount: e.target.value }))}
+              placeholder="Seña cobrada previamente"
+              prefix="$"
+              className="w-40"
+            />
+          )}
 
           {formError && <p className="text-xs text-[var(--color-danger)]">{formError}</p>}
           <div className="flex justify-end gap-2 pt-2">
