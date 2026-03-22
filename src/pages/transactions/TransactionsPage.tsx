@@ -471,7 +471,6 @@ export function TransactionsPage() {
       header: 'Métodos',
       render: (tx: Transaction) => (
         <div className="flex flex-wrap gap-1">
-          {tx.is_seña && <Badge variant="warning">Seña</Badge>}
           {tx.payments && tx.payments.length > 0
             ? tx.payments.map((p, i) => (
                 <Badge key={i} variant="default">{p.payment_method}</Badge>

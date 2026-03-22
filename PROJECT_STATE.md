@@ -223,3 +223,9 @@ Features discussed or requested that are explicitly deferred. Pick them up when 
 | Per-category commission rates | Currently fixed at 40% solo / 20% each for 2+ hairdressers |
 | `products_with_stock` DB view | Would replace the two-query pattern in `useProducts` |
 | Optimistic UI updates | Currently refetches on every mutation via `invalidateQueries` |
+
+## TODO
+1. La sumatoria total de cada cuenta en transactions no está dando un número correcto porque aunque todas las entradas de la tabla están en negativos, estos están mostrando número positivos
+2. Agregarle clases BEM a todos los componentes para que sea mas facil de identificar en el futuro
+3. Elimina el badge "SEÑA" de métodos
+4. La fecha de importación no es correcta porque no respeta el formato "DD/MM/YYYY"

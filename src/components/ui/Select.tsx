@@ -13,17 +13,17 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const selectId = id || label?.toLowerCase().replace(/\s+/g, '-')
 
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className={`select-field ${error ? 'select-field--error' : ''} flex flex-col gap-1.5`}>
         {label && (
-          <label htmlFor={selectId} className="text-sm font-medium text-[var(--color-text)]">
+          <label htmlFor={selectId} className="select-field__label text-sm font-medium text-[var(--color-text)]">
             {label}
           </label>
         )}
-        <div className="relative">
+        <div className="select-field__wrapper relative">
           <select
             ref={ref}
             id={selectId}
-            className={`w-full appearance-none bg-[var(--color-surface)] border rounded-lg px-3 py-2 text-sm text-[var(--color-text)] outline-none transition-all duration-150 pr-8
+            className={`select-field__control w-full appearance-none bg-[var(--color-surface)] border rounded-lg px-3 py-2 text-sm text-[var(--color-text)] outline-none transition-all duration-150 pr-8
               focus:ring-2 focus:ring-[var(--color-accent)] focus:border-[var(--color-accent)]
               ${error ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)]'}
               ${className}`}
@@ -34,9 +34,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)] pointer-events-none" />
+          <ChevronDown size={14} className="select-field__icon absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)] pointer-events-none" />
         </div>
-        {error && <p className="text-xs text-[var(--color-danger)]">{error}</p>}
+        {error && <p className="select-field__error text-xs text-[var(--color-danger)]">{error}</p>}
       </div>
     )
   }

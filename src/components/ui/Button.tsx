@@ -26,12 +26,12 @@ const sizeClasses: Record<Size, string> = {
 export function Button({ variant = 'primary', size = 'md', loading, children, className = '', disabled, ...props }: ButtonProps) {
   return (
     <button
-      className={`inline-flex items-center gap-2 font-medium rounded-lg transition-all duration-150 cursor-pointer ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
+      className={`btn btn--${variant} btn--${size} ${loading ? 'btn--loading' : ''} inline-flex items-center gap-2 font-medium rounded-lg transition-all duration-150 cursor-pointer ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
       disabled={disabled || loading}
       {...props}
     >
       {loading && (
-        <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+        <span className="btn__spinner w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
       )}
       {children}
     </button>

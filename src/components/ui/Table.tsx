@@ -48,31 +48,31 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
   const rangeEnd = Math.min(safePage * effectivePageSize, data.length)
 
   return (
-    <div ref={containerRef} className="h-full flex flex-col">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-[var(--color-border)]">
+    <div ref={containerRef} className="data-table h-full flex flex-col">
+      <div className="data-table__scroll overflow-x-auto">
+        <table className="data-table__table w-full text-sm">
+          <thead className="data-table__head">
+            <tr className="data-table__head-row border-b border-[var(--color-border)]">
               {columns.map(col => (
                 <th
                   key={col.key}
-                  className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] ${col.className || ''}`}
+                  className={`data-table__head-cell px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] ${col.className || ''}`}
                 >
                   {col.header}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="data-table__body">
             {prependRow}
             {loading ? (
-              <tr>
+              <tr className="data-table__loading">
                 <td colSpan={columns.length} className="px-4 py-12 text-center text-[var(--color-muted)]">
                   <span className="inline-block w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
                 </td>
               </tr>
             ) : data.length === 0 ? (
-              <tr>
+              <tr className="data-table__empty">
                 <td colSpan={columns.length} className="px-4 py-12 text-center text-[var(--color-muted)]">
                   {emptyMessage}
                 </td>
@@ -81,10 +81,10 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
               visible.map((row, i) => (
                 <tr
                   key={String(row[keyField])}
-                  className={`border-b border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors ${i === visible.length - 1 ? 'border-b-0' : ''}`}
+                  className={`data-table__row border-b border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors ${i === visible.length - 1 ? 'border-b-0' : ''}`}
                 >
                   {columns.map(col => (
-                    <td key={col.key} className={`px-4 py-3 text-[var(--color-text)] ${col.className || ''}`}>
+                    <td key={col.key} className={`data-table__cell px-4 py-3 text-[var(--color-text)] ${col.className || ''}`}>
                       {col.render ? col.render(row) : String((row as Record<string, unknown>)[col.key] ?? '')}
                     </td>
                   ))}
@@ -96,21 +96,21 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
         </table>
       </div>
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--color-border)] mt-auto">
-          <span className="text-xs text-[var(--color-muted)]">{rangeStart}–{rangeEnd} de {data.length}</span>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-[var(--color-muted)]">Página {safePage} de {totalPages}</span>
+        <div className="data-table__pagination flex items-center justify-between px-4 py-3 border-t border-[var(--color-border)] mt-auto">
+          <span className="data-table__pagination-info text-xs text-[var(--color-muted)]">{rangeStart}–{rangeEnd} de {data.length}</span>
+          <div className="data-table__pagination-nav flex items-center gap-3">
+            <span className="data-table__pagination-page text-xs text-[var(--color-muted)]">Página {safePage} de {totalPages}</span>
             <button
               onClick={() => setPage(p => p - 1)}
               disabled={safePage === 1}
-              className="text-xs px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="data-table__pagination-btn text-xs px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               ← Anterior
             </button>
             <button
               onClick={() => setPage(p => p + 1)}
               disabled={safePage === totalPages}
-              className="text-xs px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="data-table__pagination-btn text-xs px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               Siguiente →
             </button>

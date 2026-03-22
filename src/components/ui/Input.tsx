@@ -13,20 +13,20 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const inputId = id || label?.toLowerCase().replace(/\s+/g, '-')
 
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className={`input-field ${error ? 'input-field--error' : ''} flex flex-col gap-1.5`}>
         {label && (
-          <label htmlFor={inputId} className="text-sm font-medium text-[var(--color-text)]">
+          <label htmlFor={inputId} className="input-field__label text-sm font-medium text-[var(--color-text)]">
             {label}
           </label>
         )}
-        <div className="relative flex items-center">
+        <div className="input-field__wrapper relative flex items-center">
           {prefix && (
-            <span className="absolute left-3 text-[var(--color-muted)] flex items-center">{prefix}</span>
+            <span className="input-field__prefix absolute left-3 text-[var(--color-muted)] flex items-center">{prefix}</span>
           )}
           <input
             ref={ref}
             id={inputId}
-            className={`w-full bg-[var(--color-surface)] border rounded-lg px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] outline-none transition-all duration-150
+            className={`input-field__control w-full bg-[var(--color-surface)] border rounded-lg px-3 py-2 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] outline-none transition-all duration-150
               focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-0 focus:border-[var(--color-accent)]
               ${error ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)]'}
               ${prefix ? 'pl-9' : ''}
@@ -35,11 +35,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {...props}
           />
           {suffix && (
-            <span className="absolute right-3 text-[var(--color-muted)] flex items-center">{suffix}</span>
+            <span className="input-field__suffix absolute right-3 text-[var(--color-muted)] flex items-center">{suffix}</span>
           )}
         </div>
-        {error && <p className="text-xs text-[var(--color-danger)]">{error}</p>}
-        {hint && !error && <p className="text-xs text-[var(--color-muted)]">{hint}</p>}
+        {error && <p className="input-field__error text-xs text-[var(--color-danger)]">{error}</p>}
+        {hint && !error && <p className="input-field__hint text-xs text-[var(--color-muted)]">{hint}</p>}
       </div>
     )
   }

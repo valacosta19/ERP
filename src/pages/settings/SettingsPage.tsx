@@ -338,7 +338,7 @@ export function SettingsPage() {
     <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar title="Configuración" subtitle="Categorías y profesionales" />
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 max-w-2xl">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
         <section>
           <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Negocio</h2>
           {profile && (

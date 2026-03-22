@@ -40,13 +40,13 @@ export function Sidebar({ onClose }: SidebarProps) {
   const isAdmin = profile?.role === 'admin'
 
   return (
-    <aside className="w-56 min-h-screen bg-[var(--color-sidebar)] flex flex-col shrink-0">
-      <div className="px-5 py-6 border-b border-white/5">
+    <aside className="sidebar w-56 min-h-screen bg-[var(--color-sidebar)] flex flex-col shrink-0">
+      <div className="sidebar__brand px-5 py-6 border-b border-white/5">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-[var(--color-accent)] flex items-center justify-center">
+          <div className="sidebar__brand-icon w-8 h-8 rounded-lg bg-[var(--color-accent)] flex items-center justify-center">
             <Scissors size={16} className="text-white" />
           </div>
-          <div>
+          <div className="sidebar__brand-text">
             <p className="text-white font-semibold text-sm leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
               Studio ERP
             </p>
@@ -55,7 +55,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5">
+      <nav className="sidebar__nav flex-1 px-3 py-4 flex flex-col gap-0.5">
         {navItems.map(item => {
           if (item.adminOnly && !isAdmin) return null
           return (
@@ -64,7 +64,7 @@ export function Sidebar({ onClose }: SidebarProps) {
               to={item.to}
               onClick={onClose}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 animate-slide-in
+                `sidebar__nav-item ${isActive ? 'sidebar__nav-item--active' : ''} flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 animate-slide-in
                  ${isActive
                    ? 'bg-[var(--color-sidebar-active)] text-white'
                    : 'text-white/50 hover:text-white/90 hover:bg-[var(--color-sidebar-hover)]'
@@ -78,14 +78,14 @@ export function Sidebar({ onClose }: SidebarProps) {
         })}
       </nav>
 
-      <div className="px-3 py-4 border-t border-white/5">
-        <div className="px-3 py-2 mb-1">
+      <div className="sidebar__footer px-3 py-4 border-t border-white/5">
+        <div className="sidebar__user px-3 py-2 mb-1">
           <p className="text-white/90 text-sm font-medium truncate">{profile?.full_name ?? 'Usuario'}</p>
           <p className="text-white/35 text-xs capitalize">{profile?.role ?? ''}</p>
         </div>
         <button
           onClick={signOut}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-white/40 hover:text-white/80 hover:bg-[var(--color-sidebar-hover)] transition-all duration-150"
+          className="sidebar__logout w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-white/40 hover:text-white/80 hover:bg-[var(--color-sidebar-hover)] transition-all duration-150"
         >
           <LogOut size={16} />
           <span>Cerrar sesión</span>

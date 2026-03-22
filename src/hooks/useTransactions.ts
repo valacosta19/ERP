@@ -140,7 +140,7 @@ export function usePaymentMethodBalances(filters: { from?: string; to?: string }
     queryFn: async () => {
       let query = supabase
         .from('transaction_payments')
-        .select('payment_method, amount, transactions!inner(date)')
+        .select('payment_method, amount, type, transactions!inner(date)')
 
       if (filters.from) query = query.gte('transactions.date', filters.from)
       if (filters.to) query = query.lte('transactions.date', filters.to)
@@ -148,13 +148,13 @@ export function usePaymentMethodBalances(filters: { from?: string; to?: string }
       const { data, error } = await query
       if (error) throw new Error(error.message)
 
-      type Row = { payment_method: PaymentMethod; amount: number; }
+      type Row = { payment_method: PaymentMethod; amount: number; type: string }
       const rows = data as unknown as Row[]
 
       const methodSet = [...new Set(rows.map(r => r.payment_method))].sort()
       return methodSet.map(method => {
         const subset = rows.filter(r => r.payment_method === method)
-        const balance = subset.reduce((sum, r) => sum + r.amount, 0)
+        const balance = subset.reduce((sum, r) => sum + (r.type === 'entrada' ? r.amount : -r.amount), 0)
         return { method, balance }
       })
     },

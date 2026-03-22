@@ -70,7 +70,7 @@ export function InlineEditCell({ value, onSave, type = 'text', placeholder, clas
         onKeyDown={handleKeyDown}
         disabled={saving}
         placeholder={placeholder}
-        className={`w-full bg-[var(--color-bg)] border border-[var(--color-accent)] rounded px-2 py-0.5 text-sm text-[var(--color-text)] outline-none focus:ring-1 focus:ring-[var(--color-accent)] ${className}`}
+        className={`inline-edit__input w-full bg-[var(--color-bg)] border border-[var(--color-accent)] rounded px-2 py-0.5 text-sm text-[var(--color-text)] outline-none focus:ring-1 focus:ring-[var(--color-accent)] ${className}`}
       />
     )
   }
@@ -78,7 +78,7 @@ export function InlineEditCell({ value, onSave, type = 'text', placeholder, clas
   return (
     <span
       onClick={startEditing}
-      className={`cursor-pointer rounded px-1 py-0.5 hover:bg-[var(--color-bg)] transition-colors ${className}`}
+      className={`inline-edit__display cursor-pointer rounded px-1 py-0.5 hover:bg-[var(--color-bg)] transition-colors ${className}`}
       title="Clic para editar"
     >
       {value || <span className="text-[var(--color-muted)]">{placeholder || '—'}</span>}
