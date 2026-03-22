@@ -10,6 +10,45 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 13** — ✅ Completa
+
+### Cambios implementados en Phase 13
+
+#### Fix: parseo de montos en import wizard
+- **`parseNum` reescrito** (`StepImport.tsx`): detecta el separador decimal por posición del último separador.
+  - `"4,984.00"` → punto es decimal → elimina comas → **4984**
+  - `"4.984,00"` → coma es decimal → elimina puntos, coma→punto → **4984**
+  - `"1,500"` → solo coma con 3 dígitos exactos después → separador de miles → **1500**
+  - Antes: `.replace(/,/g, '.')` convertía `"4,984.00"` en `"4.984.00"` y `parseFloat` devolvía `4.984`.
+
+#### Feature: Multicurrency
+- **Migration 013**: `ALTER TABLE transactions ADD COLUMN currency text NOT NULL DEFAULT 'ARS' CHECK (currency IN ('ARS', 'USD', 'EUR'))`. Correr manualmente en Supabase.
+- **`types/index.ts`**: nuevo tipo `Currency = 'ARS' | 'USD' | 'EUR'`. Campo `currency: Currency` en `Transaction`.
+- **`database.ts`**: `currency` en Row/Insert/Update de `transactions`.
+- **`useTransactions`**: filtro `currency` en `TransactionFilters`. Campo `currency` en `TransactionPayload` y en el insert de `useCreateTransaction`.
+- **`TransactionsPage`**: filtro "Todas las monedas / ARS / USD / EUR" en la barra. Selector de moneda en form inline y modal de edición (defecto ARS). Monto en tabla muestra símbolo correcto (`$`, `U$D`, `€`).
+- **Import wizard**: columna `currency` opcional en transacciones; defecto `'ARS'` si vacío o inválido.
+
+#### Fix: edición de transaction_payments no persistía
+- **Causa raíz**: `useUpdateTransaction` solo actualizaba la fila de `transactions` pero nunca tocaba `transaction_payments` (los pagos eran inmutables por diseño inicial).
+- **Fix**: el hook ahora hace DELETE de los payments existentes + INSERT de los nuevos en cada edición.
+- **`handleUpdate`** en `TransactionsPage` ahora pasa `payments` al hook.
+
+#### Fix: método de pago obsoleto en modal
+- **Causa raíz**: al abrir el modal de edición, si el `payment_method` guardado en DB ya no existe en la lista activa de métodos de pago, el `<Select>` lo mostraba visualmente como el primer option (ej. "Efectivo") pero el estado React conservaba el valor viejo (ej. "dolares 100"). Al guardar se re-insertaba el método obsoleto.
+- **Fix en `openEdit`**: si `payment_method` no existe en `paymentMethodsData` activos, se normaliza al primer método activo disponible antes de setear `editForm`.
+
+#### Fix: invalidación de `payment-method-balances`
+- Los hooks `useCreateTransaction`, `useUpdateTransaction`, `useDeleteTransaction` ahora invalidan tanto `['transactions']` como `['payment-method-balances']` en `onSuccess`. Antes solo invalidaban transactions, por lo que las cards de balance no se actualizaban.
+
+#### Feature: cards de balance agrupadas por método + moneda
+- **`usePaymentMethodBalances`** retorna ahora `{ method, currencies: { currency, balance }[] }[]` en lugar de `{ method, balance }[]`.
+- Agrupa por `payment_method.toLowerCase()` (case-insensitive) para evitar duplicados por capitalización inconsistente en DB.
+- Cada card muestra el método una sola vez con una fila por moneda dentro.
+
+---
+
+## Current phase (anterior)
 **Phase 12** — ✅ Completa
 
 ### Cambios implementados en Phase 12
@@ -61,6 +100,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 10 | ✅ Catálogo, inline form, DescriptionCombobox, professional selector, import extensions, balance por método de pago, indicador visual de tipo, métodos de pago configurables (DB), seña como concepto separado, LotDrawer editable inline, SaleForm eliminado, payment direction derivada, lint fixes |
 | 11 | ✅ Auto-detect seña desde description, fix Total cobrado double-count, modal overflow fix |
 | 12 | ✅ `products_with_stock` view, `useProducts` una sola query, `database.ts` Views tipado |
+| 13 | ✅ Fix import parseNum, multicurrency (ARS/USD/EUR), fix edición de payments, cards de balance agrupadas por método+moneda |
 
 ---
 
@@ -221,10 +261,10 @@ Features discussed or requested that are explicitly deferred. Pick them up when 
 | Automated test suite | Current validation gate is `npm run build` + manual browser check |
 | Seña ↔ service linking | Link a seña transaction to the service transaction it was applied to |
 | Per-category commission rates | Currently fixed at 40% solo / 20% each for 2+ hairdressers |
-| `products_with_stock` DB view | Would replace the two-query pattern in `useProducts` |
+| ~~`products_with_stock` DB view~~ | Implementado en Phase 12 |
 | Optimistic UI updates | Currently refetches on every mutation via `invalidateQueries` |
 
 ## TODO
-1. Al importar transacciones se crean duplicados — investigar por qué el wizard ejecuta el import dos veces.
-2. El campo `is_seña` en el import debe interpretarse como monto de seña, no como booleano: si la celda está vacía o dice "no", se guarda 0; si tiene un número, ese valor va a `seña_amount` (distinto al `amount`). El "Monto total cobrado" = `amount` + `seña_amount`.
-3. El inventario no está interpretando los montos igual que las transacciones. Si importo un archivo con un monto como "4,984.00" debe interpretarlo como CUATRO MIL NOVECIENTOS OCHENTA Y CUADRO PESO.
+~~1. Fix import parseNum: "4,984.00" ahora se interpreta como 4984 (detecta separador decimal por posición).~~
+~~2. Multicurrency: columna `currency` en `transactions` (migration 013). Filtro ARS/USD/EUR en TransactionsPage. Balances agrupados por moneda activa. Selector en form inline y modal de edición. Soporte en import wizard.~~
+3. Reportes financieros y comisiones se debe popular con la información de "transacciones"

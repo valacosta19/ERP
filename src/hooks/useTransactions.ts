@@ -1,10 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
-import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, Professional } from '@/types'
+import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, Professional } from '@/types'
 
 interface TransactionFilters {
   type?: TransactionType | 'all'
   categoryId?: string
+  currency?: Currency
   from?: string
   to?: string
 }
@@ -21,6 +22,7 @@ export function useTransactions(filters: TransactionFilters = {}) {
 
       if (filters.type && filters.type !== 'all') query = query.eq('type', filters.type)
       if (filters.categoryId) query = query.eq('category_id', filters.categoryId)
+      if (filters.currency) query = query.eq('currency', filters.currency)
       if (filters.from) query = query.gte('date', filters.from)
       if (filters.to) query = query.lte('date', filters.to)
 
@@ -48,6 +50,7 @@ export interface PaymentRow {
 interface TransactionPayload {
   date: string
   type: TransactionType
+  currency: Currency
   category_id: string | null
   description: string | null
   is_seña: boolean
@@ -70,6 +73,7 @@ export function useCreateTransaction() {
           date: payload.date,
           type: payload.type,
           amount,
+          currency: payload.currency,
           category_id: payload.category_id,
           description: payload.description,
           is_seña: payload.is_seña,
@@ -97,14 +101,17 @@ export function useCreateTransaction() {
 
       return tx
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['transactions'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
+    },
   })
 }
 
 export function useUpdateTransaction() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, ...payload }: Omit<TransactionPayload, 'payments' | 'professional_ids'> & { id: string; amount: number }) => {
+    mutationFn: async ({ id, payments, ...payload }: Omit<TransactionPayload, 'professional_ids'> & { id: string; amount: number }) => {
       const { data, error } = await supabase
         .from('transactions')
         .update(payload)
@@ -112,9 +119,27 @@ export function useUpdateTransaction() {
         .select('*, category:categories(*)')
         .single()
       if (error) throw new Error(error.message)
+
+      const { error: delError } = await supabase
+        .from('transaction_payments')
+        .delete()
+        .eq('transaction_id', id)
+      if (delError) throw new Error(delError.message)
+
+      if (payments.length > 0) {
+        const direction = payload.type === 'income' ? 'entrada' : 'salida'
+        const { error: insError } = await supabase
+          .from('transaction_payments')
+          .insert(payments.map(p => ({ ...p, type: direction, transaction_id: id })))
+        if (insError) throw new Error(insError.message)
+      }
+
       return data as unknown as Transaction
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['transactions'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
+    },
   })
 }
 
@@ -125,37 +150,48 @@ export function useDeleteTransaction() {
       const { error } = await supabase.from('transactions').delete().eq('id', id)
       if (error) throw new Error(error.message)
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['transactions'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
+    },
   })
 }
 
 export interface PaymentMethodBalance {
   method: PaymentMethod
-  balance: number
+  currencies: { currency: string; balance: number }[]
 }
 
-export function usePaymentMethodBalances(filters: { from?: string; to?: string } = {}) {
+export function usePaymentMethodBalances(filters: { from?: string; to?: string; currency?: Currency } = {}) {
   return useQuery({
     queryKey: ['payment-method-balances', filters],
     queryFn: async () => {
       let query = supabase
         .from('transaction_payments')
-        .select('payment_method, amount, transactions!inner(date, type)')
+        .select('payment_method, amount, transactions!inner(date, type, currency)')
 
       if (filters.from) query = query.gte('transactions.date', filters.from)
       if (filters.to) query = query.lte('transactions.date', filters.to)
+      if (filters.currency) query = query.eq('transactions.currency', filters.currency)
 
       const { data, error } = await query
       if (error) throw new Error(error.message)
 
-      type Row = { payment_method: PaymentMethod; amount: number; transactions: { type: string } }
+      type Row = { payment_method: PaymentMethod; amount: number; transactions: { type: string; currency: string } }
       const rows = data as unknown as Row[]
 
-      const methodSet = [...new Set(rows.map(r => r.payment_method))].sort()
-      return methodSet.map(method => {
-        const subset = rows.filter(r => r.payment_method === method)
-        const balance = subset.reduce((sum, r) => sum + (r.transactions.type === 'income' ? r.amount : -r.amount), 0)
-        return { method, balance }
+      const methodKeySet = [...new Set(rows.map(r => r.payment_method.toLowerCase()))].sort()
+      return methodKeySet.map(methodKey => {
+        const subset = rows.filter(r => r.payment_method.toLowerCase() === methodKey)
+        const displayName = subset[0].payment_method
+        const currencySet = [...new Set(subset.map(r => r.transactions.currency))].sort()
+        const currencies = currencySet.map(currency => {
+          const balance = subset
+            .filter(r => r.transactions.currency === currency)
+            .reduce((sum, r) => sum + (r.transactions.type === 'income' ? r.amount : -r.amount), 0)
+          return { currency, balance }
+        })
+        return { method: displayName, currencies }
       })
     },
   })

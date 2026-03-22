@@ -15,7 +15,7 @@ import { useProfessionals } from '@/hooks/useProfessionals'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useProducts } from '@/hooks/useProducts'
 import { supabase } from '@/lib/supabaseClient'
-import type { Transaction, TransactionType, PaymentMethod, PaymentInstrument, CatalogItem, Product } from '@/types'
+import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, CatalogItem, Product } from '@/types'
 import type { PaymentRow } from '@/hooks/useTransactions'
 
 const INSTRUMENT_OPTIONS: { value: string; label: string }[] = [
@@ -28,9 +28,21 @@ function makeEmptyPayment(defaultMethod = 'Efectivo'): PaymentRow {
   return { payment_method: defaultMethod, instrument: null, amount: 0 }
 }
 
+const CURRENCY_OPTIONS: { value: Currency; label: string }[] = [
+  { value: 'ARS', label: 'ARS' },
+  { value: 'USD', label: 'USD' },
+  { value: 'EUR', label: 'EUR' },
+]
+
+const CURRENCY_FILTER_OPTIONS = [
+  { value: '', label: 'Todas las monedas' },
+  ...CURRENCY_OPTIONS,
+]
+
 const EMPTY_DRAFT = {
   date: new Date().toISOString().slice(0, 10),
   type: 'income' as TransactionType,
+  currency: 'ARS' as Currency,
   category_id: '',
   description: '',
   seña_amount: '',
@@ -43,9 +55,12 @@ function calcTotal(payments: PaymentRow[]) {
   return payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
 }
 
-function formatAmount(type: TransactionType, amount: number) {
+const CURRENCY_SYMBOL: Record<Currency, string> = { ARS: '$', USD: 'U$D', EUR: '€' }
+
+function formatAmount(type: TransactionType, amount: number, currency: Currency) {
   const sign = type === 'income' ? '+' : '-'
-  return `${sign}$${amount.toLocaleString('es-CO')}`
+  const sym = CURRENCY_SYMBOL[currency]
+  return `${sign}${sym}${amount.toLocaleString('es-CO')}`
 }
 
 type Suggestion = { id: string; name: string; price: number; productId?: string }
@@ -124,6 +139,7 @@ const INLINE_SELECT_STYLE: React.CSSProperties = {
 export function TransactionsPage() {
   const [typeFilter, setTypeFilter] = useState<'all' | TransactionType>('all')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [currencyFilter, setCurrencyFilter] = useState<Currency | ''>('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
 
@@ -136,6 +152,7 @@ export function TransactionsPage() {
   const { data: transactions = [], isLoading } = useTransactions({
     type: typeFilter,
     categoryId: categoryFilter || undefined,
+    currency: currencyFilter || undefined,
     from: from || undefined,
     to: to || undefined,
   })
@@ -146,7 +163,7 @@ export function TransactionsPage() {
   const createTx = useCreateTransaction()
   const updateTx = useUpdateTransaction()
   const deleteTx = useDeleteTransaction()
-  const { data: paymentBalances = [] } = usePaymentMethodBalances({ from: from || undefined, to: to || undefined })
+  const { data: paymentBalances = [] } = usePaymentMethodBalances({ from: from || undefined, to: to || undefined, currency: currencyFilter || undefined })
   const { data: paymentMethodsData = [] } = usePaymentMethods()
   const paymentMethodOptions = paymentMethodsData
     .filter(pm => pm.active)
@@ -184,11 +201,19 @@ export function TransactionsPage() {
     setEditForm({
       date: tx.date,
       type: tx.type,
+      currency: tx.currency,
       category_id: tx.category_id ?? '',
       description: tx.description ?? '',
       seña_amount: tx.seña_amount != null ? String(tx.seña_amount) : '',
       payments: tx.payments && tx.payments.length > 0
-        ? tx.payments.map(p => ({ payment_method: p.payment_method, instrument: p.instrument, amount: p.amount }))
+        ? tx.payments.map(p => {
+            const validMethod = paymentMethodsData.some(pm => pm.active && pm.name === p.payment_method)
+            return {
+              payment_method: validMethod ? p.payment_method : (paymentMethodsData.find(pm => pm.active)?.name ?? p.payment_method),
+              instrument: p.instrument,
+              amount: p.amount,
+            }
+          })
         : [makeEmptyPayment()],
       professional_ids: tx.professionals?.map(h => h.id) ?? [],
       product_id: null,
@@ -217,6 +242,7 @@ export function TransactionsPage() {
     const tx = await createTx.mutateAsync({
       date: draft.date,
       type: draft.type,
+      currency: draft.currency,
       category_id: draft.category_id || null,
       description: draft.description || null,
       is_seña: isSeña,
@@ -254,11 +280,13 @@ export function TransactionsPage() {
       id: editing!.id,
       date: editForm.date,
       type: editForm.type,
+      currency: editForm.currency,
       amount: total,
       category_id: editForm.category_id || null,
       description: editForm.description || null,
       is_seña: isSeña,
       seña_amount: isSeña ? total : (isEditServiceCategory && editForm.seña_amount ? parseFloat(editForm.seña_amount) : null),
+      payments: editForm.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
     })
     setModalOpen(false)
   }
@@ -304,6 +332,13 @@ export function TransactionsPage() {
             >
               <option value="income">Ingreso</option>
               <option value="expense">Gasto</option>
+            </select>
+            <select
+              value={draft.currency}
+              onChange={e => setDraft(d => d && { ...d, currency: e.target.value as Currency })}
+              style={INLINE_SELECT_STYLE}
+            >
+              {CURRENCY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <select
               value={draft.category_id}
@@ -410,7 +445,7 @@ export function TransactionsPage() {
               />
             )}
             <span className="text-sm font-semibold text-[var(--color-text)] ml-auto tabular-nums">
-              Total: ${calcTotal(draft.payments).toLocaleString('es-CO')}
+              Total: {CURRENCY_SYMBOL[draft.currency]}{calcTotal(draft.payments).toLocaleString('es-CO')}
             </span>
             {formError && (
               <span className="text-xs text-[var(--color-danger)]">{formError}</span>
@@ -498,7 +533,7 @@ export function TransactionsPage() {
         const total = tx.is_seña ? tx.amount : tx.amount + (tx.seña_amount ?? 0)
         return (
           <span className={`font-semibold tabular-nums ${tx.type === 'income' ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
-            {formatAmount(tx.type, total)}
+            {formatAmount(tx.type, total, tx.currency)}
           </span>
         )
       },
@@ -557,6 +592,12 @@ export function TransactionsPage() {
             onChange={e => setCategoryFilter(e.target.value)}
             className="w-48"
           />
+          <Select
+            options={CURRENCY_FILTER_OPTIONS}
+            value={currencyFilter}
+            onChange={e => setCurrencyFilter(e.target.value as Currency | '')}
+            className="w-40"
+          />
           <Input
             type="date"
             value={from}
@@ -589,11 +630,18 @@ export function TransactionsPage() {
               className="rounded-xl border border-[var(--color-border)] p-4"
               style={{ background: 'var(--color-surface)' }}
             >
-              <div className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: 'var(--color-muted)' }}>
+              <div className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--color-muted)' }}>
                 {b.method}
               </div>
-              <div className={`text-lg font-bold tabular-nums ${b.balance >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
-                ${b.balance.toLocaleString('es-CO')}
+              <div className="flex flex-col gap-1">
+                {b.currencies.map(({ currency, balance }) => (
+                  <div key={currency} className="flex items-baseline justify-between gap-2">
+                    <span className="text-xs" style={{ color: 'var(--color-muted)' }}>{currency}</span>
+                    <span className={`text-base font-bold tabular-nums ${balance >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                      {CURRENCY_SYMBOL[currency as Currency] ?? '$'}{balance.toLocaleString('es-CO')}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           ))}
@@ -617,7 +665,7 @@ export function TransactionsPage() {
         title="Editar transacción"
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <Input
               label="Fecha"
               type="date"
@@ -632,6 +680,12 @@ export function TransactionsPage() {
               ]}
               value={editForm.type}
               onChange={e => setEditForm(f => ({ ...f, type: e.target.value as TransactionType, category_id: '' }))}
+            />
+            <Select
+              label="Moneda"
+              options={CURRENCY_OPTIONS}
+              value={editForm.currency}
+              onChange={e => setEditForm(f => ({ ...f, currency: e.target.value as Currency }))}
             />
           </div>
 
@@ -702,7 +756,7 @@ export function TransactionsPage() {
               ))}
             </div>
             <div className="mt-2 text-right text-sm font-semibold text-[var(--color-text)]">
-              Total: ${calcTotal(editForm.payments).toLocaleString('es-CO')}
+              Total: {CURRENCY_SYMBOL[editForm.currency]}{calcTotal(editForm.payments).toLocaleString('es-CO')}
             </div>
           </div>
 

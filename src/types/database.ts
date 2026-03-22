@@ -49,6 +49,7 @@ export interface Database {
           date: string
           type: 'income' | 'expense'
           amount: number
+          currency: 'ARS' | 'USD' | 'EUR'
           category_id: string | null
           description: string | null
           created_by: string | null
@@ -61,6 +62,7 @@ export interface Database {
           date: string
           type: 'income' | 'expense'
           amount: number
+          currency?: 'ARS' | 'USD' | 'EUR'
           category_id?: string | null
           description?: string | null
           created_by?: string | null
@@ -73,6 +75,7 @@ export interface Database {
           date?: string
           type?: 'income' | 'expense'
           amount?: number
+          currency?: 'ARS' | 'USD' | 'EUR'
           category_id?: string | null
           description?: string | null
           is_seña?: boolean

@@ -18,7 +18,23 @@ function getVal(row: Record<string, string>, mapping: Record<string, string>, fi
 }
 
 function parseNum(s: string): number {
-  return parseFloat(s.replace(/,/g, '.')) || 0
+  if (!s) return 0
+  const lastComma = s.lastIndexOf(',')
+  const lastDot = s.lastIndexOf('.')
+  let normalized: string
+  if (lastComma !== -1 && lastDot !== -1) {
+    normalized = lastDot > lastComma
+      ? s.replace(/,/g, '')
+      : s.replace(/\./g, '').replace(',', '.')
+  } else if (lastComma !== -1) {
+    const afterComma = s.slice(lastComma + 1)
+    normalized = afterComma.length === 3 && /^\d{3}$/.test(afterComma)
+      ? s.replace(/,/g, '')
+      : s.replace(',', '.')
+  } else {
+    normalized = s
+  }
+  return parseFloat(normalized) || 0
 }
 
 function parseType(s: string): 'income' | 'expense' {
@@ -171,9 +187,14 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               const is_seña = señaNum > 0
               const seña_amount = is_seña ? señaNum : 0
 
+              const rawCurrency = getVal(row, m, 'currency').toUpperCase()
+              const currency = (['ARS', 'USD', 'EUR'] as const).includes(rawCurrency as 'ARS' | 'USD' | 'EUR')
+                ? (rawCurrency as 'ARS' | 'USD' | 'EUR')
+                : 'ARS'
+
               const { data: txData, error: txError } = await supabase
                 .from('transactions')
-                .insert({ date, type, amount, category_id, description, is_seña, seña_amount })
+                .insert({ date, type, amount, currency, category_id, description, is_seña, seña_amount })
                 .select('id')
                 .single()
               if (txError) { result.errors.push(`${date} $${amount}: ${txError.message}`); continue }

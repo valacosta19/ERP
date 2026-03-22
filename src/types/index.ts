@@ -2,6 +2,7 @@ export type { Database } from './database'
 
 export type UserRole = 'admin' | 'employee'
 export type TransactionType = 'income' | 'expense'
+export type Currency = 'ARS' | 'USD' | 'EUR'
 export type MovementType = 'in' | 'out' | 'adjustment'
 export type POStatus = 'draft' | 'received' | 'cancelled'
 export type PaymentMethod = string
@@ -42,6 +43,7 @@ export interface Transaction {
   date: string
   type: TransactionType
   amount: number
+  currency: Currency
   category_id: string | null
   description: string | null
   created_by: string | null
