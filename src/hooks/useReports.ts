@@ -1,13 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
+import type { Currency } from '@/types'
 
-export type GrossProfitRow = {
-  product_id: string
-  product_name: string
-  revenue: number
-  cogs: number
-  gross_profit: number
-  margin: number
+export type FinancialCategoryRow = {
+  category_id: string | null
+  category_name: string
+  income: number
+  expense: number
+  balance: number
+}
+
+export type FinancialReport = {
+  summary: { total_income: number; total_expense: number; balance: number }
+  categories: FinancialCategoryRow[]
 }
 
 export type InventoryValuationRow = {
@@ -17,12 +22,11 @@ export type InventoryValuationRow = {
   total_value: number
 }
 
-type RawSaleItem = {
-  product_id: string
-  quantity: number
-  unit_cost: number
-  unit_sale_price: number
-  products: { name: string } | null
+type RawTx = {
+  type: string
+  amount: number
+  category_id: string | null
+  categories: { name: string } | null
 }
 
 type RawLot = {
@@ -32,44 +36,52 @@ type RawLot = {
   products: { name: string } | null
 }
 
-export function useGrossProfitReport() {
+export function useFinancialReport(filters: { from?: string; to?: string; currency?: Currency } = {}) {
   return useQuery({
-    queryKey: ['reports', 'gross-profit'],
+    queryKey: ['reports', 'financial', filters],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('sale_items')
-        .select('product_id, quantity, unit_cost, unit_sale_price, products(name)')
+      let query = supabase
+        .from('transactions')
+        .select('type, amount, category_id, categories(name)')
+
+      if (filters.from) query = query.gte('date', filters.from)
+      if (filters.to) query = query.lte('date', filters.to)
+      if (filters.currency) query = query.eq('currency', filters.currency)
+
+      const { data, error } = await query
       if (error) throw new Error(error.message)
 
-      const items = (data as unknown as RawSaleItem[]) ?? []
-      const map = new Map<string, GrossProfitRow>()
+      const rows = (data as unknown as RawTx[]) ?? []
+      const map = new Map<string, FinancialCategoryRow>()
 
-      for (const item of items) {
-        const revenue = Number(item.quantity) * Number(item.unit_sale_price)
-        const cogs = Number(item.quantity) * Number(item.unit_cost)
-        const existing = map.get(item.product_id)
+      for (const row of rows) {
+        const key = row.category_id ?? '__none__'
+        const income = row.type === 'income' ? Number(row.amount) : 0
+        const expense = row.type === 'expense' ? Number(row.amount) : 0
+        const existing = map.get(key)
         if (existing) {
-          existing.revenue += revenue
-          existing.cogs += cogs
-          existing.gross_profit += revenue - cogs
+          existing.income += income
+          existing.expense += expense
+          existing.balance = existing.income - existing.expense
         } else {
-          map.set(item.product_id, {
-            product_id: item.product_id,
-            product_name: item.products?.name ?? 'Desconocido',
-            revenue,
-            cogs,
-            gross_profit: revenue - cogs,
-            margin: 0,
+          map.set(key, {
+            category_id: row.category_id,
+            category_name: row.categories?.name ?? 'Sin categoría',
+            income,
+            expense,
+            balance: income - expense,
           })
         }
       }
 
-      return Array.from(map.values())
-        .map(row => ({
-          ...row,
-          margin: row.revenue > 0 ? (row.gross_profit / row.revenue) * 100 : 0,
-        }))
-        .sort((a, b) => b.gross_profit - a.gross_profit)
+      const categories = Array.from(map.values()).sort((a, b) => b.income - a.income)
+      const total_income = categories.reduce((s, r) => s + r.income, 0)
+      const total_expense = categories.reduce((s, r) => s + r.expense, 0)
+
+      return {
+        summary: { total_income, total_expense, balance: total_income - total_expense },
+        categories,
+      } as FinancialReport
     },
   })
 }

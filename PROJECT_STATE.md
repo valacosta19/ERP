@@ -267,4 +267,4 @@ Features discussed or requested that are explicitly deferred. Pick them up when 
 ## TODO
 ~~1. Fix import parseNum: "4,984.00" ahora se interpreta como 4984 (detecta separador decimal por posición).~~
 ~~2. Multicurrency: columna `currency` en `transactions` (migration 013). Filtro ARS/USD/EUR en TransactionsPage. Balances agrupados por moneda activa. Selector en form inline y modal de edición. Soporte en import wizard.~~
-3. Reportes financieros y comisiones se debe popular con la información de "transacciones"
+~~3. Reportes financieros y comisiones se debe popular con la información de "transacciones". Reemplazado `useGrossProfitReport` (leía de `sale_items` vacía) por `useFinancialReport` que lee de `transactions`. KPIs: ingresos, gastos, balance. Tabla: por categoría. Filtros: fecha + moneda.~~
