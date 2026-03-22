@@ -29,6 +29,10 @@ export interface Professional {
   created_at: string
 }
 
+export interface ProfessionalAssignment extends Professional {
+  commission_rate: number
+}
+
 export interface TransactionPayment {
   id: string
   transaction_id: string
@@ -52,7 +56,7 @@ export interface Transaction {
   seña_amount: number | null
   category?: Category
   payments?: TransactionPayment[]
-  professionals?: Professional[]
+  professionals?: ProfessionalAssignment[]
 }
 
 export interface Supplier {

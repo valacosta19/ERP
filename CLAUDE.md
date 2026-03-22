@@ -98,6 +98,12 @@ Expected flow: plan → execute → report → validate
 
 ---
 
+## Design
+
+Use the `frontend-design` skill whenever adjusting page layout/styling or adding a new UI component.
+
+---
+
 ## Rules
 
 - **No over-engineering.** Build the minimum that satisfies the current phase. No abstractions for hypothetical future needs.

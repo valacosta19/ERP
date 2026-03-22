@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
-import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, Professional } from '@/types'
+import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, ProfessionalAssignment } from '@/types'
 
 interface TransactionFilters {
   type?: TransactionType | 'all'
@@ -16,7 +16,7 @@ export function useTransactions(filters: TransactionFilters = {}) {
     queryFn: async () => {
       let query = supabase
         .from('transactions')
-        .select('*, category:categories(*), payments:transaction_payments(*), transaction_hairdressers(hairdresser_id, hairdressers(id, name, active, created_at))')
+        .select('*, category:categories(*), payments:transaction_payments(*), transaction_hairdressers(hairdresser_id, commission_rate, hairdressers(id, name, active, created_at))')
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
 
@@ -30,12 +30,14 @@ export function useTransactions(filters: TransactionFilters = {}) {
       if (error) throw new Error(error.message)
 
       type RawTx = Omit<Transaction, 'professionals'> & {
-        transaction_hairdressers: { hairdresser_id: string; hairdressers: Professional | null }[]
+        transaction_hairdressers: { hairdresser_id: string; commission_rate: number; hairdressers: Omit<ProfessionalAssignment, 'commission_rate'> | null }[]
       }
 
       return (data as unknown as RawTx[]).map(tx => ({
         ...tx,
-        professionals: tx.transaction_hairdressers.map(th => th.hairdressers).filter(Boolean),
+        professionals: tx.transaction_hairdressers
+          .filter(th => th.hairdressers !== null)
+          .map(th => ({ ...th.hairdressers!, commission_rate: th.commission_rate })),
       })) as Transaction[]
     },
   })
@@ -56,7 +58,7 @@ interface TransactionPayload {
   is_seña: boolean
   seña_amount: number | null
   payments: PaymentRow[]
-  professional_ids: string[]
+  professionals: { id: string; commission_rate: number }[]
 }
 
 export function useCreateTransaction() {
@@ -92,10 +94,10 @@ export function useCreateTransaction() {
         if (pmtError) throw new Error(pmtError.message)
       }
 
-      if (payload.professional_ids.length > 0) {
+      if (payload.professionals.length > 0) {
         const { error: hdError } = await supabase
           .from('transaction_hairdressers')
-          .insert(payload.professional_ids.map(hid => ({ transaction_id: tx.id, hairdresser_id: hid })))
+          .insert(payload.professionals.map(p => ({ transaction_id: tx.id, hairdresser_id: p.id, commission_rate: p.commission_rate })))
         if (hdError) throw new Error(hdError.message)
       }
 
@@ -111,7 +113,7 @@ export function useCreateTransaction() {
 export function useUpdateTransaction() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, payments, ...payload }: Omit<TransactionPayload, 'professional_ids'> & { id: string; amount: number }) => {
+    mutationFn: async ({ id, payments, professionals, ...payload }: TransactionPayload & { id: string; amount: number }) => {
       const { data, error } = await supabase
         .from('transactions')
         .update(payload)
@@ -120,11 +122,11 @@ export function useUpdateTransaction() {
         .single()
       if (error) throw new Error(error.message)
 
-      const { error: delError } = await supabase
+      const { error: delPmtError } = await supabase
         .from('transaction_payments')
         .delete()
         .eq('transaction_id', id)
-      if (delError) throw new Error(delError.message)
+      if (delPmtError) throw new Error(delPmtError.message)
 
       if (payments.length > 0) {
         const direction = payload.type === 'income' ? 'entrada' : 'salida'
@@ -132,6 +134,19 @@ export function useUpdateTransaction() {
           .from('transaction_payments')
           .insert(payments.map(p => ({ ...p, type: direction, transaction_id: id })))
         if (insError) throw new Error(insError.message)
+      }
+
+      const { error: delHdError } = await supabase
+        .from('transaction_hairdressers')
+        .delete()
+        .eq('transaction_id', id)
+      if (delHdError) throw new Error(delHdError.message)
+
+      if (professionals.length > 0) {
+        const { error: insHdError } = await supabase
+          .from('transaction_hairdressers')
+          .insert(professionals.map(p => ({ transaction_id: id, hairdresser_id: p.id, commission_rate: p.commission_rate })))
+        if (insHdError) throw new Error(insHdError.message)
       }
 
       return data as unknown as Transaction

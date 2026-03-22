@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Table } from '@/components/ui/Table'
 import { Input } from '@/components/ui/Input'
@@ -6,8 +6,9 @@ import { Select } from '@/components/ui/Select'
 import { useFinancialReport, useInventoryValuation } from '@/hooks/useReports'
 import { useCommissionsReport } from '@/hooks/useCommissionsReport'
 import type { FinancialCategoryRow, InventoryValuationRow } from '@/hooks/useReports'
-import type { CommissionRow } from '@/hooks/useCommissionsReport'
+import type { CommissionDetailRow } from '@/hooks/useCommissionsReport'
 import type { Currency } from '@/types'
+import { formatDate } from '@/lib/formatDate'
 
 type Tab = 'financiero' | 'comisiones'
 
@@ -74,27 +75,28 @@ const valuationColumns = [
 const commissionColumns = [
   { key: 'professional_name', header: 'Profesional' },
   {
-    key: 'transaction_count',
-    header: 'Transacciones',
-    render: (r: CommissionRow) => r.transaction_count,
-    className: 'text-right',
+    key: 'date',
+    header: 'Fecha',
+    render: (r: CommissionDetailRow) => (
+      <span className="text-[var(--color-muted)]">{formatDate(r.date)}</span>
+    ),
   },
   {
     key: 'total_amount',
-    header: 'Total facturado',
-    render: (r: CommissionRow) => fmtAmount(r.total_amount),
+    header: 'Monto servicio',
+    render: (r: CommissionDetailRow) => fmtAmount(r.total_amount),
     className: 'text-right',
   },
   {
-    key: 'effective_rate',
-    header: 'Tasa efectiva',
-    render: (r: CommissionRow) => `${(r.effective_rate * 100).toFixed(1)}%`,
+    key: 'commission_rate',
+    header: '% comisión',
+    render: (r: CommissionDetailRow) => `${r.commission_rate}%`,
     className: 'text-right',
   },
   {
     key: 'commission_amount',
     header: 'Comisión',
-    render: (r: CommissionRow) => fmtAmount(r.commission_amount),
+    render: (r: CommissionDetailRow) => fmtAmount(r.commission_amount),
     className: 'text-right font-semibold',
   },
 ]
@@ -106,6 +108,7 @@ export function ReportsPage() {
   const [currency, setCurrency] = useState<Currency | ''>('')
   const [commFrom, setCommFrom] = useState('')
   const [commTo, setCommTo] = useState('')
+  const [commProfFilter, setCommProfFilter] = useState('')
 
   const financial = useFinancialReport({ from: from || undefined, to: to || undefined, currency: currency || undefined })
   const valuation = useInventoryValuation()
@@ -113,7 +116,41 @@ export function ReportsPage() {
 
   const { summary } = financial.data ?? { summary: { total_income: 0, total_expense: 0, balance: 0 } }
   const totalInventoryValue = valuation.data?.reduce((s, r) => s + r.total_value, 0) ?? 0
-  const totalCommissions = commissions.data?.reduce((s, r) => s + r.commission_amount, 0) ?? 0
+
+  const filteredCommissions = useMemo(() => {
+    if (!commissions.data) return []
+    const rows = commProfFilter
+      ? commissions.data.filter(r => r.professional_id === commProfFilter)
+      : [...commissions.data]
+    return rows.sort((a, b) => b.date.localeCompare(a.date))
+  }, [commissions.data, commProfFilter])
+
+  const totalCommissions = filteredCommissions.reduce((s, r) => s + r.commission_amount, 0)
+
+  const commissionsByProfessional = useMemo(() => {
+    const map = new Map<string, { name: string; total: number; count: number }>()
+    for (const r of (commissions.data ?? [])) {
+      const existing = map.get(r.professional_id)
+      if (existing) {
+        existing.total += r.commission_amount
+        existing.count += 1
+      } else {
+        map.set(r.professional_id, { name: r.professional_name, total: r.commission_amount, count: 1 })
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, v]) => ({ id, ...v }))
+      .sort((a, b) => b.total - a.total)
+  }, [commissions.data])
+
+  const professionalOptions = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const r of (commissions.data ?? [])) seen.set(r.professional_id, r.professional_name)
+    return [
+      { value: '', label: 'Todos los profesionales' },
+      ...Array.from(seen.entries()).map(([id, name]) => ({ value: id, label: name })),
+    ]
+  }, [commissions.data])
 
   return (
     <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
@@ -182,6 +219,7 @@ export function ReportsPage() {
                   keyField="category_name"
                   loading={financial.isLoading}
                   emptyMessage="Sin transacciones en el período"
+                  pageSize={500}
                 />
               </div>
             </section>
@@ -201,6 +239,7 @@ export function ReportsPage() {
                   keyField="product_id"
                   loading={valuation.isLoading}
                   emptyMessage="Sin lotes en inventario"
+                  pageSize={500}
                 />
               </div>
             </section>
@@ -212,22 +251,38 @@ export function ReportsPage() {
             <div className="flex flex-wrap gap-3 items-end">
               <Input label="Desde" type="date" value={commFrom} onChange={e => setCommFrom(e.target.value)} className="w-40" />
               <Input label="Hasta" type="date" value={commTo} onChange={e => setCommTo(e.target.value)} className="w-40" />
+              <Select
+                label="Profesional"
+                options={professionalOptions}
+                value={commProfFilter}
+                onChange={e => setCommProfFilter(e.target.value)}
+                className="w-52"
+              />
             </div>
 
-            <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4 w-fit">
-              <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Total comisiones</p>
-              <p className="text-2xl font-semibold text-[var(--color-text)] mt-1">{fmtAmount(totalCommissions)}</p>
+            <div className="flex flex-wrap gap-4 items-start">
+              <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
+                <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Total comisiones</p>
+                <p className="text-2xl font-semibold text-[var(--color-text)] mt-1">{fmtAmount(totalCommissions)}</p>
+              </div>
+              {commissionsByProfessional.map(p => (
+                <div key={p.id} className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
+                  <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">{p.name}</p>
+                  <p className="text-2xl font-semibold text-[var(--color-text)] mt-1">{fmtAmount(p.total)}</p>
+                  <p className="text-xs text-[var(--color-muted)] mt-0.5">{p.count} {p.count === 1 ? 'servicio' : 'servicios'}</p>
+                </div>
+              ))}
             </div>
 
             <section>
-              <h2 className="text-base font-semibold text-[var(--color-text)] mb-3">Comisiones por profesional</h2>
               <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg overflow-hidden">
-                <Table<CommissionRow>
+                <Table<CommissionDetailRow>
                   columns={commissionColumns}
-                  data={commissions.data ?? []}
-                  keyField="professional_id"
+                  data={filteredCommissions}
+                  keyField="transaction_id"
                   loading={commissions.isLoading}
-                  emptyMessage="Sin transacciones con profesionales en el período"
+                  emptyMessage="Sin comisiones en el período"
+                  pageSize={500}
                 />
               </div>
             </section>

@@ -129,10 +129,12 @@ export interface Database {
         Row: {
           transaction_id: string
           hairdresser_id: string
+          commission_rate: number
         }
         Insert: {
           transaction_id: string
           hairdresser_id: string
+          commission_rate?: number
         }
         Update: never
         Relationships: []

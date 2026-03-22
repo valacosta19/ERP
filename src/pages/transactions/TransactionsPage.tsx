@@ -47,7 +47,7 @@ const EMPTY_DRAFT = {
   description: '',
   seña_amount: '',
   payments: [makeEmptyPayment()] as PaymentRow[],
-  professional_ids: [] as string[],
+  professionals: [] as { id: string; commission_rate: number }[],
   product_id: null as string | null,
 }
 
@@ -215,7 +215,7 @@ export function TransactionsPage() {
             }
           })
         : [makeEmptyPayment()],
-      professional_ids: tx.professionals?.map(h => h.id) ?? [],
+      professionals: tx.professionals?.map(h => ({ id: h.id, commission_rate: h.commission_rate })) ?? [],
       product_id: null,
     })
     setFormError('')
@@ -252,7 +252,7 @@ export function TransactionsPage() {
         instrument: p.instrument || null,
         amount: Number(p.amount),
       })),
-      professional_ids: draft.professional_ids,
+      professionals: draft.professionals,
     })
     if (draft.product_id && draft.type === 'expense') {
       const { data: { user } } = await supabase.auth.getUser()
@@ -287,6 +287,7 @@ export function TransactionsPage() {
       is_seña: isSeña,
       seña_amount: isSeña ? total : (isEditServiceCategory && editForm.seña_amount ? parseFloat(editForm.seña_amount) : null),
       payments: editForm.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
+      professionals: editForm.professionals,
     })
     setModalOpen(false)
   }
@@ -407,27 +408,48 @@ export function TransactionsPage() {
             ))}
           </div>
 
-          {isDraftServiceCategory && activeProfessionals.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-medium text-[var(--color-muted)]">Profesionales</span>
-              {activeProfessionals.map(hd => (
-                <button
-                  key={hd.id}
-                  type="button"
-                  onClick={() => setDraft(d => d && {
-                    ...d,
-                    professional_ids: d.professional_ids.includes(hd.id)
-                      ? d.professional_ids.filter(id => id !== hd.id)
-                      : [...d.professional_ids, hd.id],
-                  })}
-                  className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
-                    draft.professional_ids.includes(hd.id)
-                      ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]'
-                      : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-accent)]'
-                  }`}
-                >
-                  {hd.name}
-                </button>
+          {isDraftServiceCategory && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-[var(--color-muted)]">Profesionales</span>
+                {activeProfessionals.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setDraft(d => d && { ...d, professionals: [...d.professionals, { id: activeProfessionals[0].id, commission_rate: 0 }] })}
+                    className="text-xs text-[var(--color-accent)] hover:underline"
+                  >
+                    + Agregar profesional
+                  </button>
+                )}
+              </div>
+              {draft.professionals.map((pa, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <select
+                    value={pa.id}
+                    onChange={e => setDraft(d => d && { ...d, professionals: d.professionals.map((p, ii) => ii === i ? { ...p, id: e.target.value } : p) })}
+                    style={INLINE_SELECT_STYLE}
+                  >
+                    {activeProfessionals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                  </select>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={pa.commission_rate === 0 ? '' : String(pa.commission_rate)}
+                    onChange={e => setDraft(d => d && { ...d, professionals: d.professionals.map((p, ii) => ii === i ? { ...p, commission_rate: parseFloat(e.target.value) || 0 } : p) })}
+                    placeholder="0"
+                    style={{ ...INLINE_SELECT_STYLE, width: '52px', textAlign: 'right' }}
+                  />
+                  <span className="text-xs text-[var(--color-muted)]">%</span>
+                  <button
+                    type="button"
+                    onClick={() => setDraft(d => d && { ...d, professionals: d.professionals.filter((_, ii) => ii !== i) })}
+                    className="text-[var(--color-muted)] hover:text-[var(--color-danger)] transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -760,28 +782,49 @@ export function TransactionsPage() {
             </div>
           </div>
 
-          {isEditServiceCategory && activeProfessionals.length > 0 && (
+          {isEditServiceCategory && (
             <div>
-              <span className="text-sm font-medium text-[var(--color-text)] block mb-2">Profesionales</span>
-              <div className="flex flex-wrap gap-2">
-                {activeProfessionals.map(hd => (
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-[var(--color-text)]">Profesionales</span>
+                {activeProfessionals.length > 0 && (
                   <button
-                    key={hd.id}
                     type="button"
-                    onClick={() => setEditForm(f => ({
-                      ...f,
-                      professional_ids: f.professional_ids.includes(hd.id)
-                        ? f.professional_ids.filter(id => id !== hd.id)
-                        : [...f.professional_ids, hd.id],
-                    }))}
-                    className={`px-3 py-1 rounded-lg text-sm border transition-colors ${
-                      editForm.professional_ids.includes(hd.id)
-                        ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]'
-                        : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-accent)]'
-                    }`}
+                    onClick={() => setEditForm(f => ({ ...f, professionals: [...f.professionals, { id: activeProfessionals[0].id, commission_rate: 0 }] }))}
+                    className="text-xs text-[var(--color-accent)] hover:underline"
                   >
-                    {hd.name}
+                    + Agregar profesional
                   </button>
+                )}
+              </div>
+              <div className="space-y-2">
+                {editForm.professionals.map((pa, i) => (
+                  <div key={i} className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <Select
+                        options={activeProfessionals.map(h => ({ value: h.id, label: h.name }))}
+                        value={pa.id}
+                        onChange={e => setEditForm(f => ({ ...f, professionals: f.professionals.map((p, ii) => ii === i ? { ...p, id: e.target.value } : p) }))}
+                      />
+                    </div>
+                    <div className="w-24">
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={pa.commission_rate === 0 ? '' : String(pa.commission_rate)}
+                        onChange={e => setEditForm(f => ({ ...f, professionals: f.professionals.map((p, ii) => ii === i ? { ...p, commission_rate: parseFloat(e.target.value) || 0 } : p) }))}
+                        placeholder="% comisión"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm(f => ({ ...f, professionals: f.professionals.filter((_, ii) => ii !== i) }))}
+                      className="p-1.5 mb-0.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
