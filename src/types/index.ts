@@ -80,6 +80,8 @@ export interface Product {
   deleted_at: string | null
   created_at: string
   stock?: number
+  min_cost?: number | null
+  max_cost?: number | null
 }
 
 export interface PurchaseOrder {

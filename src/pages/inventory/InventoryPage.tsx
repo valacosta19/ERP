@@ -1,9 +1,12 @@
 import { useState } from 'react'
-import { Layers } from 'lucide-react'
+import { Layers, Pencil } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
 import { Table } from '@/components/ui/Table'
 import { InlineEditCell } from '@/components/ui/InlineEditCell'
+import { Modal } from '@/components/ui/Modal'
+import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
 import { useProducts, useUpdateProduct } from '@/hooks/useProducts'
 import { LotDrawer } from './LotDrawer'
 import type { Product } from '@/types'
@@ -22,8 +25,12 @@ function stockLabel(product: Product): string {
   return 'OK'
 }
 
+type EditForm = { name: string; sku: string; brand: string; unit: string; sale_price: string; min_stock: string }
+
 export function InventoryPage() {
   const [lotProductId, setLotProductId] = useState<string | null>(null)
+  const [editProduct, setEditProduct] = useState<Product | null>(null)
+  const [editForm, setEditForm] = useState<EditForm>({ name: '', sku: '', brand: '', unit: '', sale_price: '', min_stock: '' })
 
   const { data: products = [], isLoading } = useProducts()
   const updateProduct = useUpdateProduct()
@@ -34,10 +41,37 @@ export function InventoryPage() {
       name: p.name,
       sku: p.sku,
       unit: p.unit,
+      brand: p.brand,
       sale_price: p.sale_price,
       min_stock: p.min_stock,
       [field]: field === 'sale_price' ? Number(value) : value,
     })
+  }
+
+  function openEdit(p: Product) {
+    setEditProduct(p)
+    setEditForm({
+      name: p.name,
+      sku: p.sku,
+      brand: p.brand ?? '',
+      unit: p.unit ?? '',
+      sale_price: String(p.sale_price),
+      min_stock: String(p.min_stock),
+    })
+  }
+
+  async function handleSaveEdit() {
+    if (!editProduct) return
+    await updateProduct.mutateAsync({
+      id: editProduct.id,
+      name: editForm.name,
+      sku: editForm.sku,
+      brand: editForm.brand || null,
+      unit: editForm.unit || null,
+      sale_price: Number(editForm.sale_price) || 0,
+      min_stock: Number(editForm.min_stock) || 0,
+    })
+    setEditProduct(null)
   }
 
   const columns = [
@@ -61,6 +95,16 @@ export function InventoryPage() {
       render: (p: Product) => (
         <span className="text-[var(--color-muted)]">{p.unit || '—'}</span>
       ),
+    },
+    {
+      key: 'cost_range',
+      header: 'Precio compra',
+      className: 'text-right',
+      render: (p: Product) => {
+        if (p.min_cost == null) return <span className="text-[var(--color-muted)]">—</span>
+        if (p.min_cost === p.max_cost) return <span className="tabular-nums">${p.min_cost!.toLocaleString('es-CO')}</span>
+        return <span className="tabular-nums">${p.min_cost!.toLocaleString('es-CO')} – ${p.max_cost!.toLocaleString('es-CO')}</span>
+      },
     },
     {
       key: 'sale_price',
@@ -103,15 +147,24 @@ export function InventoryPage() {
     {
       key: 'actions',
       header: '',
-      className: 'w-12',
+      className: 'w-20',
       render: (p: Product) => (
-        <button
-          onClick={() => setLotProductId(p.id)}
-          className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
-          title="Ver lotes"
-        >
-          <Layers size={14} />
-        </button>
+        <div className="flex items-center gap-1 justify-end">
+          <button
+            onClick={() => openEdit(p)}
+            className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+            title="Editar producto"
+          >
+            <Pencil size={14} />
+          </button>
+          <button
+            onClick={() => setLotProductId(p.id)}
+            className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+            title="Ver lotes"
+          >
+            <Layers size={14} />
+          </button>
+        </div>
       ),
     },
   ]
@@ -141,6 +194,27 @@ export function InventoryPage() {
         product={selectedProduct}
         onClose={() => setLotProductId(null)}
       />
+
+      <Modal open={!!editProduct} onClose={() => setEditProduct(null)} title="Editar producto">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Nombre" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+            <Input label="SKU" value={editForm.sku} onChange={e => setEditForm(f => ({ ...f, sku: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Marca" value={editForm.brand} onChange={e => setEditForm(f => ({ ...f, brand: e.target.value }))} placeholder="Opcional" />
+            <Input label="Unidad" value={editForm.unit} onChange={e => setEditForm(f => ({ ...f, unit: e.target.value }))} placeholder="ml, oz, u…" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Precio venta" type="number" value={editForm.sale_price} onChange={e => setEditForm(f => ({ ...f, sale_price: e.target.value }))} prefix="$" />
+            <Input label="Stock mínimo" type="number" value={editForm.min_stock} onChange={e => setEditForm(f => ({ ...f, min_stock: e.target.value }))} />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={() => setEditProduct(null)}>Cancelar</Button>
+            <Button onClick={handleSaveEdit} loading={updateProduct.isPending}>Guardar cambios</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

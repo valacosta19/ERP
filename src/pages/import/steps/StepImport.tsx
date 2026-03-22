@@ -148,6 +148,21 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               if (error) { result.errors.push(`${sku}: ${error.message}`); continue }
               skuMap.set(sku, data.id)
               result.inserted++
+              const unit_cost = parseNum(getVal(row, m, 'unit_cost'))
+              const initial_quantity = parseNum(getVal(row, m, 'initial_quantity'))
+              if (unit_cost > 0 || initial_quantity > 0) {
+                const rawDate = getVal(row, m, 'received_date')
+                const received_date = rawDate ? parseDate(rawDate) : new Date().toISOString().slice(0, 10)
+                const qty = initial_quantity > 0 ? initial_quantity : 0
+                const { error: lotError } = await supabase.from('inventory_lots').insert({
+                  product_id: data.id,
+                  received_date,
+                  initial_quantity: qty,
+                  remaining_quantity: qty,
+                  unit_cost: unit_cost || 0,
+                })
+                if (lotError) result.errors.push(`${sku} (lote): ${lotError.message}`)
+              }
             }
           }
 
@@ -279,6 +294,10 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               })
               if (error) { result.errors.push(`${sku}: ${error.message}`); continue }
               result.inserted++
+              const sale_price = parseNum(getVal(row, m, 'sale_price'))
+              if (sale_price > 0) {
+                await supabase.from('products').update({ sale_price }).eq('id', product_id)
+              }
             }
           }
         }

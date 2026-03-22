@@ -24,6 +24,7 @@ interface ProductPayload {
   name: string
   sku: string
   unit: string | null
+  brand: string | null
   sale_price: number
   min_stock: number
 }
