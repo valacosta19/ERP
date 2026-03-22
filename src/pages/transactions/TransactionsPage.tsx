@@ -550,7 +550,7 @@ export function TransactionsPage() {
         }
       />
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-4">
+      <div className="flex-1 min-h-0 flex flex-col p-6 gap-4">
         <div className="flex flex-wrap gap-3">
           <Select
             options={[
@@ -610,7 +610,7 @@ export function TransactionsPage() {
           ))}
         </div>
 
-        <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)]">
+        <div className="flex-1 min-h-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
           <Table
             columns={columns}
             data={transactions}

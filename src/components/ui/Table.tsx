@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 
 interface Column<T> {
   key: string
@@ -19,16 +19,36 @@ interface TableProps<T> {
   pageSize?: number
 }
 
-export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow, pageSize = 25 }: TableProps<T>) {
+const ROW_HEIGHT = 45
+const HEADER_HEIGHT = 45
+const PAGINATION_HEIGHT = 52
+
+export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow, pageSize }: TableProps<T>) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [autoPageSize, setAutoPageSize] = useState(pageSize ?? 25)
   const [page, setPage] = useState(1)
-  const totalPages = Math.ceil(data.length / pageSize)
+
+  useEffect(() => {
+    if (pageSize !== undefined) return
+    if (!containerRef.current) return
+    const observer = new ResizeObserver(entries => {
+      const height = entries[0].contentRect.height
+      const rows = Math.max(1, Math.floor((height - HEADER_HEIGHT - PAGINATION_HEIGHT) / ROW_HEIGHT))
+      setAutoPageSize(rows)
+    })
+    observer.observe(containerRef.current)
+    return () => observer.disconnect()
+  }, [pageSize])
+
+  const effectivePageSize = pageSize ?? autoPageSize
+  const totalPages = Math.ceil(data.length / effectivePageSize)
   const safePage = Math.min(page, Math.max(1, totalPages))
-  const visible = data.slice((safePage - 1) * pageSize, safePage * pageSize)
-  const rangeStart = data.length === 0 ? 0 : (safePage - 1) * pageSize + 1
-  const rangeEnd = Math.min(safePage * pageSize, data.length)
+  const visible = data.slice((safePage - 1) * effectivePageSize, safePage * effectivePageSize)
+  const rangeStart = data.length === 0 ? 0 : (safePage - 1) * effectivePageSize + 1
+  const rangeEnd = Math.min(safePage * effectivePageSize, data.length)
 
   return (
-    <div>
+    <div ref={containerRef} className="h-full flex flex-col">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -76,7 +96,7 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
         </table>
       </div>
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--color-border)]">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--color-border)] mt-auto">
           <span className="text-xs text-[var(--color-muted)]">{rangeStart}–{rangeEnd} de {data.length}</span>
           <div className="flex items-center gap-3">
             <span className="text-xs text-[var(--color-muted)]">Página {safePage} de {totalPages}</span>

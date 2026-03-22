@@ -267,8 +267,8 @@ export function SuppliersPage() {
           </Button>
         }
       />
-      <div className="flex-1 min-h-0 overflow-y-auto p-6">
-        <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col p-6">
+        <div className="flex-1 min-h-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
           <Table
             columns={columns}
             data={suppliers}
