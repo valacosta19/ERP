@@ -225,7 +225,6 @@ Features discussed or requested that are explicitly deferred. Pick them up when 
 | Optimistic UI updates | Currently refetches on every mutation via `invalidateQueries` |
 
 ## TODO
-1. La sumatoria total de cada cuenta en transactions no está dando un número correcto porque aunque todas las entradas de la tabla están en negativos, estos están mostrando número positivos
-2. Agregarle clases BEM a todos los componentes para que sea mas facil de identificar en el futuro
-3. Elimina el badge "SEÑA" de métodos
-4. La fecha de importación no es correcta porque no respeta el formato "DD/MM/YYYY"
+1. Al importar transacciones se crean duplicados — investigar por qué el wizard ejecuta el import dos veces.
+2. El campo `is_seña` en el import debe interpretarse como monto de seña, no como booleano: si la celda está vacía o dice "no", se guarda 0; si tiene un número, ese valor va a `seña_amount` (distinto al `amount`). El "Monto total cobrado" = `amount` + `seña_amount`.
+3. El inventario no está interpretando los montos igual que las transacciones. Si importo un archivo con un monto como "4,984.00" debe interpretarlo como CUATRO MIL NOVECIENTOS OCHENTA Y CUADRO PESO.

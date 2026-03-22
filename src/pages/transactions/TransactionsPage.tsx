@@ -491,8 +491,8 @@ export function TransactionsPage() {
       ),
     },
     {
-      key: 'total_cobrado',
-      header: 'Total cobrado',
+      key: 'amount',
+      header: 'Monto',
       className: 'text-right',
       render: (tx: Transaction) => {
         const total = tx.is_seña ? tx.amount : tx.amount + (tx.seña_amount ?? 0)
@@ -502,16 +502,6 @@ export function TransactionsPage() {
           </span>
         )
       },
-    },
-    {
-      key: 'amount',
-      header: 'Pagado ahora',
-      className: 'text-right',
-      render: (tx: Transaction) => (
-        <span className="tabular-nums text-xs" style={{ color: 'var(--color-muted)' }}>
-          {formatAmount(tx.type, tx.amount)}
-        </span>
-      ),
     },
     {
       key: 'actions',

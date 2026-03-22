@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CheckCircle, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabaseClient'
@@ -42,8 +42,11 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
   const [results, setResults] = useState<ImportResult[]>([])
   const [running, setRunning] = useState(true)
   const [fatalError, setFatalError] = useState<string | null>(null)
+  const hasRun = useRef(false)
 
   useEffect(() => {
+    if (hasRun.current) return
+    hasRun.current = true
     runImport()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -163,12 +166,14 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               const category_id = categoryName ? (catMap.get(categoryName.toLowerCase()) ?? null) : null
               const description = getVal(row, m, 'description') || null
 
-              const señaRaw = getVal(row, m, 'is_seña').toLowerCase()
-              const is_seña = señaRaw !== '' && señaRaw !== '0' && señaRaw !== 'false' && señaRaw !== 'no'
+              const señaRaw = getVal(row, m, 'is_seña')
+              const señaNum = parseNum(señaRaw)
+              const is_seña = señaNum > 0
+              const seña_amount = is_seña ? señaNum : 0
 
               const { data: txData, error: txError } = await supabase
                 .from('transactions')
-                .insert({ date, type, amount, category_id, description, is_seña, seña_amount: is_seña ? amount : null })
+                .insert({ date, type, amount, category_id, description, is_seña, seña_amount })
                 .select('id')
                 .single()
               if (txError) { result.errors.push(`${date} $${amount}: ${txError.message}`); continue }
