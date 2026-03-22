@@ -10,24 +10,12 @@ export function useProducts() {
   return useQuery({
     queryKey: ['products'],
     queryFn: async () => {
-      const { data: products, error: pErr } = await supabase
-        .from('products')
+      const { data, error } = await supabase
+        .from('products_with_stock')
         .select('*')
-        .is('deleted_at', null)
         .order('name')
-      if (pErr) throw new Error(pErr.message)
-
-      const { data: lots, error: lErr } = await supabase
-        .from('inventory_lots')
-        .select('product_id, remaining_quantity')
-      if (lErr) throw new Error(lErr.message)
-
-      const stockMap = new Map<string, number>()
-      for (const lot of lots ?? []) {
-        stockMap.set(lot.product_id, (stockMap.get(lot.product_id) ?? 0) + Number(lot.remaining_quantity))
-      }
-
-      return (products as Product[]).map(p => ({ ...p, stock: stockMap.get(p.id) ?? 0 }))
+      if (error) throw new Error(error.message)
+      return data as Product[]
     },
   })
 }

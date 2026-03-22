@@ -10,7 +10,15 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
-**Phase 11** — ✅ Completa
+**Phase 12** — ✅ Completa
+
+### Cambios implementados en Phase 12
+- **`products_with_stock` view** (migration 012): join `products` + `SUM(inventory_lots.remaining_quantity)`, filtra `deleted_at IS NULL`.
+- **`useProducts` simplificado**: una sola query a la view en lugar de dos queries secuenciales. Elimina el `Map` de aggregación manual.
+- **`database.ts` actualizado**: `Views` ahora tipea `products_with_stock` con campo `stock: number`.
+- **Tech debt cerrado**: ítem "products_with_stock DB view" removido de Open risks.
+
+---
 
 ### Cambios implementados en Phase 11
 - **Auto-detect seña**: checkbox `is_seña` eliminado del formulario. Si `description.trim().toLowerCase() === 'seña'` → `is_seña=true`, `seña_amount=total` automáticamente.
@@ -52,6 +60,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 9 | ✅ Inline editing + inline row creation (no modals), import wizard extended for Entrada/Salida/payment/professional columns, hairdresser→professional rename, dynamic business_name in sidebar |
 | 10 | ✅ Catálogo, inline form, DescriptionCombobox, professional selector, import extensions, balance por método de pago, indicador visual de tipo, métodos de pago configurables (DB), seña como concepto separado, LotDrawer editable inline, SaleForm eliminado, payment direction derivada, lint fixes |
 | 11 | ✅ Auto-detect seña desde description, fix Total cobrado double-count, modal overflow fix |
+| 12 | ✅ `products_with_stock` view, `useProducts` una sola query, `database.ts` Views tipado |
 
 ---
 
@@ -169,9 +178,8 @@ Replace the simple `amount` + `type` model with a richer structure that mirrors 
 ---
 
 ## Open risks / tech debt
-- `useProducts` fires two sequential queries (products + lots). A `products_with_stock` view would consolidate this — deferred.
 - No optimistic updates anywhere — UI shows stale data until `invalidateQueries` refetches.
-- Migrations 002 and 003 must be run manually in Supabase SQL editor for production environments.
+- All migrations must be run manually in Supabase SQL editor for production environments.
 
 ---
 

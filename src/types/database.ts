@@ -377,7 +377,23 @@ export interface Database {
         Relationships: []
       }
     }
-    Views: Record<string, never>
+    Views: {
+      products_with_stock: {
+        Row: {
+          id: string
+          name: string
+          sku: string
+          unit: string | null
+          sale_price: number
+          min_stock: number
+          brand: string | null
+          deleted_at: string | null
+          created_at: string
+          stock: number
+        }
+        Relationships: []
+      }
+    }
     Functions: {
       consume_inventory_fifo: {
         Args: {
