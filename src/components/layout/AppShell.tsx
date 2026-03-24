@@ -32,7 +32,7 @@ export function AppShell() {
             <div className="w-6 h-6 rounded-md bg-[var(--color-accent)] flex items-center justify-center">
               <Scissors size={12} className="text-white" />
             </div>
-            <span className="text-sm font-semibold text-[var(--color-text)]">Studio ERP</span>
+            <span className="text-sm font-semibold text-[var(--color-text)]">Buenas Ondas ERP</span>
           </div>
         </div>
         <Outlet />

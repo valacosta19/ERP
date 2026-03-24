@@ -48,9 +48,8 @@ export function Sidebar({ onClose }: SidebarProps) {
           </div>
           <div className="sidebar__brand-text">
             <p className="text-white font-semibold text-sm leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
-              Studio ERP
+              {profile?.business_name ?? ''}
             </p>
-            <p className="text-white/40 text-xs leading-tight">{profile?.business_name ?? ''}</p>
           </div>
         </div>
       </div>
