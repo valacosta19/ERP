@@ -1,0 +1,19 @@
+# TODO
+
+## Critical — Accounting Integrity
+
+- [ ] **Soft-delete transactions instead of hard-delete** — Deleting a transaction permanently erases it with no audit trail. Replace the delete action with a void/cancel mechanism: add a `deleted_at` or `voided_at` column to transactions, keep the record in the database, and exclude voided transactions from all reports and balances. The transaction should remain visible in the history marked as cancelled.
+
+- [ ] **Inventory adjustments must generate a movement record** — Editing `remaining_quantity` directly on a lot (via the LotDrawer) bypasses the `inventory_movements` audit log entirely. Any change to stock quantity should insert an `adjustment` movement with the delta and an optional reason, so the movement log always reconciles with the lot quantities.
+
+- [ ] **Lock `unit_cost` on lots that have associated sales** — If a lot has already been used in sales (i.e., it has `sale_items` rows referencing it), its `unit_cost` should become read-only. Changing it after the fact creates a discrepancy between the cost shown on the lot and the historical cost recorded in the sold items, breaking FIFO traceability.
+
+## Important — Missing Best Practices
+
+- [ ] **Period locking** — Add the ability to close a fiscal month or year, preventing any creation, edit, or deletion of transactions with a date in that period. Once a period is closed, it should be read-only for all users including admins. This is standard practice: once an accountant reviews a month, those numbers should not change.
+
+- [ ] **Double-entry bookkeeping (long term)** — The system currently uses single-entry accounting (one income or expense per transaction). True double-entry assigns a debit and a credit to every movement, ensuring the ledger always balances. This is required to generate a proper Balance Sheet (assets vs. liabilities vs. equity), which is what an accountant or bank will ask for. This is a significant architectural change and should be evaluated before any multi-tenant or SaaS expansion.
+
+## Feature
+
+- [ ] **Add service cost section** — Services currently have no associated cost (COGS), so profit is reported as 100% of revenue. Add a way to define a fixed or variable cost per service type (e.g., product consumption, supplies). This would allow the profit report to deduct those costs from service income and show a more accurate net margin per service.
