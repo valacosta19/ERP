@@ -212,6 +212,7 @@ export interface Database {
           supplier_id: string | null
           order_date: string
           status: 'draft' | 'received' | 'cancelled'
+          shipping_cost: number
           created_by: string | null
           created_at: string
         }
@@ -220,6 +221,7 @@ export interface Database {
           supplier_id?: string | null
           order_date: string
           status?: 'draft' | 'received' | 'cancelled'
+          shipping_cost?: number
           created_by?: string | null
           created_at?: string
         }
@@ -228,6 +230,7 @@ export interface Database {
           supplier_id?: string | null
           order_date?: string
           status?: 'draft' | 'received' | 'cancelled'
+          shipping_cost?: number
         }
         Relationships: []
       }

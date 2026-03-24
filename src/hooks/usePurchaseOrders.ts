@@ -31,6 +31,7 @@ interface POItemInput {
 interface CreatePOPayload {
   supplier_id: string | null
   order_date: string
+  shipping_cost: number
   items: POItemInput[]
 }
 
@@ -42,7 +43,7 @@ export function useCreatePurchaseOrder() {
 
       const { data: po, error: poErr } = await supabase
         .from('purchase_orders')
-        .insert({ supplier_id: payload.supplier_id, order_date: payload.order_date, created_by: user?.id ?? null } as POInsert)
+        .insert({ supplier_id: payload.supplier_id, order_date: payload.order_date, shipping_cost: payload.shipping_cost, created_by: user?.id ?? null } as POInsert)
         .select('*')
         .single()
       if (poErr) throw new Error(poErr.message)
@@ -58,6 +59,20 @@ export function useCreatePurchaseOrder() {
       if (itemsErr) throw new Error(itemsErr.message)
 
       return po
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase_orders'] }),
+  })
+}
+
+export function useUpdateShippingCost() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, shipping_cost }: { id: string; shipping_cost: number }) => {
+      const { error } = await supabase
+        .from('purchase_orders')
+        .update({ shipping_cost } as POUpdate)
+        .eq('id', id)
+      if (error) throw new Error(error.message)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['purchase_orders'] }),
   })

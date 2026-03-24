@@ -90,6 +90,7 @@ export interface PurchaseOrder {
   supplier_id: string | null
   order_date: string
   status: POStatus
+  shipping_cost: number
   created_by: string | null
   created_at: string
   supplier?: Supplier

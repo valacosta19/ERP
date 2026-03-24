@@ -10,6 +10,27 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 17** — ✅ Completa
+
+### Cambios implementados en Phase 17
+
+#### Feature: costo de envío en pedidos de compra con distribución proporcional
+- **Migration 021**: `ALTER TABLE purchase_orders ADD COLUMN shipping_cost numeric(12,2) NOT NULL DEFAULT 0`. Recrea `receive_purchase_order` RPC: calcula `total_items_cost = SUM(qty × unit_cost)` y por cada ítem aplica `effective_unit_cost = unit_cost + shipping_cost × unit_cost / total_items_cost`. Si `shipping_cost = 0`, comportamiento idéntico al anterior.
+- **`database.ts`**: `shipping_cost: number` en Row/Insert/Update de `purchase_orders`.
+- **`types/index.ts`**: `shipping_cost: number` en `PurchaseOrder`.
+- **`usePurchaseOrders`**: `CreatePOPayload.shipping_cost: number`, pasado al INSERT.
+- **`PurchaseOrdersPage`**:
+  - Campo "Costo de envío (opcional)" en el modal de nuevo pedido.
+  - Fila "Envío (distribuido al recibir)" en la tabla expandida del pedido cuando `shipping_cost > 0`.
+  - Modal de recepción: nota explicativa + fila de envío + total incluye envío.
+  - `calcPOTotal` acepta `shippingCost` opcional, columna Total de la tabla lo refleja.
+  - Columna de producto en tabla expandida muestra la **marca** del producto junto al nombre.
+  - Edición inline del costo de envío en la fila expandida de pedidos en borrador (click → input → Enter/OK/Escape). Hook `useUpdateShippingCost`.
+  - Selector de producto en modal muestra marca: `⚠ Sin stock · Nombre (SKU) · Marca`.
+
+---
+
+## Current phase (anterior)
 **Phase 16** — ✅ Completa
 
 ### Cambios implementados en Phase 16
@@ -173,6 +194,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 14 | ✅ Comisiones con % libre por profesional, rango precio compra en inventario, modal edición de productos, fix auto-mapeo import |
 | 15 | ✅ Panel "Productos para reponer" en Pedidos de Compra: chips con skip_restock, pre-carga en modal, product selector ordenado por urgencia |
 | 16 | ✅ Sugerencia de cantidad a pedir: RPC `suggest_reorder_quantity`, hook `useReorderSuggestion`, componente `SuggestionHint` por línea en modal de nuevo pedido |
+| 17 | ✅ Costo de envío en pedidos de compra: campo en modal, distribución proporcional por valor al recibir (migration 021), marca del producto en tabla expandida |
 
 ---
 

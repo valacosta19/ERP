@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Modal } from '@/components/ui/Modal'
-import { usePurchaseOrders, useCreatePurchaseOrder, useCancelPurchaseOrder, useReceivePurchaseOrder } from '@/hooks/usePurchaseOrders'
+import { usePurchaseOrders, useCreatePurchaseOrder, useCancelPurchaseOrder, useReceivePurchaseOrder, useUpdateShippingCost } from '@/hooks/usePurchaseOrders'
 import { useSuppliers } from '@/hooks/useSuppliers'
 import { useProducts } from '@/hooks/useProducts'
 import { useReorderSuggestion } from '@/hooks/useReorderSuggestion'
@@ -31,8 +31,8 @@ function formatCurrency(amount: number) {
   return `$${amount.toLocaleString('es-CO')}`
 }
 
-function calcPOTotal(items: PurchaseOrderItem[]) {
-  return items.reduce((acc, i) => acc + i.quantity * i.unit_cost, 0)
+function calcPOTotal(items: PurchaseOrderItem[], shippingCost = 0) {
+  return items.reduce((acc, i) => acc + i.quantity * i.unit_cost, 0) + shippingCost
 }
 
 interface LineItem {
@@ -90,8 +90,10 @@ export function PurchaseOrdersPage() {
   const [receiveOpen, setReceiveOpen] = useState(false)
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [editingShipping, setEditingShipping] = useState<string | null>(null)
+  const [shippingDraft, setShippingDraft] = useState('')
 
-  const [form, setForm] = useState({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10) })
+  const [form, setForm] = useState({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '' })
   const [lines, setLines] = useState<LineItem[]>([{ ...EMPTY_LINE }])
   const [formError, setFormError] = useState('')
   const [showHidden, setShowHidden] = useState(false)
@@ -102,6 +104,7 @@ export function PurchaseOrdersPage() {
   const createPO = useCreatePurchaseOrder()
   const cancelPO = useCancelPurchaseOrder()
   const receivePO = useReceivePurchaseOrder()
+  const updateShipping = useUpdateShippingCost()
   const setRestockSkip = useSetRestockSkip()
 
   const allLowStockProducts = products
@@ -127,7 +130,8 @@ export function PurchaseOrdersPage() {
       .map(p => {
         const stock = p.stock ?? 0
         const prefix = stock === 0 ? '⚠ Sin stock · ' : stock < p.min_stock ? '↓ Stock bajo · ' : ''
-        return { value: p.id, label: `${prefix}${p.name} (${p.sku})` }
+        const brand = p.brand ? ` · ${p.brand}` : ''
+        return { value: p.id, label: `${prefix}${p.name} (${p.sku})${brand}` }
       }),
   ]
 
@@ -144,14 +148,14 @@ export function PurchaseOrdersPage() {
   }
 
   function openCreate() {
-    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10) })
+    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '' })
     setLines([{ ...EMPTY_LINE }])
     setFormError('')
     setCreateOpen(true)
   }
 
   function openCreateWithProduct(productId: string) {
-    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10) })
+    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '' })
     setLines([{ product_id: productId, quantity: '', unit_cost: '' }])
     setFormError('')
     setCreateOpen(true)
@@ -173,6 +177,7 @@ export function PurchaseOrdersPage() {
     await createPO.mutateAsync({
       supplier_id: form.supplier_id || null,
       order_date: form.order_date,
+      shipping_cost: parseFloat(form.shipping_cost) || 0,
       items: validLines.map(l => ({
         product_id: l.product_id,
         quantity: parseFloat(l.quantity),
@@ -240,7 +245,7 @@ export function PurchaseOrdersPage() {
       className: 'text-right',
       render: (po: PurchaseOrder) => (
         <span className="font-semibold tabular-nums text-[var(--color-text)]">
-          {formatCurrency(calcPOTotal(po.items ?? []))}
+          {formatCurrency(calcPOTotal(po.items ?? [], po.shipping_cost))}
         </span>
       ),
     },
@@ -435,12 +440,67 @@ export function PurchaseOrdersPage() {
                                 <tbody>
                                   {po.items.map(item => (
                                     <tr key={item.id} className="border-t border-[var(--color-border)]">
-                                      <td className="py-1 text-[var(--color-text)]">{item.product?.name ?? item.product_id}</td>
+                                      <td className="py-1 text-[var(--color-text)]">
+                                        {item.product?.name ?? item.product_id}
+                                        {item.product?.brand && (
+                                          <span className="ml-1.5 text-[var(--color-muted)]">{item.product.brand}</span>
+                                        )}
+                                      </td>
                                       <td className="py-1 text-right tabular-nums text-[var(--color-muted)]">{item.quantity}</td>
                                       <td className="py-1 text-right tabular-nums text-[var(--color-muted)]">{formatCurrency(item.unit_cost)}</td>
                                       <td className="py-1 text-right tabular-nums font-medium text-[var(--color-text)]">{formatCurrency(item.quantity * item.unit_cost)}</td>
                                     </tr>
                                   ))}
+                                  {po.status === 'draft' && (
+                                    <tr className="border-t border-[var(--color-border)]">
+                                      <td colSpan={3} className="py-1 text-[var(--color-muted)] italic">Envío (distribuido al recibir)</td>
+                                      <td className="py-1 text-right">
+                                        {editingShipping === po.id ? (
+                                          <div className="flex items-center justify-end gap-1">
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="0.01"
+                                              autoFocus
+                                              value={shippingDraft}
+                                              onChange={e => setShippingDraft(e.target.value)}
+                                              onKeyDown={async e => {
+                                                if (e.key === 'Enter') {
+                                                  await updateShipping.mutateAsync({ id: po.id, shipping_cost: parseFloat(shippingDraft) || 0 })
+                                                  setEditingShipping(null)
+                                                } else if (e.key === 'Escape') {
+                                                  setEditingShipping(null)
+                                                }
+                                              }}
+                                              className="w-24 text-right text-xs px-1 py-0.5 rounded border border-[var(--color-accent)] bg-[var(--color-bg)] text-[var(--color-text)] tabular-nums focus:outline-none"
+                                            />
+                                            <button
+                                              onClick={async () => {
+                                                await updateShipping.mutateAsync({ id: po.id, shipping_cost: parseFloat(shippingDraft) || 0 })
+                                                setEditingShipping(null)
+                                              }}
+                                              className="text-xs text-[var(--color-accent)] hover:underline"
+                                            >
+                                              OK
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <button
+                                            onClick={() => { setShippingDraft(String(po.shipping_cost)); setEditingShipping(po.id) }}
+                                            className="tabular-nums text-[var(--color-muted)] hover:text-[var(--color-text)] hover:underline transition-colors"
+                                          >
+                                            {po.shipping_cost > 0 ? formatCurrency(po.shipping_cost) : '+ Agregar envío'}
+                                          </button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  )}
+                                  {po.status !== 'draft' && po.shipping_cost > 0 && (
+                                    <tr className="border-t border-[var(--color-border)]">
+                                      <td colSpan={3} className="py-1 text-[var(--color-muted)] italic">Envío (distribuido al recibir)</td>
+                                      <td className="py-1 text-right tabular-nums text-[var(--color-muted)]">{formatCurrency(po.shipping_cost)}</td>
+                                    </tr>
+                                  )}
                                 </tbody>
                               </table>
                             )}
@@ -473,6 +533,16 @@ export function PurchaseOrdersPage() {
               onChange={e => setForm(f => ({ ...f, order_date: e.target.value }))}
             />
           </div>
+          <Input
+            label="Costo de envío (opcional)"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="0"
+            value={form.shipping_cost}
+            onChange={e => setForm(f => ({ ...f, shipping_cost: e.target.value }))}
+            prefix="$"
+          />
 
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-2">Ítems</p>
@@ -547,6 +617,7 @@ export function PurchaseOrdersPage() {
           <div className="space-y-4">
             <p className="text-sm text-[var(--color-muted)]">
               Al confirmar, se crearán los lotes de inventario y se registrarán los movimientos de entrada.
+              {selectedPO.shipping_cost > 0 && ' El costo de envío se distribuirá proporcionalmente entre los productos.'}
             </p>
 
             <div className="rounded-lg border border-[var(--color-border)] overflow-hidden">
@@ -568,13 +639,19 @@ export function PurchaseOrdersPage() {
                       <td className="px-4 py-2 text-right tabular-nums font-medium text-[var(--color-text)]">{formatCurrency(item.quantity * item.unit_cost)}</td>
                     </tr>
                   ))}
+                  {selectedPO.shipping_cost > 0 && (
+                    <tr className="border-t border-[var(--color-border)] bg-[var(--color-bg)]">
+                      <td colSpan={3} className="px-4 py-2 text-xs text-[var(--color-muted)] italic">Envío (distribuido proporcionalmente)</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-[var(--color-muted)]">{formatCurrency(selectedPO.shipping_cost)}</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
 
             <div className="flex justify-between items-center">
               <span className="text-sm font-semibold text-[var(--color-text)]">
-                Total: {formatCurrency(calcPOTotal(selectedPO.items ?? []))}
+                Total: {formatCurrency(calcPOTotal(selectedPO.items ?? [], selectedPO.shipping_cost))}
               </span>
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={() => setReceiveOpen(false)}>
