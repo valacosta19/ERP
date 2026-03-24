@@ -432,6 +432,7 @@ export interface Database {
         Args: {
           p_po_id: string
           p_created_by: string | null
+          p_items?: Json | null
         }
         Returns: void
       }

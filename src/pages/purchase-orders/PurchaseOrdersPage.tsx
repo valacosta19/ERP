@@ -93,6 +93,15 @@ export function PurchaseOrdersPage() {
   const [editingShipping, setEditingShipping] = useState<string | null>(null)
   const [shippingDraft, setShippingDraft] = useState('')
 
+  interface ReceiveLine {
+    id: string
+    product_name: string
+    ordered: number
+    received: string
+    checked: boolean
+  }
+  const [receiveLines, setReceiveLines] = useState<ReceiveLine[]>([])
+
   const [form, setForm] = useState({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '' })
   const [lines, setLines] = useState<LineItem[]>([{ ...EMPTY_LINE }])
   const [formError, setFormError] = useState('')
@@ -189,12 +198,25 @@ export function PurchaseOrdersPage() {
 
   function openReceive(po: PurchaseOrder) {
     setSelectedPO(po)
+    setReceiveLines(
+      (po.items ?? []).map(item => ({
+        id: item.id,
+        product_name: item.product?.name ?? item.product_id,
+        ordered: item.quantity,
+        received: String(item.quantity),
+        checked: true,
+      }))
+    )
     setReceiveOpen(true)
   }
 
   async function handleReceive() {
     if (!selectedPO) return
-    await receivePO.mutateAsync({ po: selectedPO })
+    const items = receiveLines
+      .filter(l => l.checked && parseFloat(l.received) > 0)
+      .map(l => ({ id: l.id, quantity: parseFloat(l.received) }))
+    if (items.length === 0) return
+    await receivePO.mutateAsync({ po: selectedPO, items })
     setReceiveOpen(false)
     setSelectedPO(null)
   }
@@ -615,53 +637,80 @@ export function PurchaseOrdersPage() {
       <Modal open={receiveOpen} onClose={() => setReceiveOpen(false)} title="Recibir pedido" size="lg">
         {selectedPO && (
           <div className="space-y-4">
-            <p className="text-sm text-[var(--color-muted)]">
-              Al confirmar, se crearán los lotes de inventario y se registrarán los movimientos de entrada.
-              {selectedPO.shipping_cost > 0 && ' El costo de envío se distribuirá proporcionalmente entre los productos.'}
+            <p className="text-xs text-[var(--color-muted)]">
+              Marcá los productos que llegaron y ajustá las cantidades si difieren del pedido.
+              {selectedPO.shipping_cost > 0 && ' El envío se distribuirá entre los productos recibidos.'}
             </p>
 
             <div className="rounded-lg border border-[var(--color-border)] overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg)]">
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Producto</th>
-                    <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Cantidad</th>
-                    <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Costo unit.</th>
-                    <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Subtotal</th>
+                    <th className="w-8 px-3 py-2" />
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Producto</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Pedido</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Recibido</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(selectedPO.items ?? []).map(item => (
-                    <tr key={item.id} className="border-b border-[var(--color-border)] last:border-b-0">
-                      <td className="px-4 py-2 text-[var(--color-text)]">{item.product?.name ?? item.product_id}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-[var(--color-muted)]">{item.quantity}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-[var(--color-muted)]">{formatCurrency(item.unit_cost)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums font-medium text-[var(--color-text)]">{formatCurrency(item.quantity * item.unit_cost)}</td>
+                  {receiveLines.map((line, idx) => (
+                    <tr
+                      key={line.id}
+                      className={`border-b border-[var(--color-border)] last:border-b-0 transition-colors ${line.checked ? '' : 'opacity-40'}`}
+                    >
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={line.checked}
+                          onChange={e => setReceiveLines(ls => ls.map((l, i) => i === idx ? { ...l, checked: e.target.checked } : l))}
+                          className="rounded"
+                        />
+                      </td>
+                      <td className={`px-3 py-2 text-[var(--color-text)] ${!line.checked ? 'line-through' : ''}`}>
+                        {line.product_name}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--color-muted)]">
+                        {line.ordered}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.001"
+                          disabled={!line.checked}
+                          value={line.received}
+                          onChange={e => setReceiveLines(ls => ls.map((l, i) => i === idx ? { ...l, received: e.target.value } : l))}
+                          className="w-24 text-right tabular-nums text-sm px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-40"
+                        />
+                      </td>
                     </tr>
                   ))}
                   {selectedPO.shipping_cost > 0 && (
                     <tr className="border-t border-[var(--color-border)] bg-[var(--color-bg)]">
-                      <td colSpan={3} className="px-4 py-2 text-xs text-[var(--color-muted)] italic">Envío (distribuido proporcionalmente)</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-[var(--color-muted)]">{formatCurrency(selectedPO.shipping_cost)}</td>
+                      <td colSpan={3} className="px-3 py-2 text-xs text-[var(--color-muted)] italic">Envío (distribuido proporcionalmente)</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-xs text-[var(--color-muted)]">{formatCurrency(selectedPO.shipping_cost)}</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
 
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-semibold text-[var(--color-text)]">
-                Total: {formatCurrency(calcPOTotal(selectedPO.items ?? [], selectedPO.shipping_cost))}
-              </span>
-              <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => setReceiveOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={handleReceive} loading={receivePO.isPending}>
-                  <PackageCheck size={14} />
-                  Confirmar recepción
-                </Button>
-              </div>
+            {receiveLines.every(l => !l.checked || parseFloat(l.received) <= 0) && (
+              <p className="text-xs text-[var(--color-danger)]">Seleccioná al menos un producto con cantidad mayor a 0.</p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setReceiveOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleReceive}
+                loading={receivePO.isPending}
+                disabled={receiveLines.every(l => !l.checked || parseFloat(l.received) <= 0)}
+              >
+                <PackageCheck size={14} />
+                Confirmar recepción
+              </Button>
             </div>
           </div>
         )}

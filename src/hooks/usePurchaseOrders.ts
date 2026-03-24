@@ -95,11 +95,12 @@ export function useCancelPurchaseOrder() {
 export function useReceivePurchaseOrder() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ po }: { po: PurchaseOrder }) => {
+    mutationFn: async ({ po, items }: { po: PurchaseOrder; items: { id: string; quantity: number }[] }) => {
       const { data: { user } } = await supabase.auth.getUser()
       const { error } = await supabase.rpc('receive_purchase_order', {
         p_po_id: po.id,
         p_created_by: user?.id ?? null,
+        p_items: items,
       })
       if (error) throw new Error(error.message)
     },

@@ -10,6 +10,21 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 18** — ✅ Completa
+
+### Cambios implementados en Phase 18
+
+#### Feature: recepción parcial de pedidos (checklist por producto)
+- **Migration 022**: `receive_purchase_order` actualizada con parámetro opcional `p_items JSONB DEFAULT NULL` — array `[{id, quantity}]`. Ítems no incluidos o con `quantity <= 0` se saltan. La distribución del costo de envío se recalcula sobre el costo real de los ítems efectivamente recibidos. Compatible con la firma anterior (sin p_items).
+- **`database.ts`**: `p_items?: Json | null` agregado a `receive_purchase_order.Args`.
+- **`usePurchaseOrders`**: `useReceivePurchaseOrder` ahora recibe `{ po, items: {id, quantity}[] }` y pasa el array al RPC.
+- **`PurchaseOrdersPage`**:
+  - Estado `receiveLines: ReceiveLine[]` inicializado al abrir el modal desde los ítems del PO.
+  - Modal de recepción rediseñado: tabla con columnas ✓ / Producto / Pedido / Recibido. Checkbox por fila (pre-marcado), cantidad editable inicializada al valor del pedido. Al desmarcar → fila se opaca + cantidad se deshabilita. Botón "Confirmar" deshabilitado si ningún ítem válido.
+
+---
+
+## Current phase (anterior)
 **Phase 17** — ✅ Completa
 
 ### Cambios implementados en Phase 17
@@ -195,6 +210,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 15 | ✅ Panel "Productos para reponer" en Pedidos de Compra: chips con skip_restock, pre-carga en modal, product selector ordenado por urgencia |
 | 16 | ✅ Sugerencia de cantidad a pedir: RPC `suggest_reorder_quantity`, hook `useReorderSuggestion`, componente `SuggestionHint` por línea en modal de nuevo pedido |
 | 17 | ✅ Costo de envío en pedidos de compra: campo en modal, distribución proporcional por valor al recibir (migration 021), marca del producto en tabla expandida |
+| 18 | ✅ Recepción parcial de pedidos: checklist por producto con cantidad editable, distribución de envío recalculada sobre ítems reales (migration 022) |
 
 ---
 
