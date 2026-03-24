@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Trash2, X, Check } from 'lucide-react'
+import { Plus, Trash2, X, Check, Link } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
@@ -15,6 +15,7 @@ import { useProfessionals } from '@/hooks/useProfessionals'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useProducts } from '@/hooks/useProducts'
 import { supabase } from '@/lib/supabaseClient'
+import { ReconcileModal } from './ReconcileModal'
 import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, CatalogItem, Product } from '@/types'
 import type { PaymentRow } from '@/hooks/useTransactions'
 
@@ -145,6 +146,7 @@ export function TransactionsPage() {
 
   const [draft, setDraft] = useState<typeof EMPTY_DRAFT | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [reconcileOpen, setReconcileOpen] = useState(false)
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [editForm, setEditForm] = useState(EMPTY_DRAFT)
   const [formError, setFormError] = useState('')
@@ -589,10 +591,16 @@ export function TransactionsPage() {
         title="Transacciones"
         subtitle={`${transactions.length} registros`}
         actions={
-          <Button onClick={startNew} size="sm" disabled={!!draft}>
-            <Plus size={14} />
-            Nueva transacción
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setReconcileOpen(true)} disabled={!!draft}>
+              <Link size={14} />
+              Reconciliar productos
+            </Button>
+            <Button onClick={startNew} size="sm" disabled={!!draft}>
+              <Plus size={14} />
+              Nueva transacción
+            </Button>
+          </div>
         }
       />
 
@@ -854,6 +862,8 @@ export function TransactionsPage() {
           </div>
         </div>
       </Modal>
+
+      <ReconcileModal open={reconcileOpen} onClose={() => setReconcileOpen(false)} />
     </div>
   )
 }

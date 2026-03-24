@@ -15,8 +15,14 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ### Cambios implementados en Phase 19
 
 #### Feature: tab "Utilidad" en Reportes
-- **`useReports.ts`**: nuevo hook `useProfitReport({ from?, to? })` — dos queries en paralelo (`sale_items` + `transactions`), filtrado por fecha en JS. Calcula por mes: `product_revenue`, `product_cogs`, `product_profit = rev - cogs`, `service_income = total_income - product_revenue`, `total_expenses`, `total_profit`. Retorna `{ rows: ProfitMonthRow[], totals }`. Distinción productos/servicios es arquitectónica: ventas de producto crean `sale_items`; servicios son transacciones income sin sale_items.
-- **`ReportsPage`**: nuevo tab "Utilidad" con filtros from/to, 3 cards de totales (Utilidad Productos / Utilidad Servicios / Utilidad Total Negocio) y tabla mensual (Mes | Utilidad productos | Utilidad servicios | Gastos | Total). Fila de totales al pie. Colores verde/rojo según signo.
+- **`useReports.ts`**: nuevo hook `useProfitReport({ from?, to? })` — queries paralelas (`sale_items` con `transaction_id` + `transactions` con `id, categories(name)`), filtrado por fecha en JS. Calcula por mes: `product_revenue`, `product_cogs`, `product_profit = rev - cogs`, `service_income = total_income - product_revenue`, `total_expenses`, `total_profit`. Retorna `{ rows: ProfitMonthRow[], totals }`.
+  - **Distinción productos/servicios**: transacciones con `sale_items` aportan `product_revenue` con COGS real (FIFO). Transacciones income con categoría "Producto" pero sin `sale_items` también aportan a `product_revenue` con COGS=0 (para transacciones importadas históricamente sin FIFO). El resto va a `service_income`.
+- **`ReportsPage`**: nuevo tab "Utilidad" con filtros from/to, 3 cards de totales (Utilidad Productos / Utilidad Servicios / Utilidad Total Negocio) y tabla mensual. Fila de totales al pie. Colores verde/rojo según signo.
+
+#### Feature: reconciliación de transacciones importadas
+- **`migration 023_backfill_transaction_categories.sql`**: backfill de `category_id` en transacciones con `category_id IS NULL` — match exacto case-insensitive contra `catalog_items.name` (asigna `category_id` del ítem) y contra `products.name` (asigna categoría "Producto", creándola si no existe).
+- **`TransactionsPage`**: botón "Reconciliar productos" en TopBar que abre `ReconcileModal`.
+- **`ReconcileModal.tsx`**: muestra todas las transacciones de ingreso sin `sale_items`. Al abrir, auto-asigna producto o servicio por nombre exacto (case-insensitive). Las no resueltas quedan vacías para asignación manual. Dropdown agrupa Productos (con unidad) y Servicios. Al confirmar: actualiza `category_id` de la transacción **sin tocar el inventario** (no corre FIFO) — el inventario actual ya refleja el estado post-venta.
 
 ---
 
@@ -222,7 +228,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 16 | ✅ Sugerencia de cantidad a pedir: RPC `suggest_reorder_quantity`, hook `useReorderSuggestion`, componente `SuggestionHint` por línea en modal de nuevo pedido |
 | 17 | ✅ Costo de envío en pedidos de compra: campo en modal, distribución proporcional por valor al recibir (migration 021), marca del producto en tabla expandida |
 | 18 | ✅ Recepción parcial de pedidos: checklist por producto con cantidad editable, distribución de envío recalculada sobre ítems reales (migration 022) |
-| 19 | ✅ Tab "Utilidad" en Reportes: utilidad bruta productos (FIFO), utilidad servicios, total negocio — por mes con filtros de fecha |
+| 19 | ✅ Tab "Utilidad" en Reportes: utilidad bruta productos (FIFO), utilidad servicios, total negocio — por mes con filtros de fecha. ReconcileModal para backfill de categorías en transacciones importadas (sin tocar inventario). |
 
 ---
 

@@ -138,6 +138,7 @@ export function useInventoryValuation() {
 }
 
 type RawSaleItem = {
+  transaction_id: string
   quantity: number
   unit_cost: number
   unit_sale_price: number
@@ -145,9 +146,11 @@ type RawSaleItem = {
 }
 
 type RawTxProfit = {
+  id: string
   date: string
   type: string
   amount: number
+  categories: { name: string } | null
 }
 
 function monthLabel(month: string) {
@@ -160,8 +163,8 @@ export function useProfitReport(filters: { from?: string; to?: string } = {}) {
     queryKey: ['reports', 'profit', filters],
     queryFn: async () => {
       const [saleItemsRes, txRes] = await Promise.all([
-        supabase.from('sale_items').select('quantity, unit_cost, unit_sale_price, transactions(date)'),
-        supabase.from('transactions').select('date, type, amount'),
+        supabase.from('sale_items').select('transaction_id, quantity, unit_cost, unit_sale_price, transactions(date)'),
+        supabase.from('transactions').select('id, date, type, amount, categories(name)'),
       ])
       if (saleItemsRes.error) throw new Error(saleItemsRes.error.message)
       if (txRes.error) throw new Error(txRes.error.message)
@@ -179,6 +182,8 @@ export function useProfitReport(filters: { from?: string; to?: string } = {}) {
         if (filters.to && tx.date > filters.to) return false
         return true
       })
+
+      const saleItemTxIds = new Set(saleItems.map(si => si.transaction_id))
 
       const byMonth = new Map<string, Omit<ProfitMonthRow, 'month' | 'month_label'>>()
 
@@ -207,6 +212,9 @@ export function useProfitReport(filters: { from?: string; to?: string } = {}) {
         ensure(month)
         if (tx.type === 'income') {
           totalIncomeByMonth.set(month, (totalIncomeByMonth.get(month) ?? 0) + Number(tx.amount))
+          if (tx.categories?.name?.toLowerCase() === 'producto' && !saleItemTxIds.has(tx.id)) {
+            byMonth.get(month)!.product_revenue += Number(tx.amount)
+          }
         } else {
           byMonth.get(month)!.total_expenses += Number(tx.amount)
         }
