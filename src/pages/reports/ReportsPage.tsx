@@ -3,14 +3,14 @@ import { TopBar } from '@/components/layout/TopBar'
 import { Table } from '@/components/ui/Table'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
-import { useFinancialReport, useInventoryValuation } from '@/hooks/useReports'
+import { useFinancialReport, useInventoryValuation, useProfitReport } from '@/hooks/useReports'
 import { useCommissionsReport } from '@/hooks/useCommissionsReport'
-import type { FinancialCategoryRow, InventoryValuationRow } from '@/hooks/useReports'
+import type { FinancialCategoryRow, InventoryValuationRow, ProfitMonthRow } from '@/hooks/useReports'
 import type { CommissionDetailRow } from '@/hooks/useCommissionsReport'
 import type { Currency } from '@/types'
 import { formatDate } from '@/lib/formatDate'
 
-type Tab = 'financiero' | 'comisiones'
+type Tab = 'financiero' | 'comisiones' | 'utilidad'
 
 const CURRENCY_OPTIONS = [
   { value: '', label: 'Todas las monedas' },
@@ -61,7 +61,7 @@ const valuationColumns = [
   {
     key: 'total_units',
     header: 'Unidades en stock',
-    render: (r: InventoryValuationRow) => r.total_units.toFixed(2),
+    render: (r: InventoryValuationRow) => r.total_units,
     className: 'text-right',
   },
   {
@@ -109,10 +109,13 @@ export function ReportsPage() {
   const [commFrom, setCommFrom] = useState('')
   const [commTo, setCommTo] = useState('')
   const [commProfFilter, setCommProfFilter] = useState('')
+  const [profitFrom, setProfitFrom] = useState('')
+  const [profitTo, setProfitTo] = useState('')
 
   const financial = useFinancialReport({ from: from || undefined, to: to || undefined, currency: currency || undefined })
   const valuation = useInventoryValuation()
   const commissions = useCommissionsReport({ from: commFrom || undefined, to: commTo || undefined })
+  const profit = useProfitReport({ from: profitFrom || undefined, to: profitTo || undefined })
 
   const { summary } = financial.data ?? { summary: { total_income: 0, total_expense: 0, balance: 0 } }
   const totalInventoryValue = valuation.data?.reduce((s, r) => s + r.total_value, 0) ?? 0
@@ -176,6 +179,16 @@ export function ReportsPage() {
             }`}
           >
             Comisiones
+          </button>
+          <button
+            onClick={() => setActiveTab('utilidad')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'utilidad'
+                ? 'border-[var(--color-accent)] text-[var(--color-accent)]'
+                : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'
+            }`}
+          >
+            Utilidad
           </button>
         </div>
 
@@ -286,6 +299,110 @@ export function ReportsPage() {
                 />
               </div>
             </section>
+          </>
+        )}
+        {activeTab === 'utilidad' && (
+          <>
+            <div className="flex flex-wrap gap-3 items-end">
+              <Input label="Desde" type="date" value={profitFrom} onChange={e => setProfitFrom(e.target.value)} className="w-40" />
+              <Input label="Hasta" type="date" value={profitTo} onChange={e => setProfitTo(e.target.value)} className="w-40" />
+            </div>
+
+            {profit.isLoading ? (
+              <div className="flex justify-center py-12">
+                <span className="w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
+                    <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Utilidad productos</p>
+                    <p className={`text-2xl font-semibold mt-1 ${(profit.data?.totals.product_profit ?? 0) >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                      {fmtAmount(profit.data?.totals.product_profit ?? 0)}
+                    </p>
+                    <p className="text-xs text-[var(--color-muted)] mt-1">
+                      Rev. {fmtAmount(profit.data?.totals.product_revenue ?? 0)} · COGS -{fmtAmount(profit.data?.totals.product_cogs ?? 0)}
+                    </p>
+                  </div>
+                  <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
+                    <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Utilidad servicios</p>
+                    <p className={`text-2xl font-semibold mt-1 ${(profit.data?.totals.service_income ?? 0) >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                      {fmtAmount(profit.data?.totals.service_income ?? 0)}
+                    </p>
+                  </div>
+                  <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
+                    <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Utilidad total negocio</p>
+                    <p className={`text-2xl font-semibold mt-1 ${(profit.data?.totals.total_profit ?? 0) >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                      {fmtAmount(profit.data?.totals.total_profit ?? 0)}
+                    </p>
+                    <p className="text-xs text-[var(--color-muted)] mt-1">
+                      Gastos -{fmtAmount(profit.data?.totals.total_expenses ?? 0)}
+                    </p>
+                  </div>
+                </div>
+
+                <section>
+                  <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[var(--color-border)]">
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Mes</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Utilidad productos</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Utilidad servicios</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Gastos</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(profit.data?.rows ?? []).length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-8 text-center text-[var(--color-muted)] text-xs">Sin datos en el período</td>
+                          </tr>
+                        ) : (
+                          <>
+                            {(profit.data?.rows ?? []).map((row: ProfitMonthRow) => (
+                              <tr key={row.month} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
+                                <td className="px-4 py-3 font-medium text-[var(--color-text)] capitalize">{row.month_label}</td>
+                                <td className="px-4 py-3 text-right tabular-nums">
+                                  <span className={row.product_profit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}>
+                                    {fmtAmount(row.product_profit)}
+                                  </span>
+                                  <span className="block text-xs text-[var(--color-muted)]">rev {fmtAmount(row.product_revenue)} · cogs -{fmtAmount(row.product_cogs)}</span>
+                                </td>
+                                <td className={`px-4 py-3 text-right tabular-nums ${row.service_income >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                                  {fmtAmount(row.service_income)}
+                                </td>
+                                <td className="px-4 py-3 text-right tabular-nums text-[var(--color-danger)]">
+                                  -{fmtAmount(row.total_expenses)}
+                                </td>
+                                <td className={`px-4 py-3 text-right tabular-nums font-semibold ${row.total_profit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                                  {fmtAmount(row.total_profit)}
+                                </td>
+                              </tr>
+                            ))}
+                            <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-bg)]">
+                              <td className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Total</td>
+                              <td className={`px-4 py-3 text-right tabular-nums font-semibold ${(profit.data?.totals.product_profit ?? 0) >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                                {fmtAmount(profit.data?.totals.product_profit ?? 0)}
+                              </td>
+                              <td className={`px-4 py-3 text-right tabular-nums font-semibold ${(profit.data?.totals.service_income ?? 0) >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                                {fmtAmount(profit.data?.totals.service_income ?? 0)}
+                              </td>
+                              <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--color-danger)]">
+                                -{fmtAmount(profit.data?.totals.total_expenses ?? 0)}
+                              </td>
+                              <td className={`px-4 py-3 text-right tabular-nums font-semibold ${(profit.data?.totals.total_profit ?? 0) >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                                {fmtAmount(profit.data?.totals.total_profit ?? 0)}
+                              </td>
+                            </tr>
+                          </>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </>
+            )}
           </>
         )}
       </div>

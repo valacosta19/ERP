@@ -10,6 +10,17 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 19** — ✅ Completa
+
+### Cambios implementados en Phase 19
+
+#### Feature: tab "Utilidad" en Reportes
+- **`useReports.ts`**: nuevo hook `useProfitReport({ from?, to? })` — dos queries en paralelo (`sale_items` + `transactions`), filtrado por fecha en JS. Calcula por mes: `product_revenue`, `product_cogs`, `product_profit = rev - cogs`, `service_income = total_income - product_revenue`, `total_expenses`, `total_profit`. Retorna `{ rows: ProfitMonthRow[], totals }`. Distinción productos/servicios es arquitectónica: ventas de producto crean `sale_items`; servicios son transacciones income sin sale_items.
+- **`ReportsPage`**: nuevo tab "Utilidad" con filtros from/to, 3 cards de totales (Utilidad Productos / Utilidad Servicios / Utilidad Total Negocio) y tabla mensual (Mes | Utilidad productos | Utilidad servicios | Gastos | Total). Fila de totales al pie. Colores verde/rojo según signo.
+
+---
+
+## Current phase (anterior)
 **Phase 18** — ✅ Completa
 
 ### Cambios implementados en Phase 18
@@ -211,6 +222,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 16 | ✅ Sugerencia de cantidad a pedir: RPC `suggest_reorder_quantity`, hook `useReorderSuggestion`, componente `SuggestionHint` por línea en modal de nuevo pedido |
 | 17 | ✅ Costo de envío en pedidos de compra: campo en modal, distribución proporcional por valor al recibir (migration 021), marca del producto en tabla expandida |
 | 18 | ✅ Recepción parcial de pedidos: checklist por producto con cantidad editable, distribución de envío recalculada sobre ítems reales (migration 022) |
+| 19 | ✅ Tab "Utilidad" en Reportes: utilidad bruta productos (FIFO), utilidad servicios, total negocio — por mes con filtros de fecha |
 
 ---
 
