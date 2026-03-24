@@ -104,6 +104,31 @@ Use the `frontend-design` skill whenever adjusting page layout/styling or adding
 
 ---
 
+## Commits
+
+Format: `<type>: <description in English, one line, imperative mood>`
+
+Types:
+- `feat` — new feature
+- `fix` — bug fix
+- `refactor` — code change with no behavior change
+- `chore` — migrations, config, deps, docs
+
+Examples:
+```
+feat: add shipping cost to purchase orders with proportional distribution on receive
+fix: format sale price with currency symbol and locale in inventory table
+chore: add skip_restock column to products table
+```
+
+Rules:
+- Always in English
+- One line, no period at the end
+- No multi-line body unless strictly necessary
+- `npm run build` must pass before committing
+
+---
+
 ## Rules
 
 - **No over-engineering.** Build the minimum that satisfies the current phase. No abstractions for hypothetical future needs.
