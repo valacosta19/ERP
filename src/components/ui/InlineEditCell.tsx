@@ -2,13 +2,14 @@ import { useState, useRef, useEffect } from 'react'
 
 interface InlineEditCellProps {
   value: string
+  displayValue?: string
   onSave: (value: string) => Promise<void>
   type?: 'text' | 'email' | 'number'
   placeholder?: string
   className?: string
 }
 
-export function InlineEditCell({ value, onSave, type = 'text', placeholder, className = '' }: InlineEditCellProps) {
+export function InlineEditCell({ value, displayValue, onSave, type = 'text', placeholder, className = '' }: InlineEditCellProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
   const [saving, setSaving] = useState(false)
@@ -81,7 +82,7 @@ export function InlineEditCell({ value, onSave, type = 'text', placeholder, clas
       className={`inline-edit__display cursor-pointer rounded px-1 py-0.5 hover:bg-[var(--color-bg)] transition-colors ${className}`}
       title="Clic para editar"
     >
-      {value || <span className="text-[var(--color-muted)]">{placeholder || '—'}</span>}
+      {(displayValue ?? value) || <span className="text-[var(--color-muted)]">{placeholder || '—'}</span>}
     </span>
   )
 }

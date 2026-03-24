@@ -131,6 +131,7 @@ export function InventoryPage() {
       render: (p: Product) => (
         <InlineEditCell
           value={String(p.sale_price)}
+          displayValue={`$${p.sale_price.toLocaleString('es-CO')}`}
           onSave={v => saveProductField(p, 'sale_price', v)}
           type="number"
           className="tabular-nums font-medium text-right"
