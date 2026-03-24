@@ -554,7 +554,7 @@ export function TransactionsPage() {
       header: 'Monto',
       className: 'text-right',
       render: (tx: Transaction) => {
-        const total = tx.is_seña ? tx.amount : tx.amount + (tx.seña_amount ?? 0)
+        const total = tx.amount
         return (
           <span className={`font-semibold tabular-nums ${tx.type === 'income' ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
             {formatAmount(tx.type, total, tx.currency)}

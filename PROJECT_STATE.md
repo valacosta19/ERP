@@ -10,6 +10,19 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 20** — ✅ Completa
+
+### Cambios implementados en Phase 20
+
+#### Feature: invitación de usuarios por email
+- **`supabase/functions/invite-user/index.ts`**: Edge Function (deployed `--no-verify-jwt`) que recibe `{ email, full_name, role }`. Valida que el caller sea admin usando el JWT del header + service role key. Llama `auth.admin.inviteUserByEmail` y hace upsert del perfil con `full_name` y `role`.
+- **`migration 024_admin_manage_profiles.sql`**: policy `admin_profiles_update` — permite a admins hacer UPDATE en cualquier fila de `profiles`.
+- **`useAuth.ts`**: tres nuevos hooks — `useUsers()` (lista todos los perfiles), `useInviteUser()` (llama la Edge Function, parsea el error del body de respuesta), `useUpdateUserRole()` (UPDATE de `role` en profiles).
+- **`SettingsPage`**: sección "Usuarios" visible solo para admins. Lista perfiles con badge Admin/Empleado y botón para cambiar rol (excepto el propio). Formulario inline de invitación con campos Nombre, Email y selector de rol. Mensaje de éxito al enviar.
+
+---
+
+## Current phase (anterior)
 **Phase 19** — ✅ Completa
 
 ### Cambios implementados en Phase 19
@@ -229,6 +242,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 17 | ✅ Costo de envío en pedidos de compra: campo en modal, distribución proporcional por valor al recibir (migration 021), marca del producto en tabla expandida |
 | 18 | ✅ Recepción parcial de pedidos: checklist por producto con cantidad editable, distribución de envío recalculada sobre ítems reales (migration 022) |
 | 19 | ✅ Tab "Utilidad" en Reportes: utilidad bruta productos (FIFO), utilidad servicios, total negocio — por mes con filtros de fecha. ReconcileModal para backfill de categorías en transacciones importadas (sin tocar inventario). |
+| 20 | ✅ Invitación de usuarios por email: Edge Function `invite-user`, sección "Usuarios" en Configuración (admin only), lista de perfiles con cambio de rol. |
 
 ---
 

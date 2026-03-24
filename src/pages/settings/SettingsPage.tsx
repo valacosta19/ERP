@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, Trash2, Check, X, Pencil } from 'lucide-react'
+import { Plus, Trash2, Check, X, Pencil, UserPlus } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
 import { InlineEditCell } from '@/components/ui/InlineEditCell'
@@ -7,7 +7,7 @@ import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory 
 import { useProfessionals, useCreateProfessional, useUpdateProfessional, useDeleteProfessional } from '@/hooks/useProfessionals'
 import { useCatalogItems, useCreateCatalogItem, useUpdateCatalogItem, useDeleteCatalogItem } from '@/hooks/useCatalogItems'
 import { usePaymentMethods, useCreatePaymentMethod, useUpdatePaymentMethod, useDeletePaymentMethod } from '@/hooks/usePaymentMethods'
-import { useAuth, useUpdateProfile } from '@/hooks/useAuth'
+import { useAuth, useUpdateProfile, useUsers, useInviteUser, useUpdateUserRole } from '@/hooks/useAuth'
 import type { Professional, PaymentMethodConfig } from '@/types'
 
 function DraftInput({
@@ -200,8 +200,55 @@ export function SettingsPage() {
   const updateCatalogItem = useUpdateCatalogItem()
   const deleteCatalogItem = useDeleteCatalogItem()
 
+  const [addingUser, setAddingUser] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteFullName, setInviteFullName] = useState('')
+  const [inviteRole, setInviteRole] = useState<'admin' | 'employee'>('employee')
+  const [inviteSuccess, setInviteSuccess] = useState(false)
+  const [inviteErrorMsg, setInviteErrorMsg] = useState<string | null>(null)
+  const inviteNameRef = useRef<HTMLInputElement>(null)
+
   const { profile } = useAuth()
   const updateProfile = useUpdateProfile()
+  const { data: users = [] } = useUsers()
+  const inviteUser = useInviteUser()
+  const updateUserRole = useUpdateUserRole()
+
+  function startAddUser() {
+    setAddingUser(true)
+    setInviteEmail('')
+    setInviteFullName('')
+    setInviteRole('employee')
+    setInviteSuccess(false)
+    setInviteErrorMsg(null)
+    setTimeout(() => inviteNameRef.current?.focus(), 0)
+  }
+
+  function cancelAddUser() {
+    setAddingUser(false)
+    setInviteEmail('')
+    setInviteFullName('')
+    setInviteErrorMsg(null)
+  }
+
+  async function saveInvite() {
+    if (!inviteEmail.trim() || !inviteFullName.trim()) return
+    setInviteErrorMsg(null)
+    try {
+      await inviteUser.mutateAsync({ email: inviteEmail.trim(), role: inviteRole, full_name: inviteFullName.trim() })
+      setInviteSuccess(true)
+      setAddingUser(false)
+      setInviteEmail('')
+      setInviteFullName('')
+    } catch (e) {
+      setInviteErrorMsg(e instanceof Error ? e.message : 'Error al invitar')
+    }
+  }
+
+  function handleInviteKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); saveInvite() }
+    if (e.key === 'Escape') cancelAddUser()
+  }
 
   function startAddCat() {
     setAddingCat(true)
@@ -348,6 +395,123 @@ export function SettingsPage() {
             />
           )}
         </section>
+
+        {profile?.role === 'admin' && (
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">Usuarios</h2>
+              <button
+                onClick={startAddUser}
+                disabled={addingUser}
+                className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
+              >
+                <UserPlus size={12} /> Invitar
+              </button>
+            </div>
+            {inviteSuccess && (
+              <p className="text-xs text-[var(--color-success)] mb-2">
+                Invitación enviada. El usuario recibirá un email para configurar su contraseña.
+              </p>
+            )}
+            <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+              {users.map(u => (
+                <div key={u.id} className="flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Badge variant={u.role === 'admin' ? 'success' : 'default'}>
+                      {u.role === 'admin' ? 'Admin' : 'Empleado'}
+                    </Badge>
+                    <span className="text-sm text-[var(--color-text)]">
+                      {u.full_name || '(Sin nombre)'}
+                    </span>
+                    {u.id === profile.id && (
+                      <span className="text-xs text-[var(--color-muted)]">(tú)</span>
+                    )}
+                  </div>
+                  {u.id !== profile.id && (
+                    <button
+                      onClick={() => updateUserRole.mutate({ id: u.id, role: u.role === 'admin' ? 'employee' : 'admin' })}
+                      disabled={updateUserRole.isPending}
+                      className="px-2 py-1 rounded-lg text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors disabled:opacity-40"
+                    >
+                      {u.role === 'admin' ? 'Quitar admin' : 'Hacer admin'}
+                    </button>
+                  )}
+                </div>
+              ))}
+              {addingUser && (
+                <div
+                  className="flex flex-col gap-2 px-4 py-3 animate-slide-in"
+                  style={{
+                    background: 'var(--color-accent-light)',
+                    borderLeft: '3px solid var(--color-accent)',
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
+                      style={{
+                        color: 'var(--color-accent)',
+                        background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+                      }}
+                    >
+                      Invitar
+                    </span>
+                    <DraftInput
+                      inputRef={inviteNameRef}
+                      value={inviteFullName}
+                      onChange={setInviteFullName}
+                      onKeyDown={handleInviteKeyDown}
+                      placeholder="Nombre"
+                      autoFocus
+                    />
+                    <DraftInput
+                      value={inviteEmail}
+                      onChange={setInviteEmail}
+                      onKeyDown={handleInviteKeyDown}
+                      placeholder="Email"
+                      type="email"
+                    />
+                    <select
+                      value={inviteRole}
+                      onChange={e => setInviteRole(e.target.value as 'admin' | 'employee')}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        borderBottom: '1.5px solid var(--color-border)',
+                        padding: '3px 2px',
+                        fontSize: '0.875rem',
+                        color: 'var(--color-text)',
+                        outline: 'none',
+                        fontFamily: 'inherit',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <option value="employee">Empleado</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <button
+                      onClick={saveInvite}
+                      disabled={inviteUser.isPending || !inviteEmail.trim() || !inviteFullName.trim()}
+                      className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+                      style={{ background: 'var(--color-accent)', color: '#fff' }}
+                    >
+                      <Check size={13} />
+                    </button>
+                    <button
+                      onClick={cancelAddUser}
+                      className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                  {inviteErrorMsg && (
+                    <p className="text-xs pl-1" style={{ color: 'var(--color-danger)' }}>{inviteErrorMsg}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         {hdsLoading ? (
           <div className="flex justify-center pt-4">
