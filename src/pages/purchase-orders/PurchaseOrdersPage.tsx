@@ -11,6 +11,7 @@ import { Modal } from '@/components/ui/Modal'
 import { usePurchaseOrders, useCreatePurchaseOrder, useCancelPurchaseOrder, useReceivePurchaseOrder } from '@/hooks/usePurchaseOrders'
 import { useSuppliers } from '@/hooks/useSuppliers'
 import { useProducts } from '@/hooks/useProducts'
+import { useReorderSuggestion } from '@/hooks/useReorderSuggestion'
 import type { PurchaseOrder, PurchaseOrderItem } from '@/types'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -41,6 +42,48 @@ interface LineItem {
 }
 
 const EMPTY_LINE: LineItem = { product_id: '', quantity: '', unit_cost: '' }
+
+function SuggestionHint({
+  productId,
+  orderDate,
+  onApply,
+}: {
+  productId: string
+  orderDate: string
+  onApply: (qty: string) => void
+}) {
+  const { data, isLoading } = useReorderSuggestion(productId, orderDate)
+
+  if (isLoading) return (
+    <p className="text-xs text-[var(--color-muted)] pl-1">Calculando sugerencia…</p>
+  )
+  if (!data || (data.months_with_data === 0 && data.avg_same_month === 0)) return (
+    <p className="text-xs text-[var(--color-muted)] pl-1">Sin historial de ventas para este producto</p>
+  )
+
+  const isFallback = data.months_with_data === -1
+
+  const growthLabel = data.growth_rate >= 0
+    ? `+${(data.growth_rate * 100).toFixed(0)}%`
+    : `${(data.growth_rate * 100).toFixed(0)}%`
+
+  return (
+    <div className="flex items-center gap-2 pl-1">
+      <span className="text-xs text-[var(--color-muted)]">
+        {isFallback
+          ? `Mes anterior: ${data.avg_same_month} un`
+          : `Histórico: ~${data.avg_same_month} un/mes · Crecimiento empresa: ${growthLabel}`}
+      </span>
+      <button
+        type="button"
+        onClick={() => onApply(String(data.suggested_quantity))}
+        className="text-xs text-[var(--color-accent)] hover:underline"
+      >
+        Usar {data.suggested_quantity} un →
+      </button>
+    </div>
+  )
+}
 
 export function PurchaseOrdersPage() {
   const [createOpen, setCreateOpen] = useState(false)
@@ -435,36 +478,45 @@ export function PurchaseOrdersPage() {
             <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-2">Ítems</p>
             <div className="space-y-2">
               {lines.map((line, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_100px_120px_32px] gap-2 items-end">
-                  <Select
-                    options={productOptions}
-                    value={line.product_id}
-                    onChange={e => updateLine(idx, 'product_id', e.target.value)}
-                  />
-                  <Input
-                    type="number"
-                    min="0.001"
-                    step="0.001"
-                    placeholder="Cantidad"
-                    value={line.quantity}
-                    onChange={e => updateLine(idx, 'quantity', e.target.value)}
-                  />
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Costo unit."
-                    value={line.unit_cost}
-                    onChange={e => updateLine(idx, 'unit_cost', e.target.value)}
-                    prefix="$"
-                  />
-                  <button
-                    onClick={() => removeLine(idx)}
-                    disabled={lines.length === 1}
-                    className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] disabled:opacity-30 transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                <div key={idx} className="space-y-1">
+                  <div className="grid grid-cols-[1fr_100px_120px_32px] gap-2 items-end">
+                    <Select
+                      options={productOptions}
+                      value={line.product_id}
+                      onChange={e => updateLine(idx, 'product_id', e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      min="0.001"
+                      step="0.001"
+                      placeholder="Cantidad"
+                      value={line.quantity}
+                      onChange={e => updateLine(idx, 'quantity', e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Costo unit."
+                      value={line.unit_cost}
+                      onChange={e => updateLine(idx, 'unit_cost', e.target.value)}
+                      prefix="$"
+                    />
+                    <button
+                      onClick={() => removeLine(idx)}
+                      disabled={lines.length === 1}
+                      className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] disabled:opacity-30 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  {line.product_id && (
+                    <SuggestionHint
+                      productId={line.product_id}
+                      orderDate={form.order_date}
+                      onApply={(qty) => updateLine(idx, 'quantity', qty)}
+                    />
+                  )}
                 </div>
               ))}
             </div>

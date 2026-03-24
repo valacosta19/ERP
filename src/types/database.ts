@@ -432,6 +432,19 @@ export interface Database {
         }
         Returns: void
       }
+      suggest_reorder_quantity: {
+        Args: {
+          p_product_id: string
+          p_order_month: number
+          p_order_year: number
+        }
+        Returns: {
+          suggested_quantity: number
+          avg_same_month: number
+          growth_rate: number
+          months_with_data: number
+        }[]
+      }
     }
     Enums: Record<string, never>
   }

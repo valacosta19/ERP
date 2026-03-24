@@ -10,6 +10,40 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 16** — ✅ Completa
+
+### Cambios implementados en Phase 16
+
+#### Feature: sugerencia de cantidad a pedir en Pedidos de Compra
+- **Migration 020**: `CREATE OR REPLACE FUNCTION suggest_reorder_quantity(p_product_id, p_order_month, p_order_year)` — RPC SECURITY DEFINER que devuelve `suggested_quantity`, `avg_same_month`, `growth_rate`, `months_with_data`. Algoritmo: promedio de unidades vendidas del mismo mes en años anteriores × factor de crecimiento interanual de la empresa (ingresos últimos 12m vs 12m previos, capped ±50–100%). Fallback: si no hay historial del mismo mes, devuelve unidades vendidas el mes anterior (`months_with_data = -1`).
+- **`database.ts`**: tipo `suggest_reorder_quantity` agregado en `Functions`.
+- **`useReorderSuggestion`**: nuevo hook — llama el RPC por `(productId, orderDate)`, cache 5 min, habilitado solo cuando `productId` está presente.
+- **`PurchaseOrdersPage`**: nuevo componente interno `SuggestionHint` — se monta debajo de cada línea de ítem cuando hay un producto seleccionado. Muestra `Histórico: ~X un/mes · Crecimiento empresa: ±Y%` o `Mes anterior: X un` en fallback. Botón "Usar X un →" rellena el campo cantidad.
+
+---
+
+## Current phase (anterior)
+**Phase 15** — ✅ Completa
+
+### Cambios implementados en Phase 15
+
+#### Feature: panel de productos para reponer en Pedidos de Compra
+- **Migration 018**: `ALTER TABLE products ADD COLUMN skip_restock boolean NOT NULL DEFAULT false`.
+- **Migration 019**: recrea `products_with_stock` view incluyendo `skip_restock` (DROP + CREATE porque `CREATE OR REPLACE` no permite insertar columnas en posiciones existentes).
+- **`database.ts`**: `skip_restock: boolean` en Row/Insert/Update de `products`.
+- **`types/index.ts`**: `skip_restock: boolean` en `Product`.
+- **`useProducts`**: nuevo hook `useSetRestockSkip({ id, skip_restock })` — hace PATCH al campo e invalida `['products']`.
+- **`PurchaseOrdersPage`**:
+  - Deriva `visibleLowStock` (productos con stock=0 o stock<min_stock y `skip_restock=false`) y `hiddenLowStock` (`skip_restock=true`).
+  - Panel "Productos para reponer" aparece encima de la tabla cuando hay alguno. Scroll interno (`max-h-36 overflow-y-auto`) para no desplazar la tabla.
+  - Cada chip clickeable abre "Nuevo pedido" con el producto pre-cargado (`openCreateWithProduct`).
+  - Botón `×` en cada chip llama `useSetRestockSkip(true)` → lo mueve a "pausados".
+  - Botón "Ver pausados (N)" muestra los pausados en gris tachado; `👁` los restaura.
+  - `productOptions` en el modal ordenado por urgencia (sin stock → stock bajo → OK) con prefijos `⚠ Sin stock ·` y `↓ Stock bajo ·`.
+
+---
+
+## Current phase (anterior)
 **Phase 14** — ✅ Completa
 
 ### Cambios implementados en Phase 14
@@ -137,6 +171,8 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 12 | ✅ `products_with_stock` view, `useProducts` una sola query, `database.ts` Views tipado |
 | 13 | ✅ Fix import parseNum, multicurrency (ARS/USD/EUR), fix edición de payments, cards de balance agrupadas por método+moneda |
 | 14 | ✅ Comisiones con % libre por profesional, rango precio compra en inventario, modal edición de productos, fix auto-mapeo import |
+| 15 | ✅ Panel "Productos para reponer" en Pedidos de Compra: chips con skip_restock, pre-carga en modal, product selector ordenado por urgencia |
+| 16 | ✅ Sugerencia de cantidad a pedir: RPC `suggest_reorder_quantity`, hook `useReorderSuggestion`, componente `SuggestionHint` por línea en modal de nuevo pedido |
 
 ---
 
@@ -177,7 +213,7 @@ Postgres (Supabase)
 | Commissions | `useCommissionsReport` | `ReportsPage` (Comisiones tab) |
 | Dashboard | — | `DashboardPage` (KPIs + charts) |
 | Suppliers | `useSuppliers` | `SuppliersPage` |
-| Purchase Orders | `usePurchaseOrders` | `PurchaseOrdersPage` |
+| Purchase Orders | `usePurchaseOrders`, `useSetRestockSkip`, `useReorderSuggestion` | `PurchaseOrdersPage` |
 | Inventory | `useProducts`, `useInventoryLots`, `useUpdateInventoryLot` | `InventoryPage`, `LotDrawer` |
 | Reports | `useFinancialReport`, `useInventoryValuation`, `useCommissionsReport` | `ReportsPage` |
 | Import | — | `ImportPage` (5-step wizard) |
