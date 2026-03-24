@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Plus, Trash2, PackageCheck, Ban, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Trash2, PackageCheck, Ban, ChevronDown, ChevronRight, AlertTriangle, EyeOff, Eye, X } from 'lucide-react'
+import { useSetRestockSkip } from '@/hooks/useProducts'
 import { formatDate } from '@/lib/formatDate'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
@@ -50,6 +51,7 @@ export function PurchaseOrdersPage() {
   const [form, setForm] = useState({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10) })
   const [lines, setLines] = useState<LineItem[]>([{ ...EMPTY_LINE }])
   const [formError, setFormError] = useState('')
+  const [showHidden, setShowHidden] = useState(false)
 
   const { data: orders = [], isLoading } = usePurchaseOrders()
   const { data: suppliers = [] } = useSuppliers()
@@ -57,6 +59,14 @@ export function PurchaseOrdersPage() {
   const createPO = useCreatePurchaseOrder()
   const cancelPO = useCancelPurchaseOrder()
   const receivePO = useReceivePurchaseOrder()
+  const setRestockSkip = useSetRestockSkip()
+
+  const allLowStockProducts = products
+    .filter(p => (p.stock ?? 0) === 0 || (p.stock ?? 0) < p.min_stock)
+    .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0))
+
+  const visibleLowStock = allLowStockProducts.filter(p => !p.skip_restock)
+  const hiddenLowStock = allLowStockProducts.filter(p => p.skip_restock)
 
   const supplierOptions = [
     { value: '', label: 'Sin proveedor' },
@@ -65,7 +75,17 @@ export function PurchaseOrdersPage() {
 
   const productOptions = [
     { value: '', label: 'Seleccionar producto' },
-    ...products.map(p => ({ value: p.id, label: `${p.name} (${p.sku})` })),
+    ...products
+      .slice()
+      .sort((a, b) => {
+        const urgency = (p: typeof a) => (p.stock ?? 0) === 0 ? 0 : (p.stock ?? 0) < p.min_stock ? 1 : 2
+        return urgency(a) - urgency(b)
+      })
+      .map(p => {
+        const stock = p.stock ?? 0
+        const prefix = stock === 0 ? '⚠ Sin stock · ' : stock < p.min_stock ? '↓ Stock bajo · ' : ''
+        return { value: p.id, label: `${prefix}${p.name} (${p.sku})` }
+      }),
   ]
 
   function addLine() {
@@ -83,6 +103,13 @@ export function PurchaseOrdersPage() {
   function openCreate() {
     setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10) })
     setLines([{ ...EMPTY_LINE }])
+    setFormError('')
+    setCreateOpen(true)
+  }
+
+  function openCreateWithProduct(productId: string) {
+    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10) })
+    setLines([{ product_id: productId, quantity: '', unit_cost: '' }])
     setFormError('')
     setCreateOpen(true)
   }
@@ -224,6 +251,92 @@ export function PurchaseOrdersPage() {
           </Button>
         }
       />
+
+      {allLowStockProducts.length > 0 && (
+        <div className="mx-6 mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle size={13} className="text-[var(--color-warning)]" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]" style={{ fontFamily: 'var(--font-display)' }}>
+              Productos para reponer
+            </span>
+            {visibleLowStock.length > 0 && <Badge variant="danger">{visibleLowStock.length}</Badge>}
+            {hiddenLowStock.length > 0 && (
+              <button
+                onClick={() => setShowHidden(v => !v)}
+                className="ml-auto flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
+              >
+                {showHidden ? <Eye size={12} /> : <EyeOff size={12} />}
+                {showHidden ? 'Ocultar pausados' : `Ver pausados (${hiddenLowStock.length})`}
+              </button>
+            )}
+          </div>
+
+          {visibleLowStock.length === 0 && !showHidden && (
+            <p className="text-xs text-[var(--color-muted)]">Todos los productos con stock bajo están pausados.</p>
+          )}
+
+          <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto">
+            {visibleLowStock.map(p => {
+              const isOut = (p.stock ?? 0) === 0
+              return (
+                <div
+                  key={p.id}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm ${
+                    isOut
+                      ? 'border-[var(--color-danger)] bg-[var(--color-danger-light)]'
+                      : 'border-[var(--color-warning)] bg-[var(--color-warning-light)]'
+                  }`}
+                >
+                  <button
+                    onClick={() => openCreateWithProduct(p.id)}
+                    className="flex items-center gap-2 hover:opacity-75 transition-opacity"
+                  >
+                    <span className="font-medium text-[var(--color-text)]">{p.name}</span>
+                    <span className="tabular-nums text-xs text-[var(--color-muted)]">
+                      {p.stock ?? 0} / {p.min_stock}
+                    </span>
+                    <Badge variant={isOut ? 'danger' : 'warning'}>
+                      {isOut ? 'Sin stock' : 'Stock bajo'}
+                    </Badge>
+                  </button>
+                  <button
+                    onClick={() => setRestockSkip.mutate({ id: p.id, skip_restock: true })}
+                    title="No pedir por ahora"
+                    className="ml-1 p-0.5 rounded text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              )
+            })}
+
+            {showHidden && hiddenLowStock.map(p => {
+              const isOut = (p.stock ?? 0) === 0
+              return (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm border-[var(--color-border)] bg-[var(--color-bg)] opacity-60"
+                >
+                  <span className="font-medium text-[var(--color-muted)] line-through">{p.name}</span>
+                  <span className="tabular-nums text-xs text-[var(--color-muted)]">
+                    {p.stock ?? 0} / {p.min_stock}
+                  </span>
+                  <Badge variant={isOut ? 'danger' : 'warning'}>
+                    {isOut ? 'Sin stock' : 'Stock bajo'}
+                  </Badge>
+                  <button
+                    onClick={() => setRestockSkip.mutate({ id: p.id, skip_restock: false })}
+                    title="Volver a mostrar"
+                    className="ml-1 p-0.5 rounded text-[var(--color-muted)] hover:text-[var(--color-accent)] transition-colors"
+                  >
+                    <Eye size={11} />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 flex flex-col p-6">
         <div className="flex-1 min-h-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-auto">

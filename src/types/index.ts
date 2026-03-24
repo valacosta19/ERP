@@ -79,6 +79,7 @@ export interface Product {
   brand: string | null
   deleted_at: string | null
   created_at: string
+  skip_restock: boolean
   stock?: number
   min_cost?: number | null
   max_cost?: number | null

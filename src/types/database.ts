@@ -179,6 +179,7 @@ export interface Database {
           brand: string | null
           deleted_at: string | null
           created_at: string
+          skip_restock: boolean
         }
         Insert: {
           id?: string
@@ -190,6 +191,7 @@ export interface Database {
           brand?: string | null
           deleted_at?: string | null
           created_at?: string
+          skip_restock?: boolean
         }
         Update: {
           id?: string
@@ -200,6 +202,7 @@ export interface Database {
           min_stock?: number
           brand?: string | null
           deleted_at?: string | null
+          skip_restock?: boolean
         }
         Relationships: []
       }

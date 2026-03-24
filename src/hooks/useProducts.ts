@@ -62,6 +62,20 @@ export function useUpdateProduct() {
   })
 }
 
+export function useSetRestockSkip() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, skip_restock }: { id: string; skip_restock: boolean }) => {
+      const { error } = await supabase
+        .from('products')
+        .update({ skip_restock } as ProductUpdate)
+        .eq('id', id)
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+  })
+}
+
 export function useDeleteProduct() {
   const qc = useQueryClient()
   return useMutation({
