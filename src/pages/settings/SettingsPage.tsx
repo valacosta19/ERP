@@ -1,14 +1,18 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { Plus, Trash2, Check, X, Pencil, UserPlus } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
+import { Select } from '@/components/ui/Select'
 import { InlineEditCell } from '@/components/ui/InlineEditCell'
 import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '@/hooks/useCategories'
 import { useProfessionals, useCreateProfessional, useUpdateProfessional, useDeleteProfessional } from '@/hooks/useProfessionals'
-import { useCatalogItems, useCreateCatalogItem, useUpdateCatalogItem, useDeleteCatalogItem } from '@/hooks/useCatalogItems'
+import { useCatalogItems, useCreateCatalogItem, useUpdateCatalogItem, useDeleteCatalogItem, useUpdateCatalogItemHours } from '@/hooks/useCatalogItems'
 import { usePaymentMethods, useCreatePaymentMethod, useUpdatePaymentMethod, useDeletePaymentMethod } from '@/hooks/usePaymentMethods'
 import { useAuth, useUpdateProfile, useUsers, useInviteUser, useUpdateUserRole } from '@/hooks/useAuth'
-import type { Professional, PaymentMethodConfig } from '@/types'
+import { useFixedCosts, useCreateFixedCost, useUpdateFixedCost, useDeleteFixedCost } from '@/hooks/useFixedCosts'
+import { useServiceRecipes, useUpsertServiceRecipes } from '@/hooks/useServiceRecipes'
+import { useProducts } from '@/hooks/useProducts'
+import type { Professional, PaymentMethodConfig, FixedCost, Product } from '@/types'
 
 function DraftInput({
   inputRef,
@@ -162,7 +166,10 @@ function BusinessNameCard({ name, onSave }: { name: string; onSave: (v: string) 
   )
 }
 
+type SettingsTab = 'general' | 'operaciones' | 'costos' | 'catalogo'
+
 export function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [addingCat, setAddingCat] = useState(false)
   const [catDraft, setCatDraft] = useState('')
   const catInputRef = useRef<HTMLInputElement>(null)
@@ -381,11 +388,149 @@ export function SettingsPage() {
     c.name.toLowerCase() === 'servicio' || c.name.toLowerCase() === 'producto'
   )
 
+  const { data: fixedCosts = [], isLoading: fcLoading } = useFixedCosts()
+  const createFc = useCreateFixedCost()
+  const updateFc = useUpdateFixedCost()
+  const deleteFc = useDeleteFixedCost()
+
+  const [addingFc, setAddingFc] = useState(false)
+  const [fcDraftName, setFcDraftName] = useState('')
+  const [fcDraftAmount, setFcDraftAmount] = useState('')
+  const fcNameRef = useRef<HTMLInputElement>(null)
+
+  function startAddFc() {
+    setAddingFc(true)
+    setFcDraftName('')
+    setFcDraftAmount('')
+    setTimeout(() => fcNameRef.current?.focus(), 0)
+  }
+
+  async function saveFc() {
+    if (!fcDraftName.trim() || !fcDraftAmount) return
+    await createFc.mutateAsync({ name: fcDraftName.trim(), monthly_amount: parseFloat(fcDraftAmount) || 0 })
+    setAddingFc(false)
+    setFcDraftName('')
+    setFcDraftAmount('')
+  }
+
+  function cancelFc() {
+    setAddingFc(false)
+    setFcDraftName('')
+    setFcDraftAmount('')
+  }
+
+  function handleFcKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); saveFc() }
+    if (e.key === 'Escape') cancelFc()
+  }
+
+  async function handleFcToggleActive(fc: FixedCost) {
+    await updateFc.mutateAsync({ id: fc.id, active: !fc.active })
+  }
+
+  async function handleFcDelete(id: string) {
+    if (!confirm('¿Eliminar este gasto fijo?')) return
+    await deleteFc.mutateAsync(id)
+  }
+
+  const activeFcTotal = useMemo(
+    () => fixedCosts.filter(fc => fc.active).reduce((s, fc) => s + fc.monthly_amount, 0),
+    [fixedCosts]
+  )
+
+  const { data: products = [] } = useProducts()
+  const { data: allCatalogItems = [] } = useCatalogItems()
+  const updateCatalogItemHours = useUpdateCatalogItemHours()
+  const upsertRecipes = useUpsertServiceRecipes()
+
+  const serviceItems = useMemo(
+    () => allCatalogItems.filter(ci => {
+      const cat = categories.find(c => c.id === ci.category_id)
+      return cat?.name.toLowerCase() === 'servicio'
+    }),
+    [allCatalogItems, categories]
+  )
+
+  const [selectedServiceId, setSelectedServiceId] = useState<string>('')
+  const [hoursInput, setHoursInput] = useState<string>('')
+  const { data: currentRecipes = [] } = useServiceRecipes(selectedServiceId || null)
+
+  type RecipeLine = { product_id: string; quantity_grams: string }
+  const [recipeLines, setRecipeLines] = useState<RecipeLine[]>([])
+
+  useEffect(() => {
+    const svc = serviceItems.find(s => s.id === selectedServiceId)
+    setHoursInput(svc?.hours != null ? String(svc.hours) : '')
+  }, [selectedServiceId, serviceItems])
+
+  useEffect(() => {
+    setRecipeLines(currentRecipes.map(r => ({ product_id: r.product_id, quantity_grams: String(r.quantity_grams) })))
+  }, [currentRecipes])
+
+  function addRecipeLine() {
+    setRecipeLines(lines => [...lines, { product_id: '', quantity_grams: '' }])
+  }
+
+  function removeRecipeLine(idx: number) {
+    setRecipeLines(lines => lines.filter((_, i) => i !== idx))
+  }
+
+  function updateRecipeLine(idx: number, field: keyof RecipeLine, value: string) {
+    setRecipeLines(lines => lines.map((l, i) => i === idx ? { ...l, [field]: value } : l))
+  }
+
+  async function saveRecipes() {
+    if (!selectedServiceId) return
+    const valid = recipeLines.filter(l => l.product_id && l.quantity_grams)
+    await upsertRecipes.mutateAsync({
+      catalogItemId: selectedServiceId,
+      recipes: valid.map(l => ({ product_id: l.product_id, quantity_grams: parseFloat(l.quantity_grams) || 0 })),
+    })
+  }
+
+  async function handleHoursSave() {
+    if (!selectedServiceId) return
+    const parsed = hoursInput !== '' ? parseFloat(hoursInput) : null
+    await updateCatalogItemHours.mutateAsync({ id: selectedServiceId, hours: isNaN(parsed as number) ? null : parsed })
+  }
+
+  function getAvgCostPerGram(product: Product): number | null {
+    if (!product.unit_size) return null
+    const min = product.min_cost ?? 0
+    const max = product.max_cost ?? min
+    const avg = (min + max) / 2
+    return avg / product.unit_size
+  }
+
+  const TAB_LABELS: Record<SettingsTab, string> = {
+    general: 'General',
+    operaciones: 'Operaciones',
+    costos: 'Costos',
+    catalogo: 'Catálogo',
+  }
+
   return (
     <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
-      <TopBar title="Configuración" subtitle="Categorías y profesionales" />
+      <TopBar title="Configuración" subtitle={TAB_LABELS[activeTab]} />
+
+      <div className="flex gap-0 border-b border-[var(--color-border)] px-6 shrink-0">
+        {(Object.keys(TAB_LABELS) as SettingsTab[]).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === tab
+                ? 'border-[var(--color-accent)] text-[var(--color-accent)]'
+                : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'
+            }`}
+          >
+            {TAB_LABELS[tab]}
+          </button>
+        ))}
+      </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
+        {activeTab === 'general' && (<>
         <section>
           <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Negocio</h2>
           {profile && (
@@ -512,7 +657,9 @@ export function SettingsPage() {
             </div>
           </section>
         )}
+        </>)}
 
+        {activeTab === 'operaciones' && (<>
         {hdsLoading ? (
           <div className="flex justify-center pt-4">
             <span className="w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
@@ -772,8 +919,237 @@ export function SettingsPage() {
             </div>
           </section>
         )}
+        </>)}
 
-        {serviceCategories.length > 0 && (
+        {activeTab === 'costos' && (<>
+        {fcLoading ? (
+          <div className="flex justify-center pt-4">
+            <span className="w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">Gastos fijos</h2>
+              <button
+                onClick={startAddFc}
+                disabled={addingFc}
+                className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
+              >
+                <Plus size={12} /> Nuevo
+              </button>
+            </div>
+            <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+              {addingFc && (
+                <div
+                  className="flex items-center gap-2 px-4 py-2.5 animate-slide-in"
+                  style={{ background: 'var(--color-accent-light)', borderLeft: '3px solid var(--color-accent)' }}
+                >
+                  <span
+                    className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
+                    style={{ color: 'var(--color-accent)', background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)' }}
+                  >
+                    Nuevo
+                  </span>
+                  <DraftInput inputRef={fcNameRef} value={fcDraftName} onChange={setFcDraftName} onKeyDown={handleFcKeyDown} placeholder="Nombre *" autoFocus />
+                  <DraftInput value={fcDraftAmount} onChange={setFcDraftAmount} onKeyDown={handleFcKeyDown} placeholder="Monto mensual" type="number" />
+                  <button
+                    onClick={saveFc}
+                    disabled={createFc.isPending || !fcDraftName.trim() || !fcDraftAmount}
+                    className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+                    style={{ background: 'var(--color-accent)', color: '#fff' }}
+                  >
+                    <Check size={13} />
+                  </button>
+                  <button
+                    onClick={cancelFc}
+                    className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+              {fixedCosts.length === 0 && !addingFc && (
+                <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin gastos fijos</p>
+              )}
+              {fixedCosts.map(fc => (
+                <div key={fc.id} className="flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <InlineEditCell
+                      value={fc.name}
+                      onSave={async v => { await updateFc.mutateAsync({ id: fc.id, name: v }) }}
+                      className="text-sm text-[var(--color-text)]"
+                    />
+                    <InlineEditCell
+                      value={String(fc.monthly_amount)}
+                      type="number"
+                      displayValue={`$${fc.monthly_amount.toLocaleString('es-AR')}`}
+                      onSave={async v => { await updateFc.mutateAsync({ id: fc.id, monthly_amount: parseFloat(v) || 0 }) }}
+                      className="text-sm tabular-nums text-[var(--color-muted)]"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Badge variant={fc.active ? 'success' : 'default'}>{fc.active ? 'Activo' : 'Inactivo'}</Badge>
+                    <button
+                      onClick={() => handleFcToggleActive(fc)}
+                      className="px-2 py-1 rounded-lg text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+                    >
+                      {fc.active ? 'Desactivar' : 'Activar'}
+                    </button>
+                    <button
+                      onClick={() => handleFcDelete(fc.id)}
+                      className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <div className="px-4 py-3 text-xs text-[var(--color-muted)]">
+                Total activos: <span className="font-semibold text-[var(--color-text)]">${activeFcTotal.toLocaleString('es-AR')}/mes</span>
+                {' → '}
+                <span className="font-semibold text-[var(--color-text)]">${(activeFcTotal / 160).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/hora</span>
+                {' (÷ 160)'}
+              </div>
+            </div>
+          </section>
+        )}
+
+        <section>
+          <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Recetas de servicios</h2>
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex-1 min-w-0 space-y-3">
+              <Select
+                value={selectedServiceId}
+                onChange={e => setSelectedServiceId(e.target.value)}
+                placeholder="Seleccionar servicio..."
+                options={serviceItems.map(s => ({ value: s.id, label: s.name }))}
+              />
+              {selectedServiceId && (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-[var(--color-muted)] shrink-0">Horas estimadas:</label>
+                  <input
+                    type="number"
+                    value={hoursInput}
+                    onChange={e => setHoursInput(e.target.value)}
+                    onBlur={handleHoursSave}
+                    placeholder="0"
+                    style={{
+                      width: '80px',
+                      background: 'transparent',
+                      border: 'none',
+                      borderBottom: '1.5px solid var(--color-border)',
+                      padding: '3px 2px',
+                      fontSize: '0.875rem',
+                      color: 'var(--color-text)',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+            {selectedServiceId && (
+              <div className="flex-1 min-w-0">
+                <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-[var(--color-border)]">
+                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Insumo</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Gramos/mL</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Costo est.</th>
+                        <th className="px-3 py-2 w-8" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recipeLines.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-3 py-4 text-center text-xs text-[var(--color-muted)]">Sin insumos</td>
+                        </tr>
+                      )}
+                      {recipeLines.map((line, idx) => {
+                        const product = products.find(p => p.id === line.product_id)
+                        const cpg = product ? getAvgCostPerGram(product) : null
+                        const qty = parseFloat(line.quantity_grams) || 0
+                        const lineCost = cpg != null ? cpg * qty : null
+                        return (
+                          <tr key={idx} className="border-t border-[var(--color-border)]">
+                            <td className="px-3 py-2">
+                              <select
+                                value={line.product_id}
+                                onChange={e => updateRecipeLine(idx, 'product_id', e.target.value)}
+                                className="w-full bg-transparent text-sm text-[var(--color-text)] border-none outline-none"
+                              >
+                                <option value="">Seleccionar...</option>
+                                {products.map(p => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name}{!p.unit_size ? ' (sin tamaño)' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <input
+                                type="number"
+                                value={line.quantity_grams}
+                                onChange={e => updateRecipeLine(idx, 'quantity_grams', e.target.value)}
+                                className="w-20 text-right bg-transparent text-sm text-[var(--color-text)] border-none outline-none"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right text-xs text-[var(--color-muted)] tabular-nums">
+                              {lineCost != null ? `$${lineCost.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
+                            </td>
+                            <td className="px-3 py-2">
+                              <button
+                                onClick={() => removeRecipeLine(idx)}
+                                className="p-1 rounded text-[var(--color-muted)] hover:text-[var(--color-danger)] transition-colors"
+                              >
+                                <X size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                  <div className="px-3 py-2 border-t border-[var(--color-border)] flex items-center justify-between gap-2">
+                    <button
+                      onClick={addRecipeLine}
+                      className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline"
+                    >
+                      <Plus size={12} /> Agregar insumo
+                    </button>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-[var(--color-muted)]">
+                        Costo total:{' '}
+                        <span className="font-semibold text-[var(--color-text)]">
+                          ${recipeLines.reduce((s, line) => {
+                            const product = products.find(p => p.id === line.product_id)
+                            const cpg = product ? getAvgCostPerGram(product) : null
+                            const qty = parseFloat(line.quantity_grams) || 0
+                            return s + (cpg != null ? cpg * qty : 0)
+                          }, 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </span>
+                      <button
+                        onClick={saveRecipes}
+                        disabled={upsertRecipes.isPending}
+                        className="px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-40"
+                        style={{ background: 'var(--color-accent)', color: '#fff' }}
+                      >
+                        Guardar receta
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+        </>)}
+
+        {activeTab === 'catalogo' && (
+        <>{serviceCategories.length > 0 && (
           <section>
             <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Catálogo</h2>
             <div className="space-y-4">
@@ -874,7 +1250,7 @@ export function SettingsPage() {
               })}
             </div>
           </section>
-        )}
+        )}</>)}
       </div>
     </div>
   )

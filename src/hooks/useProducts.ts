@@ -27,6 +27,7 @@ interface ProductPayload {
   brand: string | null
   sale_price: number
   min_stock: number
+  unit_size?: number | null
 }
 
 export function useCreateProduct() {

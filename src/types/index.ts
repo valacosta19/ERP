@@ -80,6 +80,7 @@ export interface Product {
   deleted_at: string | null
   created_at: string
   skip_restock: boolean
+  unit_size?: number | null
   stock?: number
   min_cost?: number | null
   max_cost?: number | null
@@ -157,5 +158,31 @@ export interface CatalogItem {
   name: string
   category_id: string | null
   price: number
+  hours?: number | null
   created_at: string
+}
+
+export interface FixedCost {
+  id: string
+  name: string
+  monthly_amount: number
+  active: boolean
+}
+
+export interface ServiceRecipe {
+  id: string
+  catalog_item_id: string
+  product_id: string
+  quantity_grams: number
+}
+
+export interface ServiceCostRow {
+  service: CatalogItem
+  materialCost: number
+  fixedCost: number
+  totalCost: number
+  salePrice: number
+  margin: number
+  marginPct: number
+  hasWarning: boolean
 }

@@ -180,6 +180,7 @@ export interface Database {
           deleted_at: string | null
           created_at: string
           skip_restock: boolean
+          unit_size: number | null
         }
         Insert: {
           id?: string
@@ -192,6 +193,7 @@ export interface Database {
           deleted_at?: string | null
           created_at?: string
           skip_restock?: boolean
+          unit_size?: number | null
         }
         Update: {
           id?: string
@@ -203,6 +205,7 @@ export interface Database {
           brand?: string | null
           deleted_at?: string | null
           skip_restock?: boolean
+          unit_size?: number | null
         }
         Relationships: []
       }
@@ -370,6 +373,7 @@ export interface Database {
           name: string
           category_id: string | null
           price: number
+          hours: number | null
           created_at: string
         }
         Insert: {
@@ -377,6 +381,7 @@ export interface Database {
           name: string
           category_id?: string | null
           price?: number
+          hours?: number | null
           created_at?: string
         }
         Update: {
@@ -384,6 +389,52 @@ export interface Database {
           name?: string
           category_id?: string | null
           price?: number
+          hours?: number | null
+        }
+        Relationships: []
+      }
+      fixed_costs: {
+        Row: {
+          id: string
+          name: string
+          monthly_amount: number
+          active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          monthly_amount: number
+          active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          monthly_amount?: number
+          active?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      service_recipes: {
+        Row: {
+          id: string
+          catalog_item_id: string
+          product_id: string
+          quantity_grams: number
+        }
+        Insert: {
+          id?: string
+          catalog_item_id: string
+          product_id: string
+          quantity_grams: number
+        }
+        Update: {
+          id?: string
+          catalog_item_id?: string
+          product_id?: string
+          quantity_grams?: number
         }
         Relationships: []
       }
@@ -403,6 +454,7 @@ export interface Database {
           stock: number
           min_cost: number | null
           max_cost: number | null
+          unit_size: number | null
         }
         Relationships: []
       }

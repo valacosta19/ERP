@@ -1,16 +1,38 @@
 import { useState, useMemo } from 'react'
+import { AlertTriangle } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { TopBar } from '@/components/layout/TopBar'
 import { Table } from '@/components/ui/Table'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { useFinancialReport, useInventoryValuation, useProfitReport } from '@/hooks/useReports'
 import { useCommissionsReport } from '@/hooks/useCommissionsReport'
+import { useFixedCosts } from '@/hooks/useFixedCosts'
+import { useProducts } from '@/hooks/useProducts'
+import { useCatalogItems } from '@/hooks/useCatalogItems'
+import { useCategories } from '@/hooks/useCategories'
+import { supabase } from '@/lib/supabaseClient'
 import type { FinancialCategoryRow, InventoryValuationRow, ProfitMonthRow } from '@/hooks/useReports'
 import type { CommissionDetailRow } from '@/hooks/useCommissionsReport'
-import type { Currency } from '@/types'
+import type { Currency, ServiceRecipe, ServiceCostRow } from '@/types'
 import { formatDate } from '@/lib/formatDate'
 
-type Tab = 'financiero' | 'comisiones' | 'utilidad'
+type Tab = 'financiero' | 'comisiones' | 'utilidad' | 'costos'
+type CommViewMode = 'detalle' | 'quincenal'
+
+const MONTH_NAMES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+
+function getBiweeklyPeriod(dateStr: string): { key: string; label: string } {
+  const date = new Date(dateStr + 'T00:00:00')
+  const year = date.getFullYear()
+  const month = date.getMonth()
+  const day = date.getDate()
+  const isFirstHalf = day <= 15
+  return {
+    key: `${year}-${String(month + 1).padStart(2, '0')}-${isFirstHalf ? '1' : '2'}`,
+    label: isFirstHalf ? `1–15 ${MONTH_NAMES[month]} ${year}` : `16–fin ${MONTH_NAMES[month]} ${year}`,
+  }
+}
 
 const CURRENCY_OPTIONS = [
   { value: '', label: 'Todas las monedas' },
@@ -72,34 +94,6 @@ const valuationColumns = [
   },
 ]
 
-const commissionColumns = [
-  { key: 'professional_name', header: 'Profesional' },
-  {
-    key: 'date',
-    header: 'Fecha',
-    render: (r: CommissionDetailRow) => (
-      <span className="text-[var(--color-muted)]">{formatDate(r.date)}</span>
-    ),
-  },
-  {
-    key: 'total_amount',
-    header: 'Monto servicio',
-    render: (r: CommissionDetailRow) => fmtAmount(r.total_amount),
-    className: 'text-right',
-  },
-  {
-    key: 'commission_rate',
-    header: '% comisión',
-    render: (r: CommissionDetailRow) => `${r.commission_rate}%`,
-    className: 'text-right',
-  },
-  {
-    key: 'commission_amount',
-    header: 'Comisión',
-    render: (r: CommissionDetailRow) => fmtAmount(r.commission_amount),
-    className: 'text-right font-semibold',
-  },
-]
 
 export function ReportsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('financiero')
@@ -109,6 +103,7 @@ export function ReportsPage() {
   const [commFrom, setCommFrom] = useState('')
   const [commTo, setCommTo] = useState('')
   const [commProfFilter, setCommProfFilter] = useState('')
+  const [commViewMode, setCommViewMode] = useState<CommViewMode>('detalle')
   const [profitFrom, setProfitFrom] = useState('')
   const [profitTo, setProfitTo] = useState('')
 
@@ -131,20 +126,80 @@ export function ReportsPage() {
   const totalCommissions = filteredCommissions.reduce((s, r) => s + r.commission_amount, 0)
 
   const commissionsByProfessional = useMemo(() => {
-    const map = new Map<string, { name: string; total: number; count: number }>()
+    const map = new Map<string, { name: string; total: number; count: number; periods: Map<string, { label: string; amount: number }> }>()
     for (const r of (commissions.data ?? [])) {
+      const { key, label } = getBiweeklyPeriod(r.date)
       const existing = map.get(r.professional_id)
       if (existing) {
         existing.total += r.commission_amount
         existing.count += 1
+        const period = existing.periods.get(key)
+        if (period) period.amount += r.commission_amount
+        else existing.periods.set(key, { label, amount: r.commission_amount })
       } else {
-        map.set(r.professional_id, { name: r.professional_name, total: r.commission_amount, count: 1 })
+        const periods = new Map<string, { label: string; amount: number }>()
+        periods.set(key, { label, amount: r.commission_amount })
+        map.set(r.professional_id, { name: r.professional_name, total: r.commission_amount, count: 1, periods })
       }
     }
     return Array.from(map.entries())
-      .map(([id, v]) => ({ id, ...v }))
+      .map(([id, v]) => ({
+        id,
+        name: v.name,
+        total: v.total,
+        count: v.count,
+        periods: Array.from(v.periods.entries())
+          .map(([key, p]) => ({ key, label: p.label, amount: p.amount }))
+          .sort((a, b) => b.key.localeCompare(a.key)),
+      }))
       .sort((a, b) => b.total - a.total)
   }, [commissions.data])
+
+  const quincenalGroups = useMemo(() => {
+    const source = commProfFilter
+      ? (commissions.data ?? []).filter(r => r.professional_id === commProfFilter)
+      : (commissions.data ?? [])
+
+    const map = new Map<string, {
+      periodKey: string
+      periodLabel: string
+      byProfessional: Map<string, { name: string; count: number; total_amount: number; commission_amount: number }>
+    }>()
+
+    for (const r of source) {
+      const { key, label } = getBiweeklyPeriod(r.date)
+      if (!map.has(key)) map.set(key, { periodKey: key, periodLabel: label, byProfessional: new Map() })
+      const period = map.get(key)!
+      const existing = period.byProfessional.get(r.professional_id)
+      if (existing) {
+        existing.count += 1
+        existing.total_amount += r.total_amount
+        existing.commission_amount += r.commission_amount
+      } else {
+        period.byProfessional.set(r.professional_id, { name: r.professional_name, count: 1, total_amount: r.total_amount, commission_amount: r.commission_amount })
+      }
+    }
+
+    return Array.from(map.values())
+      .sort((a, b) => b.periodKey.localeCompare(a.periodKey))
+      .map(group => ({
+        ...group,
+        rows: Array.from(group.byProfessional.entries())
+          .map(([id, v]) => ({ id, ...v }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+        periodTotal: Array.from(group.byProfessional.values()).reduce((s, v) => s + v.commission_amount, 0),
+      }))
+  }, [commissions.data, commProfFilter])
+
+  const detailGroups = useMemo(() => {
+    const map = new Map<string, { periodKey: string; periodLabel: string; rows: CommissionDetailRow[] }>()
+    for (const r of filteredCommissions) {
+      const { key, label } = getBiweeklyPeriod(r.date)
+      if (!map.has(key)) map.set(key, { periodKey: key, periodLabel: label, rows: [] })
+      map.get(key)!.rows.push(r)
+    }
+    return Array.from(map.values()).sort((a, b) => b.periodKey.localeCompare(a.periodKey))
+  }, [filteredCommissions])
 
   const professionalOptions = useMemo(() => {
     const seen = new Map<string, string>()
@@ -154,6 +209,54 @@ export function ReportsPage() {
       ...Array.from(seen.entries()).map(([id, name]) => ({ value: id, label: name })),
     ]
   }, [commissions.data])
+
+  const { data: fixedCosts = [] } = useFixedCosts()
+  const { data: products = [] } = useProducts()
+  const { data: allCatalogItems = [] } = useCatalogItems()
+  const { data: categories = [] } = useCategories()
+
+  const { data: allRecipes = [] } = useQuery<ServiceRecipe[]>({
+    queryKey: ['service-recipes-all'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('service_recipes').select('*')
+      if (error) throw new Error(error.message)
+      return data as ServiceRecipe[]
+    },
+  })
+
+  const costRows = useMemo<ServiceCostRow[]>(() => {
+    const serviceCategory = categories.find(c => c.name.toLowerCase() === 'servicio')
+    const services = serviceCategory
+      ? allCatalogItems.filter(ci => ci.category_id === serviceCategory.id)
+      : []
+    const fixedCostPerHour = fixedCosts.filter(fc => fc.active).reduce((s, fc) => s + fc.monthly_amount, 0) / 160
+
+    return services.map(service => {
+      const recipes = allRecipes.filter(r => r.catalog_item_id === service.id)
+      const materialCost = recipes.reduce((s, r) => {
+        const product = products.find(p => p.id === r.product_id)
+        if (!product?.unit_size) return s
+        const min = product.min_cost ?? 0
+        const max = product.max_cost ?? min
+        const avg = (min + max) / 2
+        const costPerGram = avg / product.unit_size
+        return s + r.quantity_grams * costPerGram
+      }, 0)
+      const fixedCost = (service.hours ?? 0) * fixedCostPerHour
+      const totalCost = materialCost + fixedCost
+      const salePrice = service.price ?? 0
+      const margin = salePrice - totalCost
+      const marginPct = salePrice > 0 ? (margin / salePrice) * 100 : 0
+      const hasWarning = recipes.length === 0 || !service.hours || !service.price
+      return { service, materialCost, fixedCost, totalCost, salePrice, margin, marginPct, hasWarning }
+    })
+  }, [categories, allCatalogItems, fixedCosts, allRecipes, products])
+
+  function marginColor(pct: number): string {
+    if (pct > 30) return 'var(--color-success)'
+    if (pct >= 10) return 'var(--color-warning)'
+    return 'var(--color-danger)'
+  }
 
   return (
     <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
@@ -189,6 +292,16 @@ export function ReportsPage() {
             }`}
           >
             Utilidad
+          </button>
+          <button
+            onClick={() => setActiveTab('costos')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'costos'
+                ? 'border-[var(--color-accent)] text-[var(--color-accent)]'
+                : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'
+            }`}
+          >
+            Costos
           </button>
         </div>
 
@@ -261,16 +374,32 @@ export function ReportsPage() {
 
         {activeTab === 'comisiones' && (
           <>
-            <div className="flex flex-wrap gap-3 items-end">
-              <Input label="Desde" type="date" value={commFrom} onChange={e => setCommFrom(e.target.value)} className="w-40" />
-              <Input label="Hasta" type="date" value={commTo} onChange={e => setCommTo(e.target.value)} className="w-40" />
-              <Select
-                label="Profesional"
-                options={professionalOptions}
-                value={commProfFilter}
-                onChange={e => setCommProfFilter(e.target.value)}
-                className="w-52"
-              />
+            <div className="flex flex-wrap gap-3 items-end justify-between">
+              <div className="flex flex-wrap gap-3 items-end">
+                <Input label="Desde" type="date" value={commFrom} onChange={e => setCommFrom(e.target.value)} className="w-40" />
+                <Input label="Hasta" type="date" value={commTo} onChange={e => setCommTo(e.target.value)} className="w-40" />
+                <Select
+                  label="Profesional"
+                  options={professionalOptions}
+                  value={commProfFilter}
+                  onChange={e => setCommProfFilter(e.target.value)}
+                  className="w-52"
+                />
+              </div>
+              <div className="flex gap-1 rounded-lg border border-[var(--color-border)] p-0.5 self-end">
+                <button
+                  onClick={() => setCommViewMode('detalle')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${commViewMode === 'detalle' ? 'bg-[var(--color-accent)] text-white' : 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}`}
+                >
+                  Detalle
+                </button>
+                <button
+                  onClick={() => setCommViewMode('quincenal')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${commViewMode === 'quincenal' ? 'bg-[var(--color-accent)] text-white' : 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}`}
+                >
+                  Quincenal
+                </button>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-4 items-start">
@@ -279,26 +408,122 @@ export function ReportsPage() {
                 <p className="text-2xl font-semibold text-[var(--color-text)] mt-1">{fmtAmount(totalCommissions)}</p>
               </div>
               {commissionsByProfessional.map(p => (
-                <div key={p.id} className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
-                  <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">{p.name}</p>
-                  <p className="text-2xl font-semibold text-[var(--color-text)] mt-1">{fmtAmount(p.total)}</p>
-                  <p className="text-xs text-[var(--color-muted)] mt-0.5">{p.count} {p.count === 1 ? 'servicio' : 'servicios'}</p>
+                <div key={p.id} className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4 min-w-[180px]">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-[var(--color-muted)] mb-2">{p.name}</p>
+                  <div className="flex flex-col gap-1">
+                    {p.periods.map(period => (
+                      <div key={period.key} className="flex items-baseline justify-between gap-3">
+                        <span className="text-xs text-[var(--color-muted)] capitalize">{period.label}</span>
+                        <span className="text-base font-bold tabular-nums text-[var(--color-text)]">{fmtAmount(period.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
 
-            <section>
-              <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg overflow-hidden">
-                <Table<CommissionDetailRow>
-                  columns={commissionColumns}
-                  data={filteredCommissions}
-                  keyField="transaction_id"
-                  loading={commissions.isLoading}
-                  emptyMessage="Sin comisiones en el período"
-                  pageSize={500}
-                />
-              </div>
-            </section>
+            {commViewMode === 'detalle' ? (
+              <section>
+                <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+                  {commissions.isLoading ? (
+                    <div className="flex justify-center py-12">
+                      <span className="w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : detailGroups.length === 0 ? (
+                    <p className="px-4 py-8 text-center text-[var(--color-muted)] text-xs">Sin comisiones en el período</p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[var(--color-border)]">
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Profesional</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Fecha</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Monto servicio</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">% comisión</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Comisión</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailGroups.map(group => (
+                          <>
+                            <tr key={`header-${group.periodKey}`} className="border-t border-[var(--color-border)] bg-[var(--color-bg)]">
+                              <td colSpan={5} className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] capitalize">
+                                {group.periodLabel}
+                              </td>
+                            </tr>
+                            {group.rows.map(row => (
+                              <tr key={row.transaction_id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
+                                <td className="px-4 py-3 text-[var(--color-text)]">{row.professional_name}</td>
+                                <td className="px-4 py-3 text-[var(--color-muted)]">{formatDate(row.date)}</td>
+                                <td className="px-4 py-3 text-right tabular-nums">{fmtAmount(row.total_amount)}</td>
+                                <td className="px-4 py-3 text-right tabular-nums text-[var(--color-muted)]">{row.commission_rate}%</td>
+                                <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(row.commission_amount)}</td>
+                              </tr>
+                            ))}
+                            <tr key={`subtotal-${group.periodKey}`} className="border-t border-[var(--color-border)] bg-[var(--color-bg)]">
+                              <td colSpan={4} className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] text-right">
+                                Subtotal
+                              </td>
+                              <td className="px-4 py-2 text-right tabular-nums font-semibold text-[var(--color-accent)]">
+                                {fmtAmount(group.rows.reduce((s, r) => s + r.commission_amount, 0))}
+                              </td>
+                            </tr>
+                          </>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </section>
+            ) : (
+              <section>
+                <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+                  {commissions.isLoading ? (
+                    <div className="flex justify-center py-12">
+                      <span className="w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : quincenalGroups.length === 0 ? (
+                    <p className="px-4 py-8 text-center text-[var(--color-muted)] text-xs">Sin comisiones en el período</p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[var(--color-border)]">
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Período</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Profesional</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Servicios</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Monto servicios</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Comisión</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {quincenalGroups.map(group => (
+                          <>
+                            {group.rows.map((row, i) => (
+                              <tr key={`${group.periodKey}-${row.id}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
+                                <td className="px-4 py-3 text-[var(--color-muted)] capitalize">
+                                  {i === 0 ? group.periodLabel : ''}
+                                </td>
+                                <td className="px-4 py-3 text-[var(--color-text)]">{row.name}</td>
+                                <td className="px-4 py-3 text-right tabular-nums text-[var(--color-muted)]">{row.count}</td>
+                                <td className="px-4 py-3 text-right tabular-nums">{fmtAmount(row.total_amount)}</td>
+                                <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(row.commission_amount)}</td>
+                              </tr>
+                            ))}
+                            <tr key={`${group.periodKey}-total`} className="border-t border-[var(--color-border)] bg-[var(--color-bg)]">
+                              <td colSpan={4} className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] text-right">
+                                Total {group.periodLabel}
+                              </td>
+                              <td className="px-4 py-2 text-right tabular-nums font-semibold text-[var(--color-accent)]">
+                                {fmtAmount(group.periodTotal)}
+                              </td>
+                            </tr>
+                          </>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </section>
+            )}
           </>
         )}
         {activeTab === 'utilidad' && (
@@ -403,6 +628,101 @@ export function ReportsPage() {
                 </section>
               </>
             )}
+          </>
+        )}
+        {activeTab === 'costos' && (
+          <>
+            {costRows.length > 0 && (
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
+                  <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Costo total servicios</p>
+                  <p className="text-2xl font-semibold text-[var(--color-text)] mt-1">
+                    {fmtAmount(costRows.reduce((s, r) => s + r.totalCost, 0))}
+                  </p>
+                  <p className="text-xs text-[var(--color-muted)] mt-1">
+                    Insumos {fmtAmount(costRows.reduce((s, r) => s + r.materialCost, 0))} · Fijos {fmtAmount(costRows.reduce((s, r) => s + r.fixedCost, 0))}
+                  </p>
+                </div>
+                <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
+                  <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Precio total de venta</p>
+                  <p className="text-2xl font-semibold text-[var(--color-text)] mt-1">
+                    {fmtAmount(costRows.reduce((s, r) => s + r.salePrice, 0))}
+                  </p>
+                </div>
+                <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
+                  <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Margen promedio</p>
+                  {(() => {
+                    const withPrice = costRows.filter(r => r.salePrice > 0)
+                    const avg = withPrice.length > 0 ? withPrice.reduce((s, r) => s + r.marginPct, 0) / withPrice.length : 0
+                    return (
+                      <>
+                        <p className="text-2xl font-semibold mt-1" style={{ color: marginColor(avg) }}>
+                          {avg.toFixed(1)}%
+                        </p>
+                        {costRows.some(r => r.hasWarning) && (
+                          <p className="text-xs text-[var(--color-muted)] mt-1 flex items-center gap-1">
+                            <AlertTriangle size={11} style={{ color: 'var(--color-warning)' }} />
+                            {costRows.filter(r => r.hasWarning).length} sin datos completos
+                          </p>
+                        )}
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
+            )}
+          <section>
+            <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+              {costRows.length === 0 ? (
+                <p className="px-4 py-8 text-center text-[var(--color-muted)] text-xs">Sin servicios en el catálogo</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--color-border)]">
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Servicio</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Costo insumos</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Gastos fijos</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Costo total</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Precio venta</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Margen $</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Margen %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {costRows.map(row => (
+                      <tr key={row.service.id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
+                        <td className="px-4 py-3 text-[var(--color-text)]">
+                          {row.hasWarning && (
+                            <AlertTriangle size={12} className="inline-block mr-1.5 mb-0.5" style={{ color: 'var(--color-warning)' }} />
+                          )}
+                          {row.service.name}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-[var(--color-muted)]">{fmtAmount(row.materialCost)}</td>
+                        <td className="px-4 py-3 text-right tabular-nums text-[var(--color-muted)]">{fmtAmount(row.fixedCost)}</td>
+                        <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtAmount(row.totalCost)}</td>
+                        <td className="px-4 py-3 text-right tabular-nums">{fmtAmount(row.salePrice)}</td>
+                        <td className="px-4 py-3 text-right tabular-nums font-medium" style={{ color: row.margin >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                          {fmtAmount(row.margin)}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums font-medium" style={{ color: marginColor(row.marginPct) }}>
+                          {row.marginPct.toFixed(1)}%
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-bg)]">
+                      <td className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Total</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(costRows.reduce((s, r) => s + r.materialCost, 0))}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(costRows.reduce((s, r) => s + r.fixedCost, 0))}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(costRows.reduce((s, r) => s + r.totalCost, 0))}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(costRows.reduce((s, r) => s + r.salePrice, 0))}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(costRows.reduce((s, r) => s + r.margin, 0))}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[var(--color-muted)]">—</td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </section>
           </>
         )}
       </div>

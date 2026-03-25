@@ -25,12 +25,12 @@ function stockLabel(product: Product): string {
   return 'OK'
 }
 
-type EditForm = { name: string; sku: string; brand: string; unit: string; sale_price: string; min_stock: string }
+type EditForm = { name: string; sku: string; brand: string; unit: string; sale_price: string; min_stock: string; unit_size: string }
 
 export function InventoryPage() {
   const [lotProductId, setLotProductId] = useState<string | null>(null)
   const [editProduct, setEditProduct] = useState<Product | null>(null)
-  const [editForm, setEditForm] = useState<EditForm>({ name: '', sku: '', brand: '', unit: '', sale_price: '', min_stock: '' })
+  const [editForm, setEditForm] = useState<EditForm>({ name: '', sku: '', brand: '', unit: '', sale_price: '', min_stock: '', unit_size: '' })
   const [brandFilter, setBrandFilter] = useState<string>('')
   const [stockFilter, setStockFilter] = useState<'all' | 'with' | 'without'>('all')
 
@@ -68,6 +68,7 @@ export function InventoryPage() {
       unit: p.unit ?? '',
       sale_price: String(p.sale_price),
       min_stock: String(p.min_stock),
+      unit_size: p.unit_size != null ? String(p.unit_size) : '',
     })
   }
 
@@ -81,6 +82,7 @@ export function InventoryPage() {
       unit: editForm.unit || null,
       sale_price: Number(editForm.sale_price) || 0,
       min_stock: Number(editForm.min_stock) || 0,
+      unit_size: editForm.unit_size !== '' ? Number(editForm.unit_size) : null,
     })
     setEditProduct(null)
   }
@@ -247,9 +249,10 @@ export function InventoryPage() {
             <Input label="Nombre" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
             <Input label="SKU" value={editForm.sku} onChange={e => setEditForm(f => ({ ...f, sku: e.target.value }))} />
           </div>
+          <Input label="Marca" value={editForm.brand} onChange={e => setEditForm(f => ({ ...f, brand: e.target.value }))} placeholder="Opcional" />
           <div className="grid grid-cols-2 gap-3">
-            <Input label="Marca" value={editForm.brand} onChange={e => setEditForm(f => ({ ...f, brand: e.target.value }))} placeholder="Opcional" />
             <Input label="Unidad" value={editForm.unit} onChange={e => setEditForm(f => ({ ...f, unit: e.target.value }))} placeholder="ml, oz, u…" />
+            <Input label="Tamaño por unidad (g o ml)" type="number" value={editForm.unit_size} onChange={e => setEditForm(f => ({ ...f, unit_size: e.target.value }))} placeholder="Opcional" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Input label="Precio venta" type="number" value={editForm.sale_price} onChange={e => setEditForm(f => ({ ...f, sale_price: e.target.value }))} prefix="$" />

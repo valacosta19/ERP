@@ -10,6 +10,21 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 21** — ✅ Completa
+
+### Cambios implementados en Phase 21
+
+#### Feature: splits quincenales en reporte de comisiones
+- **`ReportsPage` (tab Comisiones)**:
+  - Toggle "Detalle / Quincenal" en la barra de filtros.
+  - Vista **Detalle**: tabla individual por transacción, agrupada en secciones por quincena (1–15 / 16–fin de mes) con header de período y fila de subtotal por quincena.
+  - Vista **Quincenal**: tabla agregada por período + profesional (columnas: Período, Profesional, Servicios, Monto servicios, Comisión) con fila de total por quincena.
+  - **Cards por profesional**: ahora muestran el desglose quincenal inline (patrón idéntico a las cards de balance por moneda en Transacciones): cada quincena con su monto, separador y total + conteo de servicios al pie.
+  - Lógica de agrupación `getBiweeklyPeriod(dateStr)` — helper puro, sin cambios en backend ni DB.
+
+---
+
+## Current phase (anterior)
 **Phase 20** — ✅ Completa
 
 ### Cambios implementados en Phase 20
@@ -243,6 +258,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 18 | ✅ Recepción parcial de pedidos: checklist por producto con cantidad editable, distribución de envío recalculada sobre ítems reales (migration 022) |
 | 19 | ✅ Tab "Utilidad" en Reportes: utilidad bruta productos (FIFO), utilidad servicios, total negocio — por mes con filtros de fecha. ReconcileModal para backfill de categorías en transacciones importadas (sin tocar inventario). |
 | 20 | ✅ Invitación de usuarios por email: Edge Function `invite-user`, sección "Usuarios" en Configuración (admin only), lista de perfiles con cambio de rol. |
+| 21 | ✅ Splits quincenales en reporte de comisiones: tabla detalle y quincenal agrupadas por período (1–15 / 16–fin), cards por profesional con desglose quincenal inline. |
 
 ---
 
