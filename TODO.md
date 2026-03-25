@@ -18,6 +18,12 @@
 
 - [x] **Bi-weekly commission splits** — Commissions should be calculated and divided on a bi-weekly (quincenal) basis, not monthly. The commission report or payout logic must split earnings into two periods per month (e.g., 1–15 and 16–end of month) so that stylists can be paid twice a month accurately.
 
-- [ ] **Add service cost section** — Services currently have no associated cost (COGS), so profit is reported as 100% of revenue. Add a way to define a fixed or variable cost per service type (e.g., product consumption, supplies). This would allow the profit report to deduct those costs from service income and show a more accurate net margin per service.
+- [x] **Add service cost section** — Implemented in Phase 22 (recipes + fixed costs) and Phase 23 (real avg revenue from linked transactions, USD conversion via dólar blue).
 
 - [ ] **Add query params for tabs** - Every tab inside a section must have a unique query param to navigate
+
+## Costo por método de pago (pendiente)
+
+Tarjeta de crédito/débito tiene un costo de procesamiento (2–5%) que actualmente se cubre cobrando precios diferenciados por método de pago (precio tarjeta > precio efectivo). No está modelado como costo en el reporte porque ya se refleja en el precio de venta promedio. Si en el futuro se quiere mostrar el costo neto por método de pago, se necesita:
+- Registrar el porcentaje de comisión por método de pago en `payment_methods`
+- Deducirlo del ingreso bruto en el cálculo de `avgRevenue` en `costRows`

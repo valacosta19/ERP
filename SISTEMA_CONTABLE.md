@@ -115,17 +115,16 @@ El porcentaje es libre — se define en el momento de la transacción, por profe
 **Fórmula:**
 
 ```
-Comisión de la profesional = (Monto total cobrado + Seña previa) × (Porcentaje / 100)
+Comisión de la profesional = Monto de la transacción × (Porcentaje / 100)
 ```
 
-El sistema incluye la **seña** (anticipo) en la base de cálculo porque forma parte del cobro real del servicio, aunque se haya recibido en otra fecha.
-
-**Ejemplo:** Un servicio de $5.000 donde la clienta pagó una seña de $1.000 previamente y $4.000 el día del turno. La profesional tiene 30% de comisión.
+**Ejemplo:** Un servicio de $5.000 con 30% de comisión.
 
 ```
-Base = $4.000 (monto del día) + $1.000 (seña previa) = $5.000
 Comisión = $5.000 × 30% = $1.500
 ```
+
+**Nota sobre seña:** El campo `seña_amount` en una transacción es **informativo** — registra cuánto del total ya fue cobrado como anticipo en una fecha anterior. El campo `amount` siempre representa el **total completo** del servicio. Por eso las comisiones y los ingresos se calculan solo sobre `amount`, sin sumar `seña_amount` (hacerlo sería doble conteo).
 
 ---
 
@@ -145,33 +144,71 @@ Una **seña** es un anticipo que se cobra antes de que se realice el servicio. E
 
 ## Cómo se calcula la utilidad del negocio
 
-El reporte de utilidad separa el negocio en dos partes:
+El reporte de utilidad (tab "Utilidad" en Reportes) está dividido en dos secciones:
 
-### Utilidad bruta de productos
+---
+
+### Sección 1: Análisis de márgenes (para decisiones de pricing)
+
+Muestra la rentabilidad real de cada línea de negocio.
+
+#### Gross profit de productos
 
 ```
-Utilidad bruta productos = Ingresos por ventas de productos − COGS
+GP Productos = Ingresos por ventas de productos − COGS
 
-COGS (Costo de Mercadería Vendida) = Σ (unidades vendidas × costo FIFO de cada unidad)
+COGS = Σ (unidades vendidas × costo FIFO del lote consumido)
 ```
 
 El COGS siempre usa el costo real del lote que se consumió, no el precio de lista ni el último precio pagado.
 
-### Utilidad de servicios
+#### Utilidad de servicios
 
 ```
-Utilidad servicios = Total de ingresos del período − Ingresos por productos
+Utilidad servicios = Ingresos categoría "servicio" − Comisiones pagadas − Costo de materiales usados
 ```
 
-Los servicios no tienen COGS calculable de la misma forma (no consumen inventario físico), por lo que su utilidad es directamente el ingreso registrado.
+- **Ingresos**: solo transacciones con categoría "servicio" (excluye sin categoría y otras categorías).
+- **Comisiones**: suma de `commission_rate × amount` por cada transacción de servicio en el período.
+- **Materiales**: para cada transacción de servicio, se calcula el costo de la receta asociada al servicio (`quantity_grams × costo_por_gramo`). El costo por gramo usa el promedio entre `min_cost` y `max_cost` del producto dividido por `unit_size`.
 
-### Utilidad total del negocio
+---
+
+### Sección 2: Resultado del período (basado en transacciones reales)
 
 ```
-Utilidad total = Utilidad bruta productos + Utilidad servicios − Gastos del período
+Resultado neto = Total de ingresos registrados − COGS de productos − Gastos del período
 ```
 
-Los gastos son todas las transacciones de egreso: insumos, sueldos, alquiler, servicios, etc.
+- **Total de ingresos**: suma de todas las transacciones de ingreso del período, en ARS. Transacciones en USD se convierten al tipo blue del momento de consulta.
+- **COGS de productos**: calculado por FIFO sobre los sale_items del período.
+- **Gastos**: suma de todas las transacciones de egreso del período.
+
+La tabla mes a mes muestra el desglose: GP productos | Utilidad servicios | Gastos | Resultado.
+
+---
+
+### Gastos fijos (presupuesto de overhead)
+
+Los gastos fijos configurados en Ajustes → Costos son un **presupuesto mensual de referencia**, no se descuentan automáticamente del resultado. El resultado real ya incluye los gastos si estos fueron registrados como transacciones de egreso.
+
+---
+
+### Tab "Costos" — margen bruto por servicio
+
+El tab Costos muestra el **margen bruto** por servicio, pensado para decidir si un precio está bien puesto:
+
+```
+Margen bruto del servicio = Precio promedio de venta − Costo de materiales − Comisión promedio
+```
+
+Los gastos fijos **no se incluyen** en este cálculo. Son un costo del negocio completo, no atribuibles a un servicio en particular. Para evaluar si el negocio cubre sus costos fijos, se usa la Sección 2 del tab Utilidad.
+
+---
+
+### Conversión de monedas
+
+Todos los reportes de utilidad y costos convierten transacciones en USD a ARS usando el tipo de cambio blue al momento de consulta (dolarapi.com). El tab Financiero muestra los montos en la moneda original sin convertir.
 
 ---
 

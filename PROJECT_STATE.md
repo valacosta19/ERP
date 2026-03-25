@@ -10,6 +10,77 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 24** — ✅ Completa
+
+### Cambios implementados en Phase 24
+
+#### Fix: modelo de margen correcto en tab Utilidad y Costos
+
+**Problema resuelto:** Los gastos fijos se prorrateaban entre servicios individuales (incorrecto). El tab Utilidad mostraba ingresos totales como "ingresos por servicios" (incluía transacciones sin categoría). El campo `seña_amount` se sumaba al `amount` causando doble conteo.
+
+**Hooks actualizados — `useReports.ts` (`useProfitReport`):**
+- `service_income` ahora solo acumula transacciones con categoría exacta `"servicio"` (antes era `totalIncome - product_revenue`, lo que incluía sin categoría y otras).
+- El cálculo de ingresos usa solo `amount`. `seña_amount` es un campo informativo (ya está incluido en `amount`) — sumarlo sería doble conteo.
+- `total_profit` usa `totalIncome - product_cogs - total_expenses` para que el resultado sea preciso incluso si hay transacciones sin categorizar.
+- Query actualizada para incluir `seña_amount` en el select (aunque no se usa en cálculos, está disponible).
+
+**Componente `ReportsPage.tsx`:**
+- **Tab Costos:** eliminado `fixedCostAlloc` del costo por servicio. El margen ahora es margen bruto (precio − materiales − comisión). Los gastos fijos se muestran solo como referencia mensual con descripción "se descuentan del gross profit en el tab Utilidad".
+- **Tab Costos:** eliminadas variables `avgMonthlyRevenue`, `numMonths`, `dates`, `totalAllServiceRevenue` (eran solo para el prorrateo eliminado). Eliminada columna "Gs. fijos" de la tabla. Renombradas columnas a "Costo variable", "Margen bruto $", "Margen bruto %".
+- **Tab Utilidad:** reestructurado en dos secciones con títulos: "Análisis de márgenes" y "Resultado del período".
+- **Tab Utilidad — Análisis de márgenes:** nuevo `useMemo` `serviceDeductionsByMonth` que calcula por mes, filtrado por `profitFrom`/`profitTo`, usando `txRevenue` (ya cargado), `txCommissions`, `allRecipes`, `products`. Deduce comisiones reales (`commission_rate × amount`) y costo de materiales (recetas × costo por gramo). La card "Utilidad servicios" muestra `service_income − commission − materials` con detalle de cada componente.
+- **Tab Utilidad — Resultado del período:** tabla mes a mes muestra "Util. servicios" neto (con ingresos brutos en gris), misma corrección en fila de totales.
+- Corregido `seña_amount` en `costRows` (comisiones y revenue promedio usaban `amount + seña_amount`, ahora solo `amount`).
+
+**Tipo `ServiceCostRow` (`index.ts`):** eliminado campo `fixedCostAlloc`.
+
+**`SISTEMA_CONTABLE.md`:** actualizado para reflejar el modelo correcto de márgenes, la nota sobre `seña_amount`, y la separación entre margen bruto por servicio vs resultado del período.
+
+---
+
+## Current phase (anterior)
+**Phase 23** — ✅ Completa
+
+### Cambios implementados en Phase 23
+
+#### Feature: 3 precios por item del catálogo + revenue real en tab Costos
+
+**Migraciones:**
+- **`027_catalog_item_on_transactions.sql`**: `ALTER TABLE transactions ADD COLUMN catalog_item_id uuid REFERENCES catalog_items(id)`; backfill por match case-insensitive entre `transaction.description` y `catalog_item.name`; índice `idx_transactions_catalog_item`.
+- **`028_catalog_item_prices.sql`**: `ALTER TABLE catalog_items ADD COLUMN price_transfer numeric(12,2)` y `price_card numeric(12,2)`.
+
+**Tipos:**
+- `database.ts`: `price_transfer`, `price_card` en `catalog_items` Row/Insert/Update.
+- `index.ts`: `CatalogItem` incluye `price_transfer?: number | null` y `price_card?: number | null`.
+
+**Hooks actualizados:**
+- **`useCatalogItems`**: `useCreateCatalogItem` y `useUpdateCatalogItem` aceptan `price_transfer` y `price_card`.
+- **`useCommissionsReport`**: acepta `usdRate?: number`; trae `currency` de la transacción; convierte USD→ARS con el tipo de cambio antes de calcular `total_amount` y `commission_amount`.
+- **`useReports` (`useProfitReport`)**: acepta `usdRate?: number`; trae `currency` en la query de transacciones; convierte USD→ARS antes de acumular ingresos y gastos por mes.
+
+**UI — Ajustes → Catálogo:**
+- Cada item muestra 3 `InlineEditCell` con label (Efectivo / Transf. / Tarjeta), cada una guarda independientemente.
+- Formulario de nuevo item tiene 3 `DraftInput` para los 3 precios.
+
+**UI — Nueva transacción (DescriptionCombobox):**
+- Tipo `Suggestion` cambiado: `priceCash`, `priceTransfer`, `priceCard` en vez de `price`.
+- Dropdown muestra hasta 3 chips clickeables por servicio (`$X Ef.` / `$X Transf.` / `$X Tarj.`). Sólo se muestran los precios no-null.
+- Click en un chip setea `payments[0].amount` al precio específico seleccionado.
+
+**UI — Reportes → Costos:**
+- Nueva query `tx-revenue-by-catalog-item`: trae `catalog_item_id, amount, currency` de todas las transacciones income con `catalog_item_id` no nulo.
+- `avgRevenue` por servicio = promedio de `transaction.amount` convertidos a ARS (USD × dólar blue). Si no hay transacciones vinculadas, cae al precio en efectivo del catálogo (`service.price`).
+- `hasWarning = recipes.length === 0 || txForService.length === 0`.
+
+**UI — Reportes → Comisiones y Utilidad:**
+- Fetch de dólar blue (`https://dolarapi.com/v1/dolares/blue`, cache 30 min) al entrar a Reportes.
+- Tipo de cambio pasado a `useCommissionsReport` y `useProfitReport` — transacciones USD convertidas a ARS en ambos reportes.
+- Tab Comisiones muestra `USD blue: $X` junto a los filtros.
+- Tab Utilidad muestra `USD blue: $X · <fecha>` junto a los filtros de fecha.
+
+---
+
+## Current phase (anterior)
 **Phase 22** — ✅ Completa
 
 ### Cambios implementados en Phase 22

@@ -465,7 +465,7 @@ export function SettingsPage() {
 
   const [selectedServiceId, setSelectedServiceId] = useState<string>('')
   const [hoursInput, setHoursInput] = useState<string>('')
-  const { data: currentRecipes = [] } = useServiceRecipes(selectedServiceId || null)
+  const { data: currentRecipes } = useServiceRecipes(selectedServiceId || null)
 
   type RecipeLine = { product_id: string; quantity_grams: string }
   const [recipeLines, setRecipeLines] = useState<RecipeLine[]>([])
@@ -476,7 +476,7 @@ export function SettingsPage() {
   }, [selectedServiceId, serviceItems])
 
   useEffect(() => {
-    setRecipeLines(currentRecipes.map(r => ({ product_id: r.product_id, quantity_grams: String(r.quantity_grams) })))
+    setRecipeLines((currentRecipes ?? []).map(r => ({ product_id: r.product_id, quantity_grams: String(r.quantity_grams) })))
   }, [currentRecipes])
 
   function addRecipeLine() {

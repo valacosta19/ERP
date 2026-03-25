@@ -182,6 +182,8 @@ export interface ServiceRecipe {
 export interface ServiceCostRow {
   service: CatalogItem
   materialCost: number
+  commissionCost: number
+  totalCost: number
   salePrice: number
   margin: number
   marginPct: number

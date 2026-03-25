@@ -150,6 +150,7 @@ type RawTxProfit = {
   date: string
   type: string
   amount: number
+  seña_amount: number | null
   currency: string
   categories: { name: string } | null
 }
@@ -169,7 +170,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
 
       const [saleItemsRes, txRes] = await Promise.all([
         supabase.from('sale_items').select('transaction_id, quantity, unit_cost, unit_sale_price, transactions(date)'),
-        supabase.from('transactions').select('id, date, type, amount, currency, categories(name)'),
+        supabase.from('transactions').select('id, date, type, amount, seña_amount, currency, categories(name)'),
       ])
       if (saleItemsRes.error) throw new Error(saleItemsRes.error.message)
       if (txRes.error) throw new Error(txRes.error.message)
@@ -218,7 +219,10 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
         const amountARS = toARS(Number(tx.amount), tx.currency)
         if (tx.type === 'income') {
           totalIncomeByMonth.set(month, (totalIncomeByMonth.get(month) ?? 0) + amountARS)
-          if (tx.categories?.name?.toLowerCase() === 'producto' && !saleItemTxIds.has(tx.id)) {
+          const cat = tx.categories?.name?.toLowerCase()
+          if (cat === 'servicio') {
+            byMonth.get(month)!.service_income += amountARS
+          } else if (cat === 'producto' && !saleItemTxIds.has(tx.id)) {
             byMonth.get(month)!.product_revenue += amountARS
           }
         } else {
@@ -229,8 +233,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
       for (const [month, row] of byMonth) {
         const totalIncome = totalIncomeByMonth.get(month) ?? 0
         row.product_profit = row.product_revenue - row.product_cogs
-        row.service_income = Math.max(0, totalIncome - row.product_revenue)
-        row.total_profit = row.product_profit + row.service_income - row.total_expenses
+        row.total_profit = totalIncome - row.product_cogs - row.total_expenses
       }
 
       const rows: ProfitMonthRow[] = Array.from(byMonth.entries())
