@@ -18,7 +18,7 @@ export function useCatalogItems(categoryId?: string) {
 export function useCreateCatalogItem() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (payload: { name: string; category_id: string; price: number; hours?: number | null }) => {
+    mutationFn: async (payload: { name: string; category_id: string; price: number; price_transfer?: number | null; price_card?: number | null; hours?: number | null }) => {
       const { data, error } = await supabase.from('catalog_items').insert(payload).select().single()
       if (error) throw new Error(error.message)
       return data as CatalogItem
@@ -30,7 +30,7 @@ export function useCreateCatalogItem() {
 export function useUpdateCatalogItem() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, ...patch }: { id: string; name?: string; price?: number; hours?: number | null }) => {
+    mutationFn: async ({ id, ...patch }: { id: string; name?: string; price?: number; price_transfer?: number | null; price_card?: number | null; hours?: number | null }) => {
       const { data, error } = await supabase.from('catalog_items').update(patch).eq('id', id).select().single()
       if (error) throw new Error(error.message)
       return data as CatalogItem

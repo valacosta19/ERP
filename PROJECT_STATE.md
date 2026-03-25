@@ -10,6 +10,49 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 22** — ✅ Completa
+
+### Cambios implementados en Phase 22
+
+#### Feature: análisis de costos de servicios
+
+**Migraciones:**
+- **`025_service_cost.sql`**: `ALTER TABLE products ADD COLUMN unit_size numeric(10,3)` (tamaño por unidad en g/ml); `ALTER TABLE catalog_items ADD COLUMN hours numeric(4,2)` (horas estimadas por servicio); tabla `fixed_costs` (id, name, monthly_amount, active) con RLS; tabla `service_recipes` (id, catalog_item_id → catalog_items, product_id → products, quantity_grams) con RLS + UNIQUE(catalog_item_id, product_id).
+- **`026_add_unit_size_to_products_view.sql`**: recrea `products_with_stock` view incluyendo `unit_size` (las views PostgreSQL no incluyen columnas nuevas automáticamente — DROP + CREATE necesario).
+
+**Hooks nuevos:**
+- **`useFixedCosts.ts`**: `useFixedCosts()`, `useCreateFixedCost()`, `useUpdateFixedCost()`, `useDeleteFixedCost()`, queryKey `['fixed-costs']`.
+- **`useServiceRecipes.ts`**: `useServiceRecipes(catalogItemId)` queryKey `['service-recipes', catalogItemId]`; `useUpsertServiceRecipes()` — DELETE all + bulk INSERT, invalida ambas queries.
+
+**Hooks actualizados:**
+- **`useCatalogItems`**: `hours?: number | null` en payload; nuevo `useUpdateCatalogItemHours({ id, hours })`.
+- **`useProducts`**: `unit_size?: number | null` en `ProductPayload`.
+
+**Tipos:**
+- `Product`: `unit_size?: number | null`.
+- `CatalogItem`: `hours?: number | null`.
+- Nuevas interfaces: `FixedCost`, `ServiceRecipe`, `ServiceCostRow`.
+
+**UI:**
+- **`SettingsPage`**: reorganizada en 4 tabs (General / Operaciones / Costos / Catálogo). Tab "Costos" incluye sección "Gastos fijos" (CRUD inline, footer total mensual → $/hora ÷ 160) y sección "Recetas de servicios" (selector de servicio, campo horas, tabla de insumos con dropdown + gramos + costo estimado).
+- **`InventoryPage`**: campo "Tamaño por unidad (g o ml)" en el modal de edición de productos.
+- **`ReportsPage`**: tab "Costos" con 3 KPI cards (costo total insumos/fijos, precio total de venta, margen promedio) y tabla por servicio (Servicio | Costo insumos | Gastos fijos | Costo total | Precio venta | Margen $ | Margen %) con colores por margen y badge de advertencia para datos incompletos.
+
+**Fórmula de costo:**
+- `cost_per_gram = avg(lot.unit_cost) / product.unit_size`
+- `material_cost = Σ(recipe.quantity_grams × cost_per_gram)`
+- `fixed_cost = service.hours × (Σ monthly_fixed_costs / 160)`
+
+**Datos cargados vía DevTools MCP:**
+- 22 gastos fijos (total $2,843,978.87/mes → $17,774.87/hora).
+- 33 insumos cargados al inventario (SKUs INS-TIN/DEC/OXI/SHA/MAS/CRE/GEL/OLA) con `skip_restock: true` y lotes de referencia.
+- 3 productos existentes actualizados con `unit_size`.
+- 193 recetas de servicios para 31 servicios del catálogo.
+- 29 servicios actualizados con horas estimadas.
+
+---
+
+## Current phase (anterior)
 **Phase 21** — ✅ Completa
 
 ### Cambios implementados en Phase 21
@@ -259,6 +302,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 19 | ✅ Tab "Utilidad" en Reportes: utilidad bruta productos (FIFO), utilidad servicios, total negocio — por mes con filtros de fecha. ReconcileModal para backfill de categorías en transacciones importadas (sin tocar inventario). |
 | 20 | ✅ Invitación de usuarios por email: Edge Function `invite-user`, sección "Usuarios" en Configuración (admin only), lista de perfiles con cambio de rol. |
 | 21 | ✅ Splits quincenales en reporte de comisiones: tabla detalle y quincenal agrupadas por período (1–15 / 16–fin), cards por profesional con desglose quincenal inline. |
+| 22 | ✅ Análisis de costos de servicios: tabla `fixed_costs` + `service_recipes`, `unit_size` en productos, tab "Costos" en Ajustes (gastos fijos + recetas) y en Reportes (desglose por servicio con margen). |
 
 ---
 

@@ -49,6 +49,7 @@ export interface Transaction {
   amount: number
   currency: Currency
   category_id: string | null
+  catalog_item_id: string | null
   description: string | null
   created_by: string | null
   created_at: string
@@ -158,6 +159,8 @@ export interface CatalogItem {
   name: string
   category_id: string | null
   price: number
+  price_transfer?: number | null
+  price_card?: number | null
   hours?: number | null
   created_at: string
 }
@@ -179,8 +182,6 @@ export interface ServiceRecipe {
 export interface ServiceCostRow {
   service: CatalogItem
   materialCost: number
-  fixedCost: number
-  totalCost: number
   salePrice: number
   margin: number
   marginPct: number

@@ -181,6 +181,8 @@ export function SettingsPage() {
   const [addingCatalogFor, setAddingCatalogFor] = useState<string | null>(null)
   const [catalogDraftName, setCatalogDraftName] = useState('')
   const [catalogDraftPrice, setCatalogDraftPrice] = useState('')
+  const [catalogDraftPriceTransfer, setCatalogDraftPriceTransfer] = useState('')
+  const [catalogDraftPriceCard, setCatalogDraftPriceCard] = useState('')
   const catalogNameRef = useRef<HTMLInputElement>(null)
 
   const { data: categories = [], isLoading: catsLoading } = useCategories()
@@ -353,25 +355,35 @@ export function SettingsPage() {
     setAddingCatalogFor(categoryId)
     setCatalogDraftName('')
     setCatalogDraftPrice('')
+    setCatalogDraftPriceTransfer('')
+    setCatalogDraftPriceCard('')
     setTimeout(() => catalogNameRef.current?.focus(), 0)
   }
 
   async function saveCatalogItem() {
     if (!addingCatalogFor || !catalogDraftName.trim()) return
+    const priceTransfer = parseFloat(catalogDraftPriceTransfer)
+    const priceCard = parseFloat(catalogDraftPriceCard)
     await createCatalogItem.mutateAsync({
       name: catalogDraftName.trim(),
       category_id: addingCatalogFor,
       price: parseFloat(catalogDraftPrice) || 0,
+      price_transfer: isNaN(priceTransfer) ? null : priceTransfer,
+      price_card: isNaN(priceCard) ? null : priceCard,
     })
     setAddingCatalogFor(null)
     setCatalogDraftName('')
     setCatalogDraftPrice('')
+    setCatalogDraftPriceTransfer('')
+    setCatalogDraftPriceCard('')
   }
 
   function cancelCatalogItem() {
     setAddingCatalogFor(null)
     setCatalogDraftName('')
     setCatalogDraftPrice('')
+    setCatalogDraftPriceTransfer('')
+    setCatalogDraftPriceCard('')
   }
 
   function handleCatalogKeyDown(e: React.KeyboardEvent) {
@@ -1181,12 +1193,43 @@ export function SettingsPage() {
                               onSave={async v => { await updateCatalogItem.mutateAsync({ id: item.id, name: v }) }}
                               className="text-sm text-[var(--color-text)]"
                             />
-                            <InlineEditCell
-                              value={String(item.price)}
-                              type="number"
-                              onSave={async v => { await updateCatalogItem.mutateAsync({ id: item.id, price: parseFloat(v) || 0 }) }}
-                              className="text-sm tabular-nums text-[var(--color-muted)]"
-                            />
+                            <div className="flex items-center gap-3">
+                              <div className="flex flex-col items-end">
+                                <span className="text-[10px] text-[var(--color-muted)]">Efectivo</span>
+                                <InlineEditCell
+                                  value={String(item.price)}
+                                  type="number"
+                                  onSave={async v => { await updateCatalogItem.mutateAsync({ id: item.id, price: parseFloat(v) || 0 }) }}
+                                  className="text-sm tabular-nums text-[var(--color-muted)]"
+                                />
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className="text-[10px] text-[var(--color-muted)]">Transf.</span>
+                                <InlineEditCell
+                                  value={item.price_transfer != null ? String(item.price_transfer) : ''}
+                                  type="number"
+                                  placeholder="—"
+                                  onSave={async v => {
+                                    const n = parseFloat(v)
+                                    await updateCatalogItem.mutateAsync({ id: item.id, price_transfer: isNaN(n) ? null : n })
+                                  }}
+                                  className="text-sm tabular-nums text-[var(--color-muted)]"
+                                />
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className="text-[10px] text-[var(--color-muted)]">Tarjeta</span>
+                                <InlineEditCell
+                                  value={item.price_card != null ? String(item.price_card) : ''}
+                                  type="number"
+                                  placeholder="—"
+                                  onSave={async v => {
+                                    const n = parseFloat(v)
+                                    await updateCatalogItem.mutateAsync({ id: item.id, price_card: isNaN(n) ? null : n })
+                                  }}
+                                  className="text-sm tabular-nums text-[var(--color-muted)]"
+                                />
+                              </div>
+                            </div>
                           </div>
                           <button
                             onClick={() => handleCatalogItemDelete(item.id)}
@@ -1225,7 +1268,21 @@ export function SettingsPage() {
                             value={catalogDraftPrice}
                             onChange={setCatalogDraftPrice}
                             onKeyDown={handleCatalogKeyDown}
-                            placeholder="Precio"
+                            placeholder="Efectivo"
+                            type="number"
+                          />
+                          <DraftInput
+                            value={catalogDraftPriceTransfer}
+                            onChange={setCatalogDraftPriceTransfer}
+                            onKeyDown={handleCatalogKeyDown}
+                            placeholder="Transf."
+                            type="number"
+                          />
+                          <DraftInput
+                            value={catalogDraftPriceCard}
+                            onChange={setCatalogDraftPriceCard}
+                            onKeyDown={handleCatalogKeyDown}
+                            placeholder="Tarjeta"
                             type="number"
                           />
                           <button

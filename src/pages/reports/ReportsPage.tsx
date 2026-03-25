@@ -107,10 +107,20 @@ export function ReportsPage() {
   const [profitFrom, setProfitFrom] = useState('')
   const [profitTo, setProfitTo] = useState('')
 
+  const { data: dolarBlue } = useQuery<{ venta: number; fechaActualizacion: string }>({
+    queryKey: ['dolar-blue'],
+    queryFn: async () => {
+      const res = await fetch('https://dolarapi.com/v1/dolares/blue')
+      if (!res.ok) throw new Error('No se pudo obtener el dólar blue')
+      return res.json()
+    },
+    staleTime: 1000 * 60 * 30,
+  })
+
   const financial = useFinancialReport({ from: from || undefined, to: to || undefined, currency: currency || undefined })
   const valuation = useInventoryValuation()
-  const commissions = useCommissionsReport({ from: commFrom || undefined, to: commTo || undefined })
-  const profit = useProfitReport({ from: profitFrom || undefined, to: profitTo || undefined })
+  const commissions = useCommissionsReport({ from: commFrom || undefined, to: commTo || undefined, usdRate: dolarBlue?.venta })
+  const profit = useProfitReport({ from: profitFrom || undefined, to: profitTo || undefined, usdRate: dolarBlue?.venta })
 
   const { summary } = financial.data ?? { summary: { total_income: 0, total_expense: 0, balance: 0 } }
   const totalInventoryValue = valuation.data?.reduce((s, r) => s + r.total_value, 0) ?? 0
@@ -224,12 +234,29 @@ export function ReportsPage() {
     },
   })
 
+  const { data: txRevenue = [] } = useQuery<{ catalog_item_id: string; amount: number; currency: string }[]>({
+    queryKey: ['tx-revenue-by-catalog-item'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('catalog_item_id, amount, currency')
+        .eq('type', 'income')
+        .not('catalog_item_id', 'is', null)
+      if (error) throw new Error(error.message)
+      return data as { catalog_item_id: string; amount: number; currency: string }[]
+    },
+  })
+
+  const totalMonthlyFixed = useMemo(
+    () => fixedCosts.filter(fc => fc.active).reduce((s, fc) => s + fc.monthly_amount, 0),
+    [fixedCosts]
+  )
+
   const costRows = useMemo<ServiceCostRow[]>(() => {
     const serviceCategory = categories.find(c => c.name.toLowerCase() === 'servicio')
     const services = serviceCategory
       ? allCatalogItems.filter(ci => ci.category_id === serviceCategory.id)
       : []
-    const fixedCostPerHour = fixedCosts.filter(fc => fc.active).reduce((s, fc) => s + fc.monthly_amount, 0) / 160
 
     return services.map(service => {
       const recipes = allRecipes.filter(r => r.catalog_item_id === service.id)
@@ -242,15 +269,18 @@ export function ReportsPage() {
         const costPerGram = avg / product.unit_size
         return s + r.quantity_grams * costPerGram
       }, 0)
-      const fixedCost = (service.hours ?? 0) * fixedCostPerHour
-      const totalCost = materialCost + fixedCost
-      const salePrice = service.price ?? 0
-      const margin = salePrice - totalCost
+      const txForService = txRevenue.filter(t => t.catalog_item_id === service.id)
+      const usdRate = dolarBlue?.venta ?? 1
+      const avgRevenue = txForService.length > 0
+        ? txForService.reduce((s, t) => s + (t.currency === 'USD' ? t.amount * usdRate : t.amount), 0) / txForService.length
+        : service.price ?? 0
+      const salePrice = avgRevenue
+      const margin = salePrice - materialCost
       const marginPct = salePrice > 0 ? (margin / salePrice) * 100 : 0
-      const hasWarning = recipes.length === 0 || !service.hours || !service.price
-      return { service, materialCost, fixedCost, totalCost, salePrice, margin, marginPct, hasWarning }
+      const hasWarning = recipes.length === 0 || txForService.length === 0
+      return { service, materialCost, salePrice, margin, marginPct, hasWarning }
     })
-  }, [categories, allCatalogItems, fixedCosts, allRecipes, products])
+  }, [categories, allCatalogItems, allRecipes, products, txRevenue, dolarBlue])
 
   function marginColor(pct: number): string {
     if (pct > 30) return 'var(--color-success)'
@@ -385,6 +415,11 @@ export function ReportsPage() {
                   onChange={e => setCommProfFilter(e.target.value)}
                   className="w-52"
                 />
+                {dolarBlue && (
+                  <span className="text-xs text-[var(--color-muted)] self-end pb-1">
+                    USD blue: ${dolarBlue.venta.toLocaleString('es-AR')}
+                  </span>
+                )}
               </div>
               <div className="flex gap-1 rounded-lg border border-[var(--color-border)] p-0.5 self-end">
                 <button
@@ -528,9 +563,16 @@ export function ReportsPage() {
         )}
         {activeTab === 'utilidad' && (
           <>
-            <div className="flex flex-wrap gap-3 items-end">
-              <Input label="Desde" type="date" value={profitFrom} onChange={e => setProfitFrom(e.target.value)} className="w-40" />
-              <Input label="Hasta" type="date" value={profitTo} onChange={e => setProfitTo(e.target.value)} className="w-40" />
+            <div className="flex flex-wrap gap-3 items-end justify-between">
+              <div className="flex flex-wrap gap-3 items-end">
+                <Input label="Desde" type="date" value={profitFrom} onChange={e => setProfitFrom(e.target.value)} className="w-40" />
+                <Input label="Hasta" type="date" value={profitTo} onChange={e => setProfitTo(e.target.value)} className="w-40" />
+              </div>
+              {dolarBlue && (
+                <span className="text-xs text-[var(--color-muted)] self-end pb-1">
+                  USD blue: ${dolarBlue.venta.toLocaleString('es-AR')} · {new Date(dolarBlue.fechaActualizacion).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}
+                </span>
+              )}
             </div>
 
             {profit.isLoading ? (
@@ -635,22 +677,21 @@ export function ReportsPage() {
             {costRows.length > 0 && (
               <div className="grid grid-cols-3 gap-4">
                 <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
-                  <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Costo total servicios</p>
+                  <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Total insumos (catálogo)</p>
                   <p className="text-2xl font-semibold text-[var(--color-text)] mt-1">
-                    {fmtAmount(costRows.reduce((s, r) => s + r.totalCost, 0))}
+                    {fmtAmount(costRows.reduce((s, r) => s + r.materialCost, 0))}
                   </p>
-                  <p className="text-xs text-[var(--color-muted)] mt-1">
-                    Insumos {fmtAmount(costRows.reduce((s, r) => s + r.materialCost, 0))} · Fijos {fmtAmount(costRows.reduce((s, r) => s + r.fixedCost, 0))}
-                  </p>
+                  <p className="text-xs text-[var(--color-muted)] mt-1">suma de insumos por servicio</p>
                 </div>
                 <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
-                  <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Precio total de venta</p>
+                  <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Gastos fijos mensuales</p>
                   <p className="text-2xl font-semibold text-[var(--color-text)] mt-1">
-                    {fmtAmount(costRows.reduce((s, r) => s + r.salePrice, 0))}
+                    {fmtAmount(totalMonthlyFixed)}
                   </p>
+                  <p className="text-xs text-[var(--color-muted)] mt-1">se resta 1 vez de la utilidad del mes</p>
                 </div>
                 <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
-                  <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Margen promedio</p>
+                  <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Margen promedio s/insumos</p>
                   {(() => {
                     const withPrice = costRows.filter(r => r.salePrice > 0)
                     const avg = withPrice.length > 0 ? withPrice.reduce((s, r) => s + r.marginPct, 0) / withPrice.length : 0
@@ -681,10 +722,8 @@ export function ReportsPage() {
                     <tr className="border-b border-[var(--color-border)]">
                       <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Servicio</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Costo insumos</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Gastos fijos</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Costo total</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Precio venta</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Margen $</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Margen s/insumos $</th>
                       <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Margen %</th>
                     </tr>
                   </thead>
@@ -698,8 +737,6 @@ export function ReportsPage() {
                           {row.service.name}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums text-[var(--color-muted)]">{fmtAmount(row.materialCost)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums text-[var(--color-muted)]">{fmtAmount(row.fixedCost)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums font-medium">{fmtAmount(row.totalCost)}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{fmtAmount(row.salePrice)}</td>
                         <td className="px-4 py-3 text-right tabular-nums font-medium" style={{ color: row.margin >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                           {fmtAmount(row.margin)}
@@ -712,8 +749,6 @@ export function ReportsPage() {
                     <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-bg)]">
                       <td className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Total</td>
                       <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(costRows.reduce((s, r) => s + r.materialCost, 0))}</td>
-                      <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(costRows.reduce((s, r) => s + r.fixedCost, 0))}</td>
-                      <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(costRows.reduce((s, r) => s + r.totalCost, 0))}</td>
                       <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(costRows.reduce((s, r) => s + r.salePrice, 0))}</td>
                       <td className="px-4 py-3 text-right tabular-nums font-semibold">{fmtAmount(costRows.reduce((s, r) => s + r.margin, 0))}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-[var(--color-muted)]">—</td>

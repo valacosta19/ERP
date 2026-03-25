@@ -54,6 +54,7 @@ interface TransactionPayload {
   type: TransactionType
   currency: Currency
   category_id: string | null
+  catalog_item_id: string | null
   description: string | null
   is_seña: boolean
   seña_amount: number | null
@@ -77,6 +78,7 @@ export function useCreateTransaction() {
           amount,
           currency: payload.currency,
           category_id: payload.category_id,
+          catalog_item_id: payload.catalog_item_id,
           description: payload.description,
           is_seña: payload.is_seña,
           seña_amount: payload.seña_amount,

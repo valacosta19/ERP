@@ -150,6 +150,7 @@ type RawTxProfit = {
   date: string
   type: string
   amount: number
+  currency: string
   categories: { name: string } | null
 }
 
@@ -158,13 +159,17 @@ function monthLabel(month: string) {
   return new Date(Number(y), Number(m) - 1).toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })
 }
 
-export function useProfitReport(filters: { from?: string; to?: string } = {}) {
+export function useProfitReport(filters: { from?: string; to?: string; usdRate?: number } = {}) {
   return useQuery<ProfitReport>({
     queryKey: ['reports', 'profit', filters],
     queryFn: async () => {
+      const usdRate = filters.usdRate ?? 1
+      const toARS = (amount: number, currency: string) =>
+        currency === 'USD' ? amount * usdRate : amount
+
       const [saleItemsRes, txRes] = await Promise.all([
         supabase.from('sale_items').select('transaction_id, quantity, unit_cost, unit_sale_price, transactions(date)'),
-        supabase.from('transactions').select('id, date, type, amount, categories(name)'),
+        supabase.from('transactions').select('id, date, type, amount, currency, categories(name)'),
       ])
       if (saleItemsRes.error) throw new Error(saleItemsRes.error.message)
       if (txRes.error) throw new Error(txRes.error.message)
@@ -210,13 +215,14 @@ export function useProfitReport(filters: { from?: string; to?: string } = {}) {
       for (const tx of txs) {
         const month = tx.date.slice(0, 7)
         ensure(month)
+        const amountARS = toARS(Number(tx.amount), tx.currency)
         if (tx.type === 'income') {
-          totalIncomeByMonth.set(month, (totalIncomeByMonth.get(month) ?? 0) + Number(tx.amount))
+          totalIncomeByMonth.set(month, (totalIncomeByMonth.get(month) ?? 0) + amountARS)
           if (tx.categories?.name?.toLowerCase() === 'producto' && !saleItemTxIds.has(tx.id)) {
-            byMonth.get(month)!.product_revenue += Number(tx.amount)
+            byMonth.get(month)!.product_revenue += amountARS
           }
         } else {
-          byMonth.get(month)!.total_expenses += Number(tx.amount)
+          byMonth.get(month)!.total_expenses += amountARS
         }
       }
 

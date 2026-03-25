@@ -16,21 +16,26 @@ type RawTxHd = {
   hairdresser_id: string
   commission_rate: number
   hairdressers: { id: string; name: string } | null
-  transactions: { id: string; amount: number; seña_amount: number | null; date: string } | null
+  transactions: { id: string; amount: number; seña_amount: number | null; date: string; currency: string } | null
 }
 
 interface CommissionsFilters {
   from?: string
   to?: string
+  usdRate?: number
 }
 
 export function useCommissionsReport(filters: CommissionsFilters = {}) {
   return useQuery({
     queryKey: ['reports', 'commissions', filters],
     queryFn: async () => {
+      const usdRate = filters.usdRate ?? 1
+      const toARS = (amount: number, currency: string) =>
+        currency === 'USD' ? amount * usdRate : amount
+
       let query = supabase
         .from('transaction_hairdressers')
-        .select('transaction_id, hairdresser_id, commission_rate, hairdressers(id, name), transactions(id, amount, seña_amount, date)')
+        .select('transaction_id, hairdresser_id, commission_rate, hairdressers(id, name), transactions(id, amount, seña_amount, date, currency)')
 
       if (filters.from) query = query.gte('transactions.date', filters.from)
       if (filters.to) query = query.lte('transactions.date', filters.to)
@@ -42,15 +47,21 @@ export function useCommissionsReport(filters: CommissionsFilters = {}) {
 
       return rows
         .filter(row => row.hairdressers !== null && row.transactions !== null)
-        .map(row => ({
-          transaction_id: row.transaction_id,
-          professional_id: row.hairdresser_id,
-          professional_name: row.hairdressers!.name,
-          date: row.transactions!.date,
-          total_amount: Number(row.transactions!.amount) + Number(row.transactions!.seña_amount ?? 0),
-          commission_rate: row.commission_rate,
-          commission_amount: (Number(row.transactions!.amount) + Number(row.transactions!.seña_amount ?? 0)) * (row.commission_rate / 100),
-        })) as CommissionDetailRow[]
+        .map(row => {
+          const tx = row.transactions!
+          const amountARS = toARS(Number(tx.amount), tx.currency)
+          const señaARS = toARS(Number(tx.seña_amount ?? 0), tx.currency)
+          const totalARS = amountARS + señaARS
+          return {
+            transaction_id: row.transaction_id,
+            professional_id: row.hairdresser_id,
+            professional_name: row.hairdressers!.name,
+            date: tx.date,
+            total_amount: totalARS,
+            commission_rate: row.commission_rate,
+            commission_amount: totalARS * (row.commission_rate / 100),
+          }
+        }) as CommissionDetailRow[]
     },
   })
 }

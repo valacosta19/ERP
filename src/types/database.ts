@@ -51,6 +51,7 @@ export interface Database {
           amount: number
           currency: 'ARS' | 'USD' | 'EUR'
           category_id: string | null
+          catalog_item_id: string | null
           description: string | null
           created_by: string | null
           created_at: string
@@ -64,6 +65,7 @@ export interface Database {
           amount: number
           currency?: 'ARS' | 'USD' | 'EUR'
           category_id?: string | null
+          catalog_item_id?: string | null
           description?: string | null
           created_by?: string | null
           created_at?: string
@@ -77,6 +79,7 @@ export interface Database {
           amount?: number
           currency?: 'ARS' | 'USD' | 'EUR'
           category_id?: string | null
+          catalog_item_id?: string | null
           description?: string | null
           is_seña?: boolean
           seña_amount?: number | null
@@ -373,6 +376,8 @@ export interface Database {
           name: string
           category_id: string | null
           price: number
+          price_transfer: number | null
+          price_card: number | null
           hours: number | null
           created_at: string
         }
@@ -381,6 +386,8 @@ export interface Database {
           name: string
           category_id?: string | null
           price?: number
+          price_transfer?: number | null
+          price_card?: number | null
           hours?: number | null
           created_at?: string
         }
@@ -389,6 +396,8 @@ export interface Database {
           name?: string
           category_id?: string | null
           price?: number
+          price_transfer?: number | null
+          price_card?: number | null
           hours?: number | null
         }
         Relationships: []

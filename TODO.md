@@ -19,3 +19,5 @@
 - [x] **Bi-weekly commission splits** — Commissions should be calculated and divided on a bi-weekly (quincenal) basis, not monthly. The commission report or payout logic must split earnings into two periods per month (e.g., 1–15 and 16–end of month) so that stylists can be paid twice a month accurately.
 
 - [ ] **Add service cost section** — Services currently have no associated cost (COGS), so profit is reported as 100% of revenue. Add a way to define a fixed or variable cost per service type (e.g., product consumption, supplies). This would allow the profit report to deduct those costs from service income and show a more accurate net margin per service.
+
+- [ ] **Add query params for tabs** - Every tab inside a section must have a unique query param to navigate
