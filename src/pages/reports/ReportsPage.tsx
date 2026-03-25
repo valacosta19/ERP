@@ -241,6 +241,7 @@ export function ReportsPage() {
         .from('transactions')
         .select('id, catalog_item_id, amount, seña_amount, currency, date')
         .eq('type', 'income')
+        .eq('is_seña', false)
         .not('catalog_item_id', 'is', null)
       if (error) throw new Error(error.message)
       return data as unknown as { id: string; catalog_item_id: string; amount: number; seña_amount: number | null; currency: string; date: string }[]
@@ -282,7 +283,8 @@ export function ReportsPage() {
       const month = tx.date.slice(0, 7)
       if (!byMonth.has(month)) byMonth.set(month, { commission: 0, materials: 0 })
       const row = byMonth.get(month)!
-      const amountARS = tx.currency === 'USD' ? tx.amount * usdRate : tx.amount
+      const base = tx.amount + (tx.seña_amount ?? 0)
+      const amountARS = tx.currency === 'USD' ? base * usdRate : base
       row.commission += amountARS * ((commRateByTx.get(tx.id) ?? 0) / 100)
       for (const recipe of (recipesByService.get(tx.catalog_item_id) ?? [])) {
         const product = productMap.get(recipe.product_id)
@@ -334,14 +336,16 @@ export function ReportsPage() {
 
       const txForService = txRevenue.filter(t => t.catalog_item_id === service.id)
       const serviceRevenueARS = txForService.reduce((s, t) => {
-        return s + (t.currency === 'USD' ? t.amount * usdRate : t.amount)
+        const base = t.amount + (t.seña_amount ?? 0)
+        return s + (t.currency === 'USD' ? base * usdRate : base)
       }, 0)
       const avgRevenue = txForService.length > 0
         ? serviceRevenueARS / txForService.length
         : service.price ?? 0
 
       const commissionAmounts = txForService.map(t => {
-        const amountARS = t.currency === 'USD' ? t.amount * usdRate : t.amount
+        const base = t.amount + (t.seña_amount ?? 0)
+        const amountARS = t.currency === 'USD' ? base * usdRate : base
         return amountARS * ((commissionRateByTx.get(t.id) ?? 0) / 100)
       })
       const avgCommissionCost = txForService.length > 0
@@ -671,7 +675,7 @@ export function ReportsPage() {
                         <p className="text-xs text-[var(--color-muted)] mb-3">El detalle por servicio está en el tab Costos.</p>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
-                            <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">GP productos (venta − COGS)</p>
+                            <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Utilidad bruta productos (venta − COGS)</p>
                             <p className={`text-2xl font-semibold mt-1 ${gpProductos >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
                               {fmtAmount(gpProductos)}
                             </p>
@@ -695,15 +699,15 @@ export function ReportsPage() {
                         <h2 className="text-base font-semibold text-[var(--color-text)] mb-3">Utilidad neta estimada</h2>
                         <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg divide-y divide-[var(--color-border)]">
                           <div className="flex items-center justify-between px-4 py-3">
-                            <span className="text-sm text-[var(--color-muted)]">GP productos</span>
+                            <span className="text-sm text-[var(--color-muted)]">Utilidad bruta productos</span>
                             <span className={`text-sm tabular-nums ${gpProductos >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(gpProductos)}</span>
                           </div>
                           <div className="flex items-center justify-between px-4 py-3">
-                            <span className="text-sm text-[var(--color-muted)]">Utilidad servicios</span>
+                            <span className="text-sm text-[var(--color-muted)]">Utilidad bruta servicios</span>
                             <span className={`text-sm tabular-nums ${utilServicios >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(utilServicios)}</span>
                           </div>
                           <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg)]">
-                            <span className="text-sm font-semibold text-[var(--color-text)]">Total gross profit</span>
+                            <span className="text-sm font-semibold text-[var(--color-text)]">Total utilidad bruta</span>
                             <span className={`text-sm font-semibold tabular-nums ${totalGP >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(totalGP)}</span>
                           </div>
                           <div className="flex items-center justify-between px-4 py-3">
@@ -724,10 +728,10 @@ export function ReportsPage() {
                             <thead>
                               <tr className="border-b border-[var(--color-border)]">
                                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Mes</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">GP productos</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Util. servicios</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Gs. fijos</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Util. neta</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Utilidad bruta productos</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Utilidad bruta servicios</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Gastos fijos</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Utilidad neta</th>
                               </tr>
                             </thead>
                             <tbody>

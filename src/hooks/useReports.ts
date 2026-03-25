@@ -151,6 +151,7 @@ type RawTxProfit = {
   type: string
   amount: number
   seña_amount: number | null
+  is_seña: boolean
   currency: string
   categories: { name: string } | null
 }
@@ -170,7 +171,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
 
       const [saleItemsRes, txRes] = await Promise.all([
         supabase.from('sale_items').select('transaction_id, quantity, unit_cost, unit_sale_price, transactions(date)'),
-        supabase.from('transactions').select('id, date, type, amount, seña_amount, currency, categories(name)'),
+        supabase.from('transactions').select('id, date, type, amount, seña_amount, is_seña, currency, categories(name)'),
       ])
       if (saleItemsRes.error) throw new Error(saleItemsRes.error.message)
       if (txRes.error) throw new Error(txRes.error.message)
@@ -216,7 +217,9 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
       for (const tx of txs) {
         const month = tx.date.slice(0, 7)
         ensure(month)
-        const amountARS = toARS(Number(tx.amount), tx.currency)
+        if (tx.is_seña) continue
+        const serviceTotal = Number(tx.amount) + Number(tx.seña_amount ?? 0)
+        const amountARS = toARS(serviceTotal, tx.currency)
         if (tx.type === 'income') {
           totalIncomeByMonth.set(month, (totalIncomeByMonth.get(month) ?? 0) + amountARS)
           const cat = tx.categories?.name?.toLowerCase()

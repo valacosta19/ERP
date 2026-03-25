@@ -286,7 +286,7 @@ export function TransactionsPage() {
       catalog_item_id: draft.catalog_item_id ?? null,
       description: draft.description || null,
       is_seña: isSeña,
-      seña_amount: isSeña ? total : (isDraftServiceCategory && draft.seña_amount ? parseFloat(draft.seña_amount) : null),
+      seña_amount: !isSeña && isDraftServiceCategory && draft.seña_amount ? parseFloat(draft.seña_amount) : null,
       payments: draft.payments.map(p => ({
         ...p,
         instrument: p.instrument || null,
@@ -326,7 +326,7 @@ export function TransactionsPage() {
       catalog_item_id: editForm.catalog_item_id ?? null,
       description: editForm.description || null,
       is_seña: isSeña,
-      seña_amount: isSeña ? total : (isEditServiceCategory && editForm.seña_amount ? parseFloat(editForm.seña_amount) : null),
+      seña_amount: !isSeña && isEditServiceCategory && editForm.seña_amount ? parseFloat(editForm.seña_amount) : null,
       payments: editForm.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
       professionals: editForm.professionals,
     })

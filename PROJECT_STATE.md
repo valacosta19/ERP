@@ -324,9 +324,11 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ### Cambios implementados en Phase 11
-- **Auto-detect seña**: checkbox `is_seña` eliminado del formulario. Si `description.trim().toLowerCase() === 'seña'` → `is_seña=true`, `seña_amount=total` automáticamente.
+- **Auto-detect seña**: si `description.trim().toLowerCase() === 'seña'` → `is_seña=true`, `seña_amount=null`. La seña es un anticipo puro; no tiene seña previa propia.
+- **`seña_amount` en servicio final**: cuando la categoría es "Servicio" y la descripción no es "Seña", el campo `seña_amount` registra la seña cobrada previamente. La base real del servicio = `amount + seña_amount`.
+- **Reportes excluyen `is_seña=true`**: las transacciones de seña se excluyen de `service_income`, `totalIncomeByMonth`, `txRevenue` y todos los cálculos de utilidad/costos. Evita doble conteo: la seña entra al resultado solo cuando se registra el servicio final (vía `seña_amount`).
+- **Base de cálculo unificada**: comisiones, `avgRevenue` y `serviceDeductionsByMonth` usan `amount + seña_amount` como base para reflejar el valor real del servicio.
 - **Input seña_amount condicional**: solo aparece cuando categoría es "Servicio" y descripción ≠ 'seña'. Gastos/Productos no muestran nada.
-- **Fix bug "Total cobrado"**: para transacciones `is_seña=true`, `total_cobrado = amount` (sin sumar `seña_amount` que causaba doble conteo).
 - **Modal overflow fix**: `max-h-[90vh]` + `overflow-y-auto` en el contenido. Header siempre visible con `shrink-0`.
 
 ---
