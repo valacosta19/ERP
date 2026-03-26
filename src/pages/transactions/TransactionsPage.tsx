@@ -82,7 +82,7 @@ function DescriptionCombobox({
 }: {
   value: string
   onChange: (v: string) => void
-  onSelect: (s: Suggestion, price: number) => void
+  onSelect: (s: Suggestion) => void
   suggestions: Suggestion[]
 }) {
   const [open, setOpen] = useState(false)
@@ -113,46 +113,16 @@ function DescriptionCombobox({
       {open && filtered.length > 0 && (
         <div
           className="absolute left-0 top-full mt-1 rounded-lg border border-[var(--color-border)] shadow-lg overflow-hidden"
-          style={{ background: 'var(--color-surface)', zIndex: 50, minWidth: '240px' }}
+          style={{ background: 'var(--color-surface)', zIndex: 50, minWidth: '200px' }}
         >
           {filtered.map(s => (
             <div
               key={s.id}
-              className="px-3 py-2 border-b border-[var(--color-border)] last:border-0"
+              className="px-3 py-2 text-sm border-b border-[var(--color-border)] last:border-0 cursor-pointer hover:bg-[var(--color-bg)]"
+              style={{ color: 'var(--color-text)' }}
+              onMouseDown={() => { onSelect(s); setOpen(false) }}
             >
-              <div className="text-sm mb-1.5" style={{ color: 'var(--color-text)' }}>{s.name}</div>
-              <div className="flex gap-1.5 flex-wrap">
-                {s.priceCash > 0 && (
-                  <button
-                    type="button"
-                    onMouseDown={() => { onSelect(s, s.priceCash); setOpen(false) }}
-                    className="text-xs px-2 py-0.5 rounded-full border transition-colors hover:bg-[var(--color-accent)] hover:text-white hover:border-[var(--color-accent)]"
-                    style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
-                  >
-                    ${s.priceCash.toLocaleString('es-CO')} Ef.
-                  </button>
-                )}
-                {s.priceTransfer != null && (
-                  <button
-                    type="button"
-                    onMouseDown={() => { onSelect(s, s.priceTransfer!); setOpen(false) }}
-                    className="text-xs px-2 py-0.5 rounded-full border transition-colors hover:bg-[var(--color-accent)] hover:text-white hover:border-[var(--color-accent)]"
-                    style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
-                  >
-                    ${s.priceTransfer.toLocaleString('es-CO')} Transf.
-                  </button>
-                )}
-                {s.priceCard != null && (
-                  <button
-                    type="button"
-                    onMouseDown={() => { onSelect(s, s.priceCard!); setOpen(false) }}
-                    className="text-xs px-2 py-0.5 rounded-full border transition-colors hover:bg-[var(--color-accent)] hover:text-white hover:border-[var(--color-accent)]"
-                    style={{ borderColor: 'var(--color-border)', color: 'var(--color-muted)' }}
-                  >
-                    ${s.priceCard.toLocaleString('es-CO')} Tarj.
-                  </button>
-                )}
-              </div>
+              {s.name}
             </div>
           ))}
         </div>
@@ -180,6 +150,7 @@ export function TransactionsPage() {
   const [to, setTo] = useState('')
 
   const [draft, setDraft] = useState<typeof EMPTY_DRAFT | null>(null)
+  const [draftSelectedSuggestion, setDraftSelectedSuggestion] = useState<Suggestion | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [reconcileOpen, setReconcileOpen] = useState(false)
   const [editing, setEditing] = useState<Transaction | null>(null)
@@ -220,16 +191,20 @@ export function TransactionsPage() {
   const isDraftProductCategory = categories.find(c => c.id === draft?.category_id)?.name.toLowerCase() === 'producto'
 
   const draftSuggestions: Suggestion[] = isDraftProductCategory
-    ? products.map((p: Product) => ({ id: p.id, name: p.name, priceCash: p.sale_price, priceTransfer: null, priceCard: null, productId: p.id }))
+    ? products
+        .filter((p: Product) => (p.stock ?? 0) > 0)
+        .map((p: Product) => ({ id: p.id, name: p.name, priceCash: p.sale_price, priceTransfer: null, priceCard: null, productId: p.id }))
     : catalogItems.map((ci: CatalogItem) => ({ id: ci.id, name: ci.name, priceCash: ci.price, priceTransfer: ci.price_transfer ?? null, priceCard: ci.price_card ?? null }))
 
   function startNew() {
     setFormError('')
+    setDraftSelectedSuggestion(null)
     setDraft({ ...EMPTY_DRAFT, date: new Date().toISOString().slice(0, 10) })
   }
 
   function cancelNew() {
     setDraft(null)
+    setDraftSelectedSuggestion(null)
     setFormError('')
   }
 
@@ -260,11 +235,11 @@ export function TransactionsPage() {
     setModalOpen(true)
   }
 
-  function handleSuggestionSelect(s: Suggestion, price: number) {
+  function handleSuggestionSelect(s: Suggestion) {
+    setDraftSelectedSuggestion(s)
     setDraft(d => d && {
       ...d,
       description: s.name,
-      payments: [{ ...d.payments[0], amount: price }],
       product_id: s.productId ?? null,
       catalog_item_id: s.productId ? null : s.id,
     })
@@ -394,11 +369,46 @@ export function TransactionsPage() {
             </select>
             <DescriptionCombobox
               value={draft.description}
-              onChange={v => setDraft(d => d && { ...d, description: v, product_id: null })}
+              onChange={v => { setDraftSelectedSuggestion(null); setDraft(d => d && { ...d, description: v, product_id: null }) }}
               onSelect={handleSuggestionSelect}
               suggestions={draftSuggestions}
             />
           </div>
+
+          {draftSelectedSuggestion && (draftSelectedSuggestion.priceCash > 0 || draftSelectedSuggestion.priceTransfer != null || draftSelectedSuggestion.priceCard != null) && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {draftSelectedSuggestion.priceCash > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceCash } : p) })}
+                  className="text-xs px-2 py-0.5 rounded-full border transition-colors text-[var(--color-muted)] hover:bg-[var(--color-accent)] hover:text-[#fff] hover:border-[var(--color-accent)]"
+                  style={{ borderColor: 'var(--color-border)' }}
+                >
+                  ${draftSelectedSuggestion.priceCash.toLocaleString('es-CO')}
+                </button>
+              )}
+              {draftSelectedSuggestion.priceTransfer != null && (
+                <button
+                  type="button"
+                  onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceTransfer! } : p) })}
+                  className="text-xs px-2 py-0.5 rounded-full border transition-colors text-[var(--color-muted)] hover:bg-[var(--color-accent)] hover:text-[#fff] hover:border-[var(--color-accent)]"
+                  style={{ borderColor: 'var(--color-border)' }}
+                >
+                  ${draftSelectedSuggestion.priceTransfer.toLocaleString('es-CO')}
+                </button>
+              )}
+              {draftSelectedSuggestion.priceCard != null && (
+                <button
+                  type="button"
+                  onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceCard! } : p) })}
+                  className="text-xs px-2 py-0.5 rounded-full border transition-colors text-[var(--color-muted)] hover:bg-[var(--color-accent)] hover:text-[#fff] hover:border-[var(--color-accent)]"
+                  style={{ borderColor: 'var(--color-border)' }}
+                >
+                  ${draftSelectedSuggestion.priceCard.toLocaleString('es-CO')}
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <div className="flex items-center gap-3">
