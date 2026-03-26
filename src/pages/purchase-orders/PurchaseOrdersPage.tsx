@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect, type KeyboardEvent } from 'react'
+import React, { useState, useRef, useEffect, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { Plus, Trash2, PackageCheck, Ban, ChevronDown, ChevronRight, AlertTriangle, EyeOff, Eye, X } from 'lucide-react'
-import { useSetRestockSkip } from '@/hooks/useProducts'
+import { useSetRestockSkip, useCreateProduct } from '@/hooks/useProducts'
 import { formatDate } from '@/lib/formatDate'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
@@ -43,29 +44,53 @@ interface LineItem {
 
 const EMPTY_LINE: LineItem = { product_id: '', quantity: '', unit_cost: '' }
 
+const DRAFT_KEY = 'po_create_draft'
+
 function ProductSearchSelect({
   value,
   onChange,
   options,
+  onCreateNew,
 }: {
   value: string
   onChange: (value: string) => void
   options: { value: string; label: string }[]
+  onCreateNew?: (name: string) => void
 }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [highlighted, setHighlighted] = useState(0)
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  const triggerRef = useRef<HTMLDivElement>(null)
 
   const selectedLabel = options.find(o => o.value === value)?.label ?? ''
   const filtered = options.filter(o =>
     o.value === '' || o.label.toLowerCase().includes(query.toLowerCase())
   )
 
+  const showCreateNew = !!onCreateNew && query.trim().length > 0 &&
+    !options.some(o => o.label.toLowerCase() === query.trim().toLowerCase())
+
+  const totalItems = filtered.length + (showCreateNew ? 1 : 0)
+
   useEffect(() => {
     setHighlighted(0)
   }, [query])
+
+  useEffect(() => {
+    if (open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      setDropdownStyle({
+        position: 'fixed',
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        zIndex: 9999,
+      })
+    }
+  }, [open])
 
   useEffect(() => {
     if (open && listRef.current) {
@@ -84,13 +109,19 @@ function ProductSearchSelect({
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setOpen(true)
-      setHighlighted(h => Math.min(h + 1, filtered.length - 1))
+      setHighlighted(h => Math.min(h + 1, totalItems - 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setHighlighted(h => Math.max(h - 1, 0))
     } else if (e.key === 'Enter' && open) {
       e.preventDefault()
-      if (filtered[highlighted]) selectOption(filtered[highlighted])
+      if (showCreateNew && highlighted === filtered.length) {
+        onCreateNew!(query.trim())
+        setQuery('')
+        setOpen(false)
+      } else if (filtered[highlighted]) {
+        selectOption(filtered[highlighted])
+      }
     } else if (e.key === 'Escape') {
       setOpen(false)
       setQuery('')
@@ -98,8 +129,9 @@ function ProductSearchSelect({
   }
 
   return (
-    <div className="relative">
+    <div className="min-w-0">
       <div
+        ref={triggerRef}
         className="flex items-center w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-[var(--color-accent)] focus-within:border-[var(--color-accent)] transition-all"
         onClick={() => { setOpen(true); inputRef.current?.focus() }}
       >
@@ -120,10 +152,11 @@ function ProductSearchSelect({
         <ChevronDown size={14} className="ml-1 shrink-0 text-[var(--color-muted)]" />
       </div>
 
-      {open && filtered.length > 0 && (
+      {open && (filtered.length > 0 || showCreateNew) && createPortal(
         <ul
           ref={listRef}
-          className="absolute z-50 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
+          style={dropdownStyle}
+          className="max-h-64 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
         >
           {filtered.map((opt, i) => (
             <li
@@ -139,7 +172,23 @@ function ProductSearchSelect({
               {opt.label}
             </li>
           ))}
-        </ul>
+          {showCreateNew && (
+            <li
+              onMouseDown={() => {
+                onCreateNew!(query.trim())
+                setQuery('')
+                setOpen(false)
+              }}
+              onMouseEnter={() => setHighlighted(filtered.length)}
+              className={`px-3 py-2 text-sm cursor-pointer border-t border-[var(--color-border)] transition-colors text-[var(--color-accent)] ${
+                highlighted === filtered.length ? 'bg-[var(--color-bg)]' : ''
+              }`}
+            >
+              + Crear '{query.trim()}'
+            </li>
+          )}
+        </ul>,
+        document.body
       )}
     </div>
   )
@@ -194,6 +243,12 @@ export function PurchaseOrdersPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editingShipping, setEditingShipping] = useState<string | null>(null)
   const [shippingDraft, setShippingDraft] = useState('')
+  const [draftRestored, setDraftRestored] = useState(false)
+
+  const [newProductOpen, setNewProductOpen] = useState(false)
+  const [newProductForLineIdx, setNewProductForLineIdx] = useState(0)
+  const [newProductForm, setNewProductForm] = useState({ name: '', sku: '', sale_price: '', min_stock: '0', unit: '', brand: '' })
+  const [newProductError, setNewProductError] = useState('')
 
   interface ReceiveLine {
     id: string
@@ -218,6 +273,7 @@ export function PurchaseOrdersPage() {
   const receivePO = useReceivePurchaseOrder()
   const updateShipping = useUpdateShippingCost()
   const setRestockSkip = useSetRestockSkip()
+  const createProduct = useCreateProduct()
 
   const allLowStockProducts = products
     .filter(p => (p.stock ?? 0) === 0 || (p.stock ?? 0) < p.min_stock)
@@ -260,6 +316,24 @@ export function PurchaseOrdersPage() {
   }
 
   function openCreate(productIds: string[] = []) {
+    if (productIds.length === 0) {
+      const saved = localStorage.getItem(DRAFT_KEY)
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as { form: typeof form; lines: LineItem[] }
+          setForm(parsed.form)
+          setLines(parsed.lines)
+          setDraftRestored(true)
+          setFormError('')
+          setSelectedRestock(new Set())
+          setCreateOpen(true)
+          return
+        } catch {
+          localStorage.removeItem(DRAFT_KEY)
+        }
+      }
+    }
+    setDraftRestored(false)
     setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '' })
     setLines(productIds.length > 0
       ? productIds.map(id => ({ product_id: id, quantity: '', unit_cost: '' }))
@@ -268,6 +342,19 @@ export function PurchaseOrdersPage() {
     setFormError('')
     setSelectedRestock(new Set())
     setCreateOpen(true)
+  }
+
+  function discardDraft() {
+    localStorage.removeItem(DRAFT_KEY)
+    setDraftRestored(false)
+    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '' })
+    setLines([{ ...EMPTY_LINE }])
+    setFormError('')
+  }
+
+  function saveDraft() {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ form, lines }))
+    setCreateOpen(false)
   }
 
   async function handleCreateSubmit() {
@@ -294,6 +381,31 @@ export function PurchaseOrdersPage() {
       })),
     })
     setCreateOpen(false)
+    localStorage.removeItem(DRAFT_KEY)
+  }
+
+  function openNewProduct(name: string, lineIdx: number) {
+    setNewProductForLineIdx(lineIdx)
+    setNewProductForm({ name, sku: '', sale_price: '', min_stock: '0', unit: '', brand: '' })
+    setNewProductError('')
+    setNewProductOpen(true)
+  }
+
+  async function handleCreateNewProduct() {
+    if (!newProductForm.name.trim() || !newProductForm.sku.trim()) {
+      setNewProductError('Nombre y SKU son obligatorios.')
+      return
+    }
+    const product = await createProduct.mutateAsync({
+      name: newProductForm.name.trim(),
+      sku: newProductForm.sku.trim(),
+      sale_price: parseFloat(newProductForm.sale_price) || 0,
+      min_stock: parseInt(newProductForm.min_stock) || 0,
+      unit: newProductForm.unit || null,
+      brand: newProductForm.brand || null,
+    })
+    updateLine(newProductForLineIdx, 'product_id', product.id)
+    setNewProductOpen(false)
   }
 
   function openReceive(po: PurchaseOrder) {
@@ -656,6 +768,18 @@ export function PurchaseOrdersPage() {
       {/* Create PO Modal */}
       <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Nuevo pedido de compra" size="xl">
         <div className="space-y-4">
+          {draftRestored && (
+            <div className="flex items-center gap-2 text-xs text-[var(--color-muted)] bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-3 py-2">
+              <span>Borrador restaurado —</span>
+              <button
+                type="button"
+                onClick={discardDraft}
+                className="text-[var(--color-accent)] hover:underline"
+              >
+                Descartar
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Select
               label="Proveedor"
@@ -683,49 +807,52 @@ export function PurchaseOrdersPage() {
 
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-2">Ítems</p>
-            <div className="space-y-2">
-              {lines.map((line, idx) => (
-                <div key={idx} className="space-y-1">
-                  <div className="grid grid-cols-[1fr_100px_120px_32px] gap-2 items-end">
-                    <ProductSearchSelect
-                      options={productOptions}
-                      value={line.product_id}
-                      onChange={v => updateLine(idx, 'product_id', v)}
-                    />
-                    <Input
-                      type="number"
-                      min="0.001"
-                      step="0.001"
-                      placeholder="Cantidad"
-                      value={line.quantity}
-                      onChange={e => updateLine(idx, 'quantity', e.target.value)}
-                    />
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Costo unit."
-                      value={line.unit_cost}
-                      onChange={e => updateLine(idx, 'unit_cost', e.target.value)}
-                      prefix="$"
-                    />
-                    <button
-                      onClick={() => removeLine(idx)}
-                      disabled={lines.length === 1}
-                      className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] disabled:opacity-30 transition-colors"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+            <div className="min-w-0">
+              <div className="space-y-2">
+                {lines.map((line, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <div className="grid grid-cols-[1fr_100px_120px_32px] gap-2 items-end">
+                      <ProductSearchSelect
+                        options={productOptions}
+                        value={line.product_id}
+                        onChange={v => updateLine(idx, 'product_id', v)}
+                        onCreateNew={(name) => openNewProduct(name, idx)}
+                      />
+                      <Input
+                        type="number"
+                        min="0.001"
+                        step="0.001"
+                        placeholder="Cantidad"
+                        value={line.quantity}
+                        onChange={e => updateLine(idx, 'quantity', e.target.value)}
+                      />
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Costo unit."
+                        value={line.unit_cost}
+                        onChange={e => updateLine(idx, 'unit_cost', e.target.value)}
+                        prefix="$"
+                      />
+                      <button
+                        onClick={() => removeLine(idx)}
+                        disabled={lines.length === 1}
+                        className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] disabled:opacity-30 transition-colors"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                    {line.product_id && (
+                      <SuggestionHint
+                        productId={line.product_id}
+                        orderDate={form.order_date}
+                        onApply={(qty) => updateLine(idx, 'quantity', qty)}
+                      />
+                    )}
                   </div>
-                  {line.product_id && (
-                    <SuggestionHint
-                      productId={line.product_id}
-                      orderDate={form.order_date}
-                      onApply={(qty) => updateLine(idx, 'quantity', qty)}
-                    />
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
             <button
               onClick={addLine}
@@ -737,12 +864,73 @@ export function PurchaseOrdersPage() {
 
           {formError && <p className="text-xs text-[var(--color-danger)]">{formError}</p>}
 
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              type="button"
+              onClick={saveDraft}
+              className="text-xs text-[var(--color-muted)] hover:underline hover:text-[var(--color-text)]"
+            >
+              Guardar borrador
+            </button>
+            <div className="flex gap-2 ml-auto">
+              <Button variant="secondary" onClick={() => setCreateOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleCreateSubmit} loading={createPO.isPending}>
+                Crear pedido
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* New Product Modal */}
+      <Modal open={newProductOpen} onClose={() => setNewProductOpen(false)} title="Nuevo producto" size="md">
+        <div className="space-y-3">
+          <Input
+            label="Nombre *"
+            value={newProductForm.name}
+            onChange={e => setNewProductForm(f => ({ ...f, name: e.target.value }))}
+          />
+          <Input
+            label="SKU *"
+            value={newProductForm.sku}
+            onChange={e => setNewProductForm(f => ({ ...f, sku: e.target.value }))}
+          />
+          <Input
+            label="Precio de venta"
+            type="number"
+            min="0"
+            step="0.01"
+            value={newProductForm.sale_price}
+            onChange={e => setNewProductForm(f => ({ ...f, sale_price: e.target.value }))}
+            prefix="$"
+          />
+          <Input
+            label="Stock mínimo"
+            type="number"
+            min="0"
+            step="1"
+            value={newProductForm.min_stock}
+            onChange={e => setNewProductForm(f => ({ ...f, min_stock: e.target.value }))}
+          />
+          <Input
+            label="Unidad"
+            value={newProductForm.unit}
+            onChange={e => setNewProductForm(f => ({ ...f, unit: e.target.value }))}
+          />
+          <Input
+            label="Marca"
+            value={newProductForm.brand}
+            onChange={e => setNewProductForm(f => ({ ...f, brand: e.target.value }))}
+          />
+          {newProductError && <p className="text-xs text-[var(--color-danger)]">{newProductError}</p>}
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>
+            <Button variant="secondary" onClick={() => setNewProductOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleCreateSubmit} loading={createPO.isPending}>
-              Crear pedido
+            <Button onClick={handleCreateNewProduct} loading={createProduct.isPending}>
+              Crear producto
             </Button>
           </div>
         </div>
@@ -761,7 +949,7 @@ export function PurchaseOrdersPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg)]">
-                    <th className="w-8 px-3 py-2" />
+                    <th className="w-10 px-2 py-2" />
                     <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Producto</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Pedido</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Recibido</th>
@@ -773,12 +961,12 @@ export function PurchaseOrdersPage() {
                       key={line.id}
                       className={`border-b border-[var(--color-border)] last:border-b-0 transition-colors ${line.checked ? '' : 'opacity-40'}`}
                     >
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-2">
                         <input
                           type="checkbox"
                           checked={line.checked}
                           onChange={e => setReceiveLines(ls => ls.map((l, i) => i === idx ? { ...l, checked: e.target.checked } : l))}
-                          className="rounded"
+                          className="w-4 h-4 cursor-pointer rounded"
                         />
                       </td>
                       <td className={`px-3 py-2 text-[var(--color-text)] ${!line.checked ? 'line-through' : ''}`}>
