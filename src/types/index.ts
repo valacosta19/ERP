@@ -11,6 +11,7 @@ export type PaymentInstrument = 'Transferencia' | 'Tarjeta'
 export interface Profile {
   id: string
   full_name: string | null
+  email: string
   role: UserRole
   business_name: string | null
   created_at: string

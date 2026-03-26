@@ -85,7 +85,13 @@ No usás markdown. No usás asteriscos para negrita (**texto**), no usás guione
 `.trim()
 
 export function buildSystemPrompt(snapshot: BusinessSnapshot): string {
-  const today = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
+  const today = new Date()
+  const todayLabel = today.toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
+
+  const ago180 = new Date(today); ago180.setDate(today.getDate() - 180)
+  const ago90 = new Date(today); ago90.setDate(today.getDate() - 90)
+  const ago30 = new Date(today); ago30.setDate(today.getDate() - 30)
+  const fmtDate = (d: Date) => d.toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
 
   const lines: string[] = []
 
@@ -95,10 +101,11 @@ export function buildSystemPrompt(snapshot: BusinessSnapshot): string {
   lines.push('')
   lines.push(BEHAVIORAL_RULES)
   lines.push('')
-  lines.push(`=== NEGOCIO: ${snapshot.businessName} — Datos al ${today} ===`)
+  lines.push(`=== NEGOCIO: ${snapshot.businessName} — Datos al ${todayLabel} ===`)
+  lines.push(`IMPORTANTE: estos datos cubren períodos específicos. No representan el historial completo del negocio. No des totales históricos ni compares con la UI del sistema — solo trabajás con los datos inyectados acá.`)
   lines.push('')
 
-  lines.push('=== RENTABILIDAD ÚLTIMOS 6 MESES ===')
+  lines.push(`=== RENTABILIDAD — ${fmtDate(ago180)} al ${todayLabel} (últimos 6 meses) ===`)
   if (snapshot.profitRows.length === 0) {
     lines.push('Sin datos.')
   } else {
@@ -109,7 +116,7 @@ export function buildSystemPrompt(snapshot: BusinessSnapshot): string {
   }
   lines.push('')
 
-  lines.push('=== INGRESOS Y GASTOS POR CATEGORÍA (últimos 90 días) ===')
+  lines.push(`=== INGRESOS Y GASTOS POR CATEGORÍA — ${fmtDate(ago90)} al ${todayLabel} (últimos 90 días) ===`)
   if (snapshot.categoryRows.length === 0) {
     lines.push('Sin datos.')
   } else {
@@ -155,7 +162,7 @@ export function buildSystemPrompt(snapshot: BusinessSnapshot): string {
   }
   lines.push('')
 
-  lines.push('=== COMISIONES POR PROFESIONAL (últimos 90 días) ===')
+  lines.push(`=== COMISIONES POR PROFESIONAL — ${fmtDate(ago90)} al ${todayLabel} (últimos 90 días) ===`)
   if (snapshot.commissions.length === 0) {
     lines.push('Sin datos.')
   } else {
@@ -166,7 +173,7 @@ export function buildSystemPrompt(snapshot: BusinessSnapshot): string {
   }
   lines.push('')
 
-  lines.push('=== TRANSACCIONES RECIENTES (últimos 30 días) ===')
+  lines.push(`=== TRANSACCIONES RECIENTES — ${fmtDate(ago30)} al ${todayLabel} (últimos 30 días) ===`)
   if (snapshot.recentTransactions.length === 0) {
     lines.push('Sin transacciones.')
   } else {

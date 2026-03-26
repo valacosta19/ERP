@@ -23,7 +23,7 @@ npm run lint      # eslint on all .ts/.tsx
 - If a task is too large, propose how to split it first.
 - When a phase closes: `npm run build` passes, user validates manually, then write `PHASE_N_SUMMARY.md` and update `PROJECT_STATE.md`.
 
-**Current phase: 7** — Polish: atomic transactions, responsive layout, error boundaries.
+**Current phase: 24** — See `PROJECT_STATE.md` for current scope.
 
 ---
 

@@ -19,25 +19,26 @@ export function useAuth() {
     loading: true,
   })
 
-  async function fetchProfile(userId: string) {
+  async function fetchProfile(user: User) {
     const { data } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', userId)
+      .eq('id', user.id)
       .single()
-    setState(prev => ({ ...prev, profile: data, loading: false }))
+    const profile = data ? { ...data, email: user.email ?? '' } as Profile : null
+    setState(prev => ({ ...prev, profile, loading: false }))
   }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setState(prev => ({ ...prev, user: session?.user ?? null, session }))
-      if (session?.user) fetchProfile(session.user.id)
+      if (session?.user) fetchProfile(session.user)
       else setState(prev => ({ ...prev, loading: false }))
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setState(prev => ({ ...prev, user: session?.user ?? null, session }))
-      if (session?.user) fetchProfile(session.user.id)
+      if (session?.user) fetchProfile(session.user)
       else setState(prev => ({ ...prev, profile: null, loading: false }))
     })
 

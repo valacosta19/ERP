@@ -578,7 +578,7 @@ export function SettingsPage() {
                       {u.role === 'admin' ? 'Admin' : 'Empleado'}
                     </Badge>
                     <span className="text-sm text-[var(--color-text)]">
-                      {u.full_name || '(Sin nombre)'}
+                      {u.full_name || u.email || '(Sin nombre)'}
                     </span>
                     {u.id === profile.id && (
                       <span className="text-xs text-[var(--color-muted)]">(tú)</span>

@@ -118,7 +118,7 @@ export function useBusinessSnapshot() {
           .gte('date', from180),
         supabase
           .from('transactions')
-          .select('type, amount, category_id, categories(name)')
+          .select('type, amount, seña_amount, is_seña, category_id, categories(name)')
           .gte('date', from90),
       ])
 
@@ -209,13 +209,15 @@ export function useBusinessSnapshot() {
         .sort((a, b) => b.month.localeCompare(a.month))
         .slice(0, 6)
 
-      type RawCatTx = { type: string; amount: number; category_id: string | null; categories: { name: string } | null }
+      type RawCatTx = { type: string; amount: number; seña_amount: number | null; is_seña: boolean; category_id: string | null; categories: { name: string } | null }
       const catTxRows = (catTxRes.data as unknown as RawCatTx[]) ?? []
       const catMap = new Map<string, FinancialCategoryRow>()
       for (const row of catTxRows) {
+        if (row.is_seña) continue
         const key = row.category_id ?? '__none__'
-        const income = row.type === 'income' ? Number(row.amount) : 0
-        const expense = row.type === 'expense' ? Number(row.amount) : 0
+        const total = Number(row.amount) + Number(row.seña_amount ?? 0)
+        const income = row.type === 'income' ? total : 0
+        const expense = row.type === 'expense' ? total : 0
         const existing = catMap.get(key)
         if (existing) {
           existing.income += income
