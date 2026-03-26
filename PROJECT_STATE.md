@@ -376,6 +376,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 20 | ✅ Invitación de usuarios por email: Edge Function `invite-user`, sección "Usuarios" en Configuración (admin only), lista de perfiles con cambio de rol. |
 | 21 | ✅ Splits quincenales en reporte de comisiones: tabla detalle y quincenal agrupadas por período (1–15 / 16–fin), cards por profesional con desglose quincenal inline. |
 | 22 | ✅ Análisis de costos de servicios: tabla `fixed_costs` + `service_recipes`, `unit_size` en productos, tab "Costos" en Ajustes (gastos fijos + recetas) y en Reportes (desglose por servicio con margen). |
+| 23 | ✅ Asistente IA: widget flotante (bottom-right) con chat contextual alimentado por snapshot del negocio. Modelo: Gemini 2.5 Flash (`VITE_GEMINI_API_KEY`). Snapshot cacheable 5 min con 9 queries en paralelo. Búsqueda web opt-in por regex en el mensaje. Archivos: `src/lib/gemini.ts`, `src/lib/buildSystemPrompt.ts`, `src/hooks/useBusinessSnapshot.ts`, `src/components/AIWidget/AIWidget.tsx`. |
 
 ---
 

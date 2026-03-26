@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Menu, Scissors } from 'lucide-react'
 import { Sidebar } from './Sidebar'
+import { AIWidget } from '@/components/AIWidget/AIWidget'
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -37,6 +38,7 @@ export function AppShell() {
         </div>
         <Outlet />
       </main>
+      <AIWidget />
     </div>
   )
 }

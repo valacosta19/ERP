@@ -43,5 +43,21 @@ Tarjeta de crédito/débito tiene un costo de procesamiento (2–5%) que actualm
 - Registrar el porcentaje de comisión por método de pago en `payment_methods`
 - Deducirlo del ingreso bruto en el cálculo de `avgRevenue` en `costRows`
 
+## Asistente IA — Mejoras futuras
+
+- [ ] **Renderizar markdown en el chat** — El modelo a veces genera listas y negritas útiles. Agregar un renderer liviano (ej. `marked` o `react-markdown`) para que las respuestas se vean formateadas en el panel del widget.
+
+- [ ] **Streaming de respuestas** — La API de Gemini soporta streaming (`streamGenerateContent`). Mostrar el texto mientras se genera mejora mucho la percepción de velocidad, especialmente en respuestas largas.
+
+- [ ] **Persistencia del historial de chat en Supabase** — Guardar las conversaciones por usuario en una tabla `ai_conversations`. Permite recuperar el historial al reabrir el widget y auditar qué se consultó.
+
+- [ ] **Indicador de tokens / costo estimado** — Mostrar en el header del widget cuántos tokens usó la última llamada, para monitorear el consumo del free tier.
+
+- [ ] **Modo "Análisis automático mensual"** — Botón o trigger automático al inicio de cada mes que genera un resumen proactivo: "Cerraste [mes] con X de ganancia neta, tu mejor servicio fue Y, tu mayor gasto fue Z. Recomendaciones para el mes que viene: ...".
+
+- [ ] **Proteger la API key con una Edge Function** — Actualmente la key de Gemini está expuesta en el cliente (`VITE_GEMINI_API_KEY`). Para producción o multi-usuario, mover la llamada a una Supabase Edge Function que valide el JWT antes de llamar a Gemini.
+
+- [ ] **Soporte de adjuntos / contexto extra** — Permitir al usuario pegar una lista de precios de la competencia o una foto de un presupuesto, y que el asistente lo compare con el catálogo actual.
+
 ## Por consultar
 - Cómo debería descontar del inventario los productos que solo se compran para los servicios? Automáticamente cuando se consuma la cantidad de mL por la cantidad de servicios realizados o manualmente? Como controlo si no es exacto?
