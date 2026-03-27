@@ -8,6 +8,7 @@ interface TransactionFilters {
   currency?: Currency
   from?: string
   to?: string
+  showVoided?: boolean
 }
 
 export function useTransactions(filters: TransactionFilters = {}) {
@@ -20,6 +21,7 @@ export function useTransactions(filters: TransactionFilters = {}) {
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
 
+      if (!filters.showVoided) query = query.is('voided_at', null)
       if (filters.type && filters.type !== 'all') query = query.eq('type', filters.type)
       if (filters.categoryId) query = query.eq('category_id', filters.categoryId)
       if (filters.currency) query = query.eq('currency', filters.currency)
@@ -160,12 +162,22 @@ export function useUpdateTransaction() {
   })
 }
 
-export function useDeleteTransaction() {
+export function useVoidTransaction() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('transactions').delete().eq('id', id)
+      const { data: { user } } = await supabase.auth.getUser()
+
+      const { error } = await supabase
+        .from('transactions')
+        .update({ voided_at: new Date().toISOString(), voided_by: user?.id ?? null })
+        .eq('id', id)
       if (error) throw new Error(error.message)
+
+      const { error: logError } = await supabase
+        .from('user_action_logs')
+        .insert({ user_id: user?.id ?? null, action: 'void_transaction', entity: 'transactions', entity_id: id })
+      if (logError) throw new Error(logError.message)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
@@ -185,7 +197,8 @@ export function usePaymentMethodBalances(filters: { from?: string; to?: string; 
     queryFn: async () => {
       let query = supabase
         .from('transaction_payments')
-        .select('payment_method, amount, transactions!inner(date, type, currency)')
+        .select('payment_method, amount, transactions!inner(date, type, currency, voided_at)')
+        .is('transactions.voided_at', null)
 
       if (filters.from) query = query.gte('transactions.date', filters.from)
       if (filters.to) query = query.lte('transactions.date', filters.to)
@@ -194,7 +207,7 @@ export function usePaymentMethodBalances(filters: { from?: string; to?: string; 
       const { data, error } = await query
       if (error) throw new Error(error.message)
 
-      type Row = { payment_method: PaymentMethod; amount: number; transactions: { type: string; currency: string } }
+      type Row = { payment_method: PaymentMethod; amount: number; transactions: { type: string; currency: string; voided_at: string | null } }
       const rows = data as unknown as Row[]
 
       const methodKeySet = [...new Set(rows.map(r => r.payment_method.toLowerCase()))].sort()

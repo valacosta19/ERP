@@ -56,6 +56,8 @@ export interface Transaction {
   created_at: string
   is_seña: boolean
   seña_amount: number | null
+  voided_at: string | null
+  voided_by: string | null
   category?: Category
   payments?: TransactionPayment[]
   professionals?: ProfessionalAssignment[]

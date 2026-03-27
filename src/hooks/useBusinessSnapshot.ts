@@ -32,7 +32,7 @@ type RawTxHd = {
   hairdresser_id: string
   commission_rate: number
   hairdressers: { name: string } | null
-  transactions: { id: string; amount: number; seña_amount: number | null; date: string; currency: string } | null
+  transactions: { id: string; amount: number; seña_amount: number | null; date: string; currency: string; voided_at: string | null } | null
 }
 
 type RawTx = {
@@ -101,11 +101,13 @@ export function useBusinessSnapshot() {
         supabase.from('catalog_items').select('*').order('name'),
         supabase
           .from('transaction_hairdressers')
-          .select('hairdresser_id, commission_rate, hairdressers(name), transactions(id, amount, seña_amount, date, currency)')
+          .select('hairdresser_id, commission_rate, hairdressers(name), transactions(id, amount, seña_amount, date, currency, voided_at)')
+          .is('transactions.voided_at', null)
           .gte('transactions.date', from90),
         supabase
           .from('transactions')
           .select('date, type, amount, currency, categories(name)')
+          .is('voided_at', null)
           .gte('date', from30)
           .order('date', { ascending: false }),
         supabase
@@ -115,10 +117,12 @@ export function useBusinessSnapshot() {
         supabase
           .from('transactions')
           .select('id, date, type, amount, seña_amount, is_seña, currency, categories(name)')
+          .is('voided_at', null)
           .gte('date', from180),
         supabase
           .from('transactions')
           .select('type, amount, seña_amount, is_seña, category_id, categories(name)')
+          .is('voided_at', null)
           .gte('date', from90),
       ])
 

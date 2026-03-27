@@ -243,6 +243,7 @@ export function ReportsPage() {
         .eq('type', 'income')
         .eq('is_seña', false)
         .not('catalog_item_id', 'is', null)
+        .is('voided_at', null)
       if (error) throw new Error(error.message)
       return data as unknown as { id: string; catalog_item_id: string; amount: number; seña_amount: number | null; currency: string; date: string }[]
     },

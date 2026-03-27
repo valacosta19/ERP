@@ -129,6 +129,20 @@ Rules:
 
 ---
 
+## Business Rules — Accounting Integrity
+
+- **Soft-delete only.** Transactions must never be hard-deleted. Use a `voided_at` column. Voided transactions remain visible in the list with "Anulada" badge, can be filtered, and are excluded from all reports and balances. Any user can void. Every void is logged in `user_action_logs`.
+- **User action log.** A `user_action_logs` table records auditable events (void transaction, unlock period, etc.) with columns: `id, user_id, action, entity, entity_id, metadata jsonb, created_at`.
+- **Inventory movements always.** Any change to `inventory_lots.remaining_quantity` (e.g., via LotDrawer) must insert an `adjustment` row in `inventory_movements` with the delta and an optional reason.
+- **Lock `unit_cost` when sold.** If a lot has `sale_items` rows referencing it, its `unit_cost` is read-only.
+- **Period locking.** A `locked_periods (year, month, locked_at, locked_by)` table prevents creating/editing/voiding transactions in closed months. Enforced at DB level (trigger or RPC check). Lock/unlock is admin-only UI in Settings.
+- **Expense category required.** `category_id` is required when `type = 'expense'` in the transaction form (not yet implemented — deferred).
+
+### Standard expense categories (hair salon)
+Alquiler · Sueldos y cargas sociales · Productos / Insumos · Servicios públicos · Mantenimiento y reparaciones · Marketing y publicidad · Impuestos y tasas · Equipamiento · Otros gastos
+
+---
+
 ## Rules
 
 - **No over-engineering.** Build the minimum that satisfies the current phase. No abstractions for hypothetical future needs.

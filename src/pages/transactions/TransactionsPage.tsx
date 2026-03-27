@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Trash2, X, Check, Link } from 'lucide-react'
+import { Plus, X, Check, Link, Ban } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Table } from '@/components/ui/Table'
 import { Modal } from '@/components/ui/Modal'
-import { useTransactions, useCreateTransaction, useUpdateTransaction, useDeleteTransaction, usePaymentMethodBalances } from '@/hooks/useTransactions'
+import { useTransactions, useCreateTransaction, useUpdateTransaction, useVoidTransaction, usePaymentMethodBalances } from '@/hooks/useTransactions'
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useCategories } from '@/hooks/useCategories'
 import { useProfessionals } from '@/hooks/useProfessionals'
@@ -148,6 +148,7 @@ export function TransactionsPage() {
   const [currencyFilter, setCurrencyFilter] = useState<Currency | ''>('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [showVoided, setShowVoided] = useState(false)
 
   const [draft, setDraft] = useState<typeof EMPTY_DRAFT | null>(null)
   const [draftSelectedSuggestion, setDraftSelectedSuggestion] = useState<Suggestion | null>(null)
@@ -163,6 +164,7 @@ export function TransactionsPage() {
     currency: currencyFilter || undefined,
     from: from || undefined,
     to: to || undefined,
+    showVoided,
   })
   const { data: categories = [] } = useCategories()
   const { data: professionals = [] } = useProfessionals()
@@ -170,7 +172,7 @@ export function TransactionsPage() {
   const { data: products = [] } = useProducts()
   const createTx = useCreateTransaction()
   const updateTx = useUpdateTransaction()
-  const deleteTx = useDeleteTransaction()
+  const voidTx = useVoidTransaction()
   const { data: paymentBalances = [] } = usePaymentMethodBalances({ from: from || undefined, to: to || undefined, currency: currencyFilter || undefined })
   const { data: paymentMethodsData = [] } = usePaymentMethods()
   const paymentMethodOptions = paymentMethodsData
@@ -308,9 +310,9 @@ export function TransactionsPage() {
     setModalOpen(false)
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('¿Eliminar esta transacción?')) return
-    await deleteTx.mutateAsync(id)
+  async function handleVoid(id: string) {
+    if (!confirm('¿Anular esta transacción? La acción quedará registrada.')) return
+    await voidTx.mutateAsync(id)
   }
 
   const newRow = draft ? (
@@ -550,15 +552,18 @@ export function TransactionsPage() {
       key: 'date',
       header: 'Fecha',
       render: (tx: Transaction) => (
-        <span className="text-[var(--color-muted)]">{formatDate(tx.date)}</span>
+        <span className="text-[var(--color-muted)]" style={tx.voided_at ? { opacity: 0.5 } : undefined}>{formatDate(tx.date)}</span>
       ),
     },
     {
       key: 'description',
       header: 'Descripción',
       render: (tx: Transaction) => (
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[var(--color-text)]">{tx.description || '—'}</span>
+        <div className="flex flex-col gap-0.5" style={tx.voided_at ? { opacity: 0.5 } : undefined}>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[var(--color-text)]">{tx.description || '—'}</span>
+            {tx.voided_at && <Badge variant="danger">Anulada</Badge>}
+          </div>
           {tx.professionals && tx.professionals.length > 0 && (
             <span className="text-xs text-[var(--color-muted)]">
               {tx.professionals.map(h => h.name).join(', ')}
@@ -571,14 +576,14 @@ export function TransactionsPage() {
       key: 'category',
       header: 'Categoría',
       render: (tx: Transaction) => (
-        <span className="text-[var(--color-muted)] text-xs">{tx.category?.name || '—'}</span>
+        <span className="text-[var(--color-muted)] text-xs" style={tx.voided_at ? { opacity: 0.5 } : undefined}>{tx.category?.name || '—'}</span>
       ),
     },
     {
       key: 'payments',
       header: 'Métodos',
       render: (tx: Transaction) => (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1" style={tx.voided_at ? { opacity: 0.5 } : undefined}>
           {tx.payments && tx.payments.length > 0
             ? tx.payments.map((p, i) => (
                 <Badge key={i} variant="default">{p.payment_method}</Badge>
@@ -594,8 +599,8 @@ export function TransactionsPage() {
       className: 'text-right',
       render: (tx: Transaction) => (
         tx.seña_amount != null && tx.seña_amount > 0
-          ? <span className="tabular-nums text-xs" style={{ color: 'var(--color-muted)' }}>${tx.seña_amount.toLocaleString('es-CO')}</span>
-          : <span style={{ color: 'var(--color-muted)' }}>—</span>
+          ? <span className="tabular-nums text-xs" style={{ color: 'var(--color-muted)', ...(tx.voided_at ? { opacity: 0.5 } : {}) }}>${tx.seña_amount.toLocaleString('es-CO')}</span>
+          : <span style={{ color: 'var(--color-muted)', ...(tx.voided_at ? { opacity: 0.5 } : {}) }}>—</span>
       ),
     },
     {
@@ -605,7 +610,7 @@ export function TransactionsPage() {
       render: (tx: Transaction) => {
         const total = tx.amount
         return (
-          <span className={`font-semibold tabular-nums ${tx.type === 'income' ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+          <span className={`font-semibold tabular-nums ${tx.type === 'income' ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`} style={tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' } : undefined}>
             {formatAmount(tx.type, total, tx.currency)}
           </span>
         )
@@ -617,18 +622,23 @@ export function TransactionsPage() {
       className: 'w-20',
       render: (tx: Transaction) => (
         <div className="flex items-center gap-1 justify-end">
-          <button
-            onClick={() => openEdit(tx)}
-            className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </button>
-          <button
-            onClick={() => handleDelete(tx.id)}
-            className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-          >
-            <Trash2 size={14} />
-          </button>
+          {!tx.voided_at && (
+            <button
+              onClick={() => openEdit(tx)}
+              className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          )}
+          {!tx.voided_at && (
+            <button
+              onClick={() => handleVoid(tx.id)}
+              title="Anular"
+              className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+            >
+              <Ban size={14} />
+            </button>
+          )}
         </div>
       ),
     },
@@ -691,6 +701,15 @@ export function TransactionsPage() {
             placeholder="Hasta"
             className="w-40"
           />
+          <label className="flex items-center gap-1.5 cursor-pointer text-sm" style={{ color: 'var(--color-muted)' }}>
+            <input
+              type="checkbox"
+              checked={showVoided}
+              onChange={e => setShowVoided(e.target.checked)}
+              style={{ accentColor: 'var(--color-accent)' }}
+            />
+            Mostrar anuladas
+          </label>
           {(from || to || categoryFilter || typeFilter !== 'all') && (
             <Button
               variant="ghost"

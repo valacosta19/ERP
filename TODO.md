@@ -2,7 +2,7 @@
 
 ## Critical — Accounting Integrity
 
-- [ ] **Soft-delete transactions instead of hard-delete** — Deleting a transaction permanently erases it with no audit trail. Replace the delete action with a void/cancel mechanism: add a `deleted_at` or `voided_at` column to transactions, keep the record in the database, and exclude voided transactions from all reports and balances. The transaction should remain visible in the history marked as cancelled.
+- [ ] **Soft-delete transactions instead of hard-delete** — Deleting a transaction permanently erases it with no audit trail. Replace the delete action with a void/cancel mechanism: add a `voided_at` column to transactions, keep the record in the database, and exclude voided transactions from all reports and balances. Voided transactions remain visible in the list with a "Anulada" badge and can be filtered. Any user can void a transaction. Add a `user_action_logs` table to record who voided what and when (see non-essential log viewer item below).
 
 - [ ] **Inventory adjustments must generate a movement record** — Editing `remaining_quantity` directly on a lot (via the LotDrawer) bypasses the `inventory_movements` audit log entirely. Any change to stock quantity should insert an `adjustment` movement with the delta and an optional reason, so the movement log always reconciles with the lot quantities.
 
@@ -25,7 +25,15 @@
 
   Implementation: make `category_id` required when `type = 'expense'` in the transaction form. Seed the above categories in a migration or via the Settings UI.
 
-- [ ] **Period locking** — Add the ability to close a fiscal month or year, preventing any creation, edit, or deletion of transactions with a date in that period. Once a period is closed, it should be read-only for all users including admins. This is standard practice: once an accountant reviews a month, those numbers should not change.
+  **Decision (2026-03-27): deferred — not implementing now.**
+
+- [ ] **Period locking** — Add the ability to close a fiscal month, preventing any creation, edit, or void of transactions dated within that period. Standard pattern in accounting systems (QuickBooks, Xero, etc.):
+  - A `locked_periods` table stores `(year, month, locked_at, locked_by)`.
+  - Once a month is locked, it is read-only for all users including admins (no exceptions — prevents accidental restatements).
+  - The lock UI lives in Settings (admin only). Shows a list of months with lock/unlock toggle.
+  - The DB enforces the constraint via a trigger or RPC-level check, not just frontend validation.
+  - Unlocking a period is allowed but should log the action in `user_action_logs`.
+  - Locking is month-by-month only (no annual lock — annual close is just locking all 12 months).
 
 - [ ] **Double-entry bookkeeping (long term)** — The system currently uses single-entry accounting (one income or expense per transaction). True double-entry assigns a debit and a credit to every movement, ensuring the ledger always balances. This is required to generate a proper Balance Sheet (assets vs. liabilities vs. equity), which is what an accountant or bank will ask for. This is a significant architectural change and should be evaluated before any multi-tenant or SaaS expansion.
 
@@ -35,7 +43,56 @@
 
 - [x] **Add service cost section** — Implemented in Phase 22 (recipes + fixed costs) and Phase 23 (real avg revenue from linked transactions, USD conversion via dólar blue).
 
-- [ ] **Add query params for tabs** - Every tab inside a section must have a unique query param to navigate
+- [ ] **Add query params for tabs** — Every page with tabs must reflect the active tab in the URL as a query param (e.g., `?tab=comisiones`). Applies to all pages: Reportes, Ajustes, and any other page with tabs. Enables browser back/forward navigation and direct linking to a specific tab.
+
+- [ ] **Add reserves from bank** - Report with general balance (Bank, Cashflow, Utility...).
+
+- [ ] **Agregar cuentas por cobrar**
+
+- [ ] **Agregar Automatic inventory consumption based on services + manual inventory adjustment**
+
+Goal:
+Enable the system to track real service costs and inventory usage without requiring manual input for every product consumed, while keeping the experience simple for small businesses.
+
+Concept:
+
+* When a service is performed, the system should automatically account for the consumption of the products required to deliver that service.
+
+* This consumption should reduce the internal stock levels and contribute to the calculation of service costs.
+
+* Product usage should NOT be treated as a financial transaction, since no cash movement occurs.
+
+* The system should maintain a clear separation between:
+
+  * cash flow (real money in/out)
+  * operational costs (inventory consumption)
+
+* Since real-life usage is not perfectly predictable, the system must allow users to manually adjust inventory levels when discrepancies occur.
+
+* Adjustments should be simple, fast, and based on the real stock count, not on complex tracking.
+
+User experience:
+
+* The user should not need to think about inventory consumption during daily operations.
+* Inventory should update automatically in the background.
+* The only manual interaction should be:
+
+  * checking stock levels
+  * correcting them when needed via an "Adjust Inventory" action
+
+Expected outcome:
+
+* Accurate estimation of service costs
+* Real-time stock tracking without operational friction
+* Clean separation between profitability and cash flow
+* A system that is simple enough for small businesses but scalable for future growth
+
+
+## Non-essential — Audit & Observability
+
+- [ ] **User action log viewer** — A `user_action_logs` table is created as part of the soft-delete feature (records who voided what and when). Add a read-only admin view in Settings to browse the log: columns action, entity, entity_id, user email, timestamp. No edit or delete on this view.
+
+---
 
 ## Costo por método de pago (pendiente)
 

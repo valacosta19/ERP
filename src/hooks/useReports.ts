@@ -59,6 +59,7 @@ export function useFinancialReport(filters: { from?: string; to?: string; curren
       let query = supabase
         .from('transactions')
         .select('type, amount, category_id, categories(name)')
+        .is('voided_at', null)
 
       if (filters.from) query = query.gte('date', filters.from)
       if (filters.to) query = query.lte('date', filters.to)
@@ -171,7 +172,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
 
       const [saleItemsRes, txRes] = await Promise.all([
         supabase.from('sale_items').select('transaction_id, quantity, unit_cost, unit_sale_price, transactions(date)'),
-        supabase.from('transactions').select('id, date, type, amount, seña_amount, is_seña, currency, categories(name)'),
+        supabase.from('transactions').select('id, date, type, amount, seña_amount, is_seña, currency, categories(name)').is('voided_at', null),
       ])
       if (saleItemsRes.error) throw new Error(saleItemsRes.error.message)
       if (txRes.error) throw new Error(txRes.error.message)

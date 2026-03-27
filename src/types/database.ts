@@ -57,6 +57,8 @@ export interface Database {
           created_at: string
           is_seña: boolean
           seña_amount: number | null
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           id?: string
@@ -71,6 +73,8 @@ export interface Database {
           created_at?: string
           is_seña?: boolean
           seña_amount?: number | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           id?: string
@@ -83,7 +87,31 @@ export interface Database {
           description?: string | null
           is_seña?: boolean
           seña_amount?: number | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
+        Relationships: []
+      }
+      user_action_logs: {
+        Row: {
+          id: string
+          user_id: string | null
+          action: string
+          entity: string
+          entity_id: string | null
+          metadata: Record<string, unknown> | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          action: string
+          entity: string
+          entity_id?: string | null
+          metadata?: Record<string, unknown> | null
+          created_at?: string
+        }
+        Update: never
         Relationships: []
       }
       hairdressers: {

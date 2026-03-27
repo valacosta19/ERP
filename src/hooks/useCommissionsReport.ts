@@ -16,7 +16,7 @@ type RawTxHd = {
   hairdresser_id: string
   commission_rate: number
   hairdressers: { id: string; name: string } | null
-  transactions: { id: string; amount: number; seña_amount: number | null; date: string; currency: string } | null
+  transactions: { id: string; amount: number; seña_amount: number | null; date: string; currency: string; voided_at: string | null } | null
 }
 
 interface CommissionsFilters {
@@ -35,7 +35,8 @@ export function useCommissionsReport(filters: CommissionsFilters = {}) {
 
       let query = supabase
         .from('transaction_hairdressers')
-        .select('transaction_id, hairdresser_id, commission_rate, hairdressers(id, name), transactions(id, amount, seña_amount, date, currency)')
+        .select('transaction_id, hairdresser_id, commission_rate, hairdressers(id, name), transactions(id, amount, seña_amount, date, currency, voided_at)')
+        .is('transactions.voided_at', null)
 
       if (filters.from) query = query.gte('transactions.date', filters.from)
       if (filters.to) query = query.lte('transactions.date', filters.to)
