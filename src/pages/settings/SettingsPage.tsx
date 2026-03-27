@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, Check, X, Pencil, UserPlus, Lock, LockOpen } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
@@ -241,7 +242,11 @@ function PeriodLockList({
 type SettingsTab = 'general' | 'operaciones' | 'costos' | 'catalogo' | 'periodos'
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = (searchParams.get('tab') as SettingsTab) ?? 'general'
+  function setActiveTab(tab: SettingsTab) {
+    setSearchParams(prev => { prev.set('tab', tab); return prev })
+  }
   const [addingCat, setAddingCat] = useState(false)
   const [catDraft, setCatDraft] = useState('')
   const catInputRef = useRef<HTMLInputElement>(null)

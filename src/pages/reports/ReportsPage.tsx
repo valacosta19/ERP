@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { TopBar } from '@/components/layout/TopBar'
@@ -96,7 +97,11 @@ const valuationColumns = [
 
 
 export function ReportsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('financiero')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = (searchParams.get('tab') as Tab) ?? 'financiero'
+  function setActiveTab(tab: Tab) {
+    setSearchParams(prev => { prev.set('tab', tab); return prev })
+  }
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [currency, setCurrency] = useState<Currency | ''>('')
