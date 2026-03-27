@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Plus, Trash2, Check, X, Pencil, UserPlus } from 'lucide-react'
+import { Plus, Trash2, Check, X, Pencil, UserPlus, Lock, LockOpen } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
 import { Select } from '@/components/ui/Select'
@@ -12,6 +12,8 @@ import { useAuth, useUpdateProfile, useUsers, useInviteUser, useUpdateUserRole }
 import { useFixedCosts, useCreateFixedCost, useUpdateFixedCost, useDeleteFixedCost } from '@/hooks/useFixedCosts'
 import { useServiceRecipes, useUpsertServiceRecipes } from '@/hooks/useServiceRecipes'
 import { useProducts } from '@/hooks/useProducts'
+import { useLockedPeriods, useLockPeriod, useUnlockPeriod } from '@/hooks/useLockedPeriods'
+import type { LockedPeriod } from '@/hooks/useLockedPeriods'
 import type { Professional, PaymentMethodConfig, FixedCost, Product } from '@/types'
 
 function DraftInput({
@@ -166,7 +168,77 @@ function BusinessNameCard({ name, onSave }: { name: string; onSave: (v: string) 
   )
 }
 
-type SettingsTab = 'general' | 'operaciones' | 'costos' | 'catalogo'
+const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
+function PeriodLockList({
+  lockedPeriods,
+  onLock,
+  onUnlock,
+}: {
+  lockedPeriods: LockedPeriod[]
+  onLock: (year: number, month: number) => Promise<void>
+  onUnlock: (year: number, month: number) => Promise<void>
+}) {
+  const now = new Date()
+  const rows: { year: number; month: number }[] = []
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    rows.push({ year: d.getFullYear(), month: d.getMonth() + 1 })
+  }
+  const [pending, setPending] = useState<string | null>(null)
+
+  async function toggle(year: number, month: number, isLocked: boolean) {
+    const key = `${year}-${month}`
+    setPending(key)
+    try {
+      if (isLocked) {
+        await onUnlock(year, month)
+      } else {
+        await onLock(year, month)
+      }
+    } finally {
+      setPending(null)
+    }
+  }
+
+  return (
+    <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+      {rows.map(({ year, month }) => {
+        const isLocked = lockedPeriods.some(p => p.year === year && p.month === month)
+        const key = `${year}-${month}`
+        const isPending = pending === key
+        return (
+          <div key={key} className="flex items-center justify-between px-4 py-3">
+            <span className="text-sm text-[var(--color-text)]">
+              {MONTH_NAMES[month - 1]} {year}
+            </span>
+            <div className="flex items-center gap-3">
+              {isLocked && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: 'var(--color-danger-light)', color: 'var(--color-danger)' }}>
+                  Cerrado
+                </span>
+              )}
+              <button
+                onClick={() => toggle(year, month, isLocked)}
+                disabled={isPending}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40"
+                style={isLocked
+                  ? { borderColor: 'var(--color-border)', color: 'var(--color-muted)', background: 'var(--color-bg)' }
+                  : { borderColor: 'var(--color-accent)', color: 'var(--color-accent)', background: 'var(--color-accent-light)' }
+                }
+              >
+                {isLocked ? <LockOpen size={12} /> : <Lock size={12} />}
+                {isLocked ? 'Reabrir' : 'Cerrar'}
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+type SettingsTab = 'general' | 'operaciones' | 'costos' | 'catalogo' | 'periodos'
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
@@ -222,6 +294,10 @@ export function SettingsPage() {
   const { data: users = [] } = useUsers()
   const inviteUser = useInviteUser()
   const updateUserRole = useUpdateUserRole()
+
+  const { data: lockedPeriods = [] } = useLockedPeriods()
+  const lockPeriod = useLockPeriod()
+  const unlockPeriod = useUnlockPeriod()
 
   function startAddUser() {
     setAddingUser(true)
@@ -519,6 +595,7 @@ export function SettingsPage() {
     operaciones: 'Operaciones',
     costos: 'Costos',
     catalogo: 'Catálogo',
+    periodos: 'Períodos',
   }
 
   return (
@@ -1308,6 +1385,20 @@ export function SettingsPage() {
             </div>
           </section>
         )}</>)}
+
+        {activeTab === 'periodos' && profile?.role === 'admin' && (
+        <section>
+          <h2 className="text-sm font-semibold text-[var(--color-text)] mb-1">Períodos cerrados</h2>
+          <p className="text-xs text-[var(--color-muted)] mb-4">
+            Un período cerrado impide crear, editar o anular transacciones con fecha dentro de ese mes. El cierre se aplica a todos los usuarios.
+          </p>
+          <PeriodLockList
+            lockedPeriods={lockedPeriods}
+            onLock={async (year, month) => { await lockPeriod.mutateAsync({ year, month }) }}
+            onUnlock={async (year, month) => { await unlockPeriod.mutateAsync({ year, month }) }}
+          />
+        </section>
+        )}
       </div>
     </div>
   )

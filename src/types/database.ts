@@ -114,6 +114,27 @@ export interface Database {
         Update: never
         Relationships: []
       }
+      locked_periods: {
+        Row: {
+          year: number
+          month: number
+          locked_at: string
+          locked_by: string | null
+        }
+        Insert: {
+          year: number
+          month: number
+          locked_at?: string
+          locked_by?: string | null
+        }
+        Update: {
+          year?: number
+          month?: number
+          locked_at?: string
+          locked_by?: string | null
+        }
+        Relationships: []
+      }
       hairdressers: {
         Row: {
           id: string

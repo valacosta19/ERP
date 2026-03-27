@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/Select'
 import { Table } from '@/components/ui/Table'
 import { Modal } from '@/components/ui/Modal'
 import { useTransactions, useCreateTransaction, useUpdateTransaction, useVoidTransaction, usePaymentMethodBalances } from '@/hooks/useTransactions'
+import { useLockedPeriods } from '@/hooks/useLockedPeriods'
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useCategories } from '@/hooks/useCategories'
 import { useProfessionals } from '@/hooks/useProfessionals'
@@ -173,6 +174,7 @@ export function TransactionsPage() {
   const createTx = useCreateTransaction()
   const updateTx = useUpdateTransaction()
   const voidTx = useVoidTransaction()
+  const { data: lockedPeriods = [] } = useLockedPeriods()
   const { data: paymentBalances = [] } = usePaymentMethodBalances({ from: from || undefined, to: to || undefined, currency: currencyFilter || undefined })
   const { data: paymentMethodsData = [] } = usePaymentMethods()
   const paymentMethodOptions = paymentMethodsData
@@ -180,6 +182,12 @@ export function TransactionsPage() {
     .map(pm => ({ value: pm.name, label: pm.name }))
 
   const activeProfessionals = professionals.filter(h => h.active)
+
+  function isDateLocked(date: string) {
+    const d = new Date(date + 'T00:00:00')
+    return lockedPeriods.some(p => p.year === d.getFullYear() && p.month === d.getMonth() + 1)
+  }
+
 
   const allCategoryOptions = [
     { value: '', label: 'Todas las categorías' },
@@ -254,6 +262,10 @@ export function TransactionsPage() {
       setFormError('Fecha y al menos un pago con monto son obligatorios.')
       return
     }
+    if (isDateLocked(draft.date)) {
+      setFormError('El período de esa fecha está cerrado. No se pueden crear transacciones en períodos cerrados.')
+      return
+    }
     const isSeña = draft.description.trim().toLowerCase() === 'seña'
     const tx = await createTx.mutateAsync({
       date: draft.date,
@@ -292,6 +304,10 @@ export function TransactionsPage() {
       setFormError('Fecha y al menos un pago con monto son obligatorios.')
       return
     }
+    if (isDateLocked(editForm.date)) {
+      setFormError('El período de esa fecha está cerrado. No se pueden editar transacciones en períodos cerrados.')
+      return
+    }
     const isSeña = editForm.description.trim().toLowerCase() === 'seña'
     await updateTx.mutateAsync({
       id: editing!.id,
@@ -311,6 +327,11 @@ export function TransactionsPage() {
   }
 
   async function handleVoid(id: string) {
+    const tx = transactions.find(t => t.id === id)
+    if (tx && isDateLocked(tx.date)) {
+      alert('El período de esa transacción está cerrado. No se pueden anular transacciones en períodos cerrados.')
+      return
+    }
     if (!confirm('¿Anular esta transacción? La acción quedará registrada.')) return
     await voidTx.mutateAsync(id)
   }
@@ -622,7 +643,7 @@ export function TransactionsPage() {
       className: 'w-20',
       render: (tx: Transaction) => (
         <div className="flex items-center gap-1 justify-end">
-          {!tx.voided_at && (
+          {!tx.voided_at && !isDateLocked(tx.date) && (
             <button
               onClick={() => openEdit(tx)}
               className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
@@ -630,7 +651,7 @@ export function TransactionsPage() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
           )}
-          {!tx.voided_at && (
+          {!tx.voided_at && !isDateLocked(tx.date) && (
             <button
               onClick={() => handleVoid(tx.id)}
               title="Anular"
