@@ -45,7 +45,7 @@
 
 - [x] **Add query params for tabs** — Every page with tabs must reflect the active tab in the URL as a query param (e.g., `?tab=comisiones`). Applies to all pages: Reportes, Ajustes, and any other page with tabs. Enables browser back/forward navigation and direct linking to a specific tab.
 
-- [ ] **Add reserves from bank** - Report with general balance (Bank, Cashflow, Utility...).
+- [x] **Add reserves from bank** - Report with general balance (Bank, Cashflow, Utility...).
 
 - [ ] **Agregar cuentas por cobrar**
 

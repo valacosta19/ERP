@@ -61,7 +61,7 @@ function calcTotal(payments: PaymentRow[]) {
 const CURRENCY_SYMBOL: Record<Currency, string> = { ARS: '$', USD: 'U$D', EUR: '€' }
 
 function formatAmount(type: TransactionType, amount: number, currency: Currency) {
-  const sign = type === 'income' ? '+' : '-'
+  const sign = type === 'income' ? '+' : type === 'expense' ? '-' : ''
   const sym = CURRENCY_SYMBOL[currency]
   return `${sign}${sym}${amount.toLocaleString('es-CO')}`
 }
@@ -631,7 +631,7 @@ export function TransactionsPage() {
       render: (tx: Transaction) => {
         const total = tx.amount
         return (
-          <span className={`font-semibold tabular-nums ${tx.type === 'income' ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`} style={tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' } : undefined}>
+          <span className={`font-semibold tabular-nums ${tx.type === 'income' ? 'text-[var(--color-success)]' : tx.type === 'expense' ? 'text-[var(--color-danger)]' : 'text-[var(--color-muted)]'}`} style={tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' } : undefined}>
             {formatAmount(tx.type, total, tx.currency)}
           </span>
         )
@@ -691,6 +691,7 @@ export function TransactionsPage() {
               { value: 'all', label: 'Todos' },
               { value: 'income', label: 'Ingreso' },
               { value: 'expense', label: 'Gasto' },
+              { value: 'transfer', label: 'Transferencia' },
             ]}
             value={typeFilter}
             onChange={e => { setTypeFilter(e.target.value as typeof typeFilter); setCategoryFilter('') }}

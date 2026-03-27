@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Trash2, Plus, ArrowRight } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
-import { useFinancialReport } from '@/hooks/useReports'
+import { usePaymentMethodBalances } from '@/hooks/useTransactions'
 import { useReserveAccounts, useCreateReserveAccount, useDeleteReserveAccount } from '@/hooks/useReserveAccounts'
 import { useReserveMovements, useCreateReserveMovement } from '@/hooks/useReserveMovements'
 
@@ -14,7 +14,8 @@ function today() {
 }
 
 export function FondosPage() {
-  const financial = useFinancialReport()
+  const { data: paymentBalances = [] } = usePaymentMethodBalances()
+  const [selectedMethod, setSelectedMethod] = useState<string>('')
   const { data: reserves = [] } = useReserveAccounts()
   const { data: movements = [] } = useReserveMovements()
   const createReserve = useCreateReserveAccount()
@@ -27,12 +28,25 @@ export function FondosPage() {
   const [date, setDate] = useState(today())
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [transferError, setTransferError] = useState<string | null>(null)
 
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [addingReserve, setAddingReserve] = useState(false)
 
-  const { summary } = financial.data ?? { summary: { total_income: 0, total_expense: 0, balance: 0 } }
+  const arsBalanceByMethod = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const b of paymentBalances) {
+      const ars = b.currencies.find(c => c.currency === 'ARS')
+      map.set(b.method, ars?.balance ?? 0)
+    }
+    return map
+  }, [paymentBalances])
+
+  const baseBalance = useMemo(() => {
+    if (!selectedMethod) return [...arsBalanceByMethod.values()].reduce((s, v) => s + v, 0)
+    return arsBalanceByMethod.get(selectedMethod) ?? 0
+  }, [selectedMethod, arsBalanceByMethod])
 
   const reserveBalances = useMemo(() => {
     const map = new Map<string, number>()
@@ -48,8 +62,8 @@ export function FondosPage() {
     return sum
   }, [reserveBalances])
 
-  const mainBalance = summary.total_income - summary.total_expense
-  const netBalance = mainBalance + totalReserved
+  const netBalance = baseBalance
+  const mainBalance = baseBalance - totalReserved
 
   async function handleTransfer(e: React.FormEvent) {
     e.preventDefault()
@@ -59,11 +73,14 @@ export function FondosPage() {
     const reserve = reserves.find(r => r.id === selectedReserve)
     if (!reserve) return
     setSubmitting(true)
+    setTransferError(null)
     try {
       await createMovement.mutateAsync({ reserve_id: selectedReserve, reserve_name: reserve.name, amount: finalAmount, date, note: note || null })
       setAmount('')
       setNote('')
       setDate(today())
+    } catch (err) {
+      setTransferError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
       setSubmitting(false)
     }
@@ -86,9 +103,22 @@ export function FondosPage() {
       <div className="flex-1 overflow-auto p-6 flex flex-col gap-8">
 
         <section>
-          <h2 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--color-muted)' }}>
-            Saldos actuales
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
+              Saldos actuales
+            </h2>
+            <select
+              value={selectedMethod}
+              onChange={e => setSelectedMethod(e.target.value)}
+              className="rounded-lg border px-3 py-1.5 text-sm"
+              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+            >
+              <option value="">Todos los métodos</option>
+              {paymentBalances.map(b => (
+                <option key={b.method} value={b.method}>{b.method}</option>
+              ))}
+            </select>
+          </div>
           <div className="flex flex-wrap gap-3">
             <div
               className="rounded-xl border p-5 min-w-[180px]"
@@ -145,6 +175,7 @@ export function FondosPage() {
               Creá una reserva primero para poder registrar transferencias.
             </p>
           ) : (
+            <>
             <form onSubmit={handleTransfer} className="flex flex-wrap gap-3 items-end">
               <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
                 <button
@@ -224,6 +255,10 @@ export function FondosPage() {
                 Registrar
               </button>
             </form>
+            {transferError && (
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-danger)' }}>{transferError}</p>
+            )}
+          </>
           )}
         </section>
 

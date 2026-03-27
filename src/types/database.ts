@@ -47,7 +47,7 @@ export interface Database {
         Row: {
           id: string
           date: string
-          type: 'income' | 'expense'
+          type: 'income' | 'expense' | 'transfer'
           amount: number
           currency: 'ARS' | 'USD' | 'EUR'
           category_id: string | null
@@ -63,7 +63,7 @@ export interface Database {
         Insert: {
           id?: string
           date: string
-          type: 'income' | 'expense'
+          type: 'income' | 'expense' | 'transfer'
           amount: number
           currency?: 'ARS' | 'USD' | 'EUR'
           category_id?: string | null
@@ -79,7 +79,7 @@ export interface Database {
         Update: {
           id?: string
           date?: string
-          type?: 'income' | 'expense'
+          type?: 'income' | 'expense' | 'transfer'
           amount?: number
           currency?: 'ARS' | 'USD' | 'EUR'
           category_id?: string | null

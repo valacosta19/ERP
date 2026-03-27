@@ -60,6 +60,7 @@ export function useFinancialReport(filters: { from?: string; to?: string; curren
         .from('transactions')
         .select('type, amount, category_id, categories(name)')
         .is('voided_at', null)
+        .neq('type', 'transfer')
 
       if (filters.from) query = query.gte('date', filters.from)
       if (filters.to) query = query.lte('date', filters.to)
@@ -229,7 +230,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
           } else if (cat === 'producto' && !saleItemTxIds.has(tx.id)) {
             byMonth.get(month)!.product_revenue += amountARS
           }
-        } else {
+        } else if (tx.type === 'expense') {
           byMonth.get(month)!.total_expenses += amountARS
         }
       }

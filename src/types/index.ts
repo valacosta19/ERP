@@ -1,7 +1,7 @@
 export type { Database } from './database'
 
 export type UserRole = 'admin' | 'employee'
-export type TransactionType = 'income' | 'expense'
+export type TransactionType = 'income' | 'expense' | 'transfer'
 export type Currency = 'ARS' | 'USD' | 'EUR'
 export type MovementType = 'in' | 'out' | 'adjustment'
 export type POStatus = 'draft' | 'received' | 'cancelled'

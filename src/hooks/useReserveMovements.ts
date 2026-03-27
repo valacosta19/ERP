@@ -46,7 +46,7 @@ export function useCreateReserveMovement() {
         .from('transactions')
         .insert({
           date: payload.date,
-          type: isDeposit ? 'expense' : 'income',
+          type: 'transfer',
           amount: Math.abs(payload.amount),
           currency: 'ARS',
           description,
