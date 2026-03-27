@@ -10,6 +10,7 @@ import {
   Settings,
   Scissors,
   LogOut,
+  PiggyBank,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -27,6 +28,7 @@ const navItems: NavItem[] = [
   { to: '/purchase-orders', icon: <ShoppingCart size={18} />, label: 'Pedidos' },
   { to: '/suppliers', icon: <Truck size={18} />, label: 'Proveedores' },
   { to: '/reports', icon: <BarChart2 size={18} />, label: 'Reportes' },
+  { to: '/fondos', icon: <PiggyBank size={18} />, label: 'Fondos', adminOnly: true },
   { to: '/import', icon: <FileSpreadsheet size={18} />, label: 'Importar', adminOnly: true },
   { to: '/settings', icon: <Settings size={18} />, label: 'Ajustes', adminOnly: true },
 ]

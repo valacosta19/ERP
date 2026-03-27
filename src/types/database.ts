@@ -114,6 +114,52 @@ export interface Database {
         Update: never
         Relationships: []
       }
+      reserve_accounts: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+        }
+        Relationships: []
+      }
+      reserve_movements: {
+        Row: {
+          id: string
+          reserve_id: string
+          amount: number
+          note: string | null
+          date: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          reserve_id: string
+          amount: number
+          note?: string | null
+          date: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          reserve_id?: string
+          amount?: number
+          note?: string | null
+          date?: string
+        }
+        Relationships: []
+      }
       locked_periods: {
         Row: {
           year: number

@@ -193,3 +193,19 @@ export interface ServiceCostRow {
   marginPct: number
   hasWarning: boolean
 }
+
+export interface ReserveAccount {
+  id: string
+  name: string
+  description: string | null
+  created_at: string
+}
+
+export interface ReserveMovement {
+  id: string
+  reserve_id: string
+  amount: number
+  note: string | null
+  date: string
+  created_at: string
+}
