@@ -22,18 +22,48 @@ export function useCreateReserveMovement() {
   return useMutation({
     mutationFn: async (payload: {
       reserve_id: string
+      reserve_name: string
       amount: number
       date: string
       note?: string | null
     }) => {
-      const { data, error } = await supabase
+      const { reserve_name, ...movementPayload } = payload
+
+      const { data: movement, error: movErr } = await supabase
         .from('reserve_movements')
-        .insert(payload)
+        .insert(movementPayload)
         .select()
         .single()
-      if (error) throw new Error(error.message)
-      return data as ReserveMovement
+      if (movErr) throw new Error(movErr.message)
+
+      const { data: { user } } = await supabase.auth.getUser()
+      const isDeposit = payload.amount > 0
+      const description = isDeposit
+        ? `Transferencia → ${reserve_name}`
+        : `Retorno ← ${reserve_name}`
+
+      const { error: txErr } = await supabase
+        .from('transactions')
+        .insert({
+          date: payload.date,
+          type: isDeposit ? 'expense' : 'income',
+          amount: Math.abs(payload.amount),
+          currency: 'ARS',
+          description,
+          category_id: null,
+          catalog_item_id: null,
+          is_seña: false,
+          seña_amount: null,
+          created_by: user?.id ?? null,
+        })
+      if (txErr) throw new Error(txErr.message)
+
+      return movement as ReserveMovement
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['reserve-movements'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reserve-movements'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['reports', 'financial'] })
+    },
   })
 }

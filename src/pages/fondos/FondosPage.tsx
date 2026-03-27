@@ -48,17 +48,19 @@ export function FondosPage() {
     return sum
   }, [reserveBalances])
 
-  const netBalance = summary.total_income - summary.total_expense
-  const mainBalance = netBalance - totalReserved
+  const mainBalance = summary.total_income - summary.total_expense
+  const netBalance = mainBalance + totalReserved
 
   async function handleTransfer(e: React.FormEvent) {
     e.preventDefault()
     const parsedAmount = parseFloat(amount)
     if (!parsedAmount || parsedAmount <= 0 || !selectedReserve || !date) return
     const finalAmount = direction === 'to_reserve' ? parsedAmount : -parsedAmount
+    const reserve = reserves.find(r => r.id === selectedReserve)
+    if (!reserve) return
     setSubmitting(true)
     try {
-      await createMovement.mutateAsync({ reserve_id: selectedReserve, amount: finalAmount, date, note: note || null })
+      await createMovement.mutateAsync({ reserve_id: selectedReserve, reserve_name: reserve.name, amount: finalAmount, date, note: note || null })
       setAmount('')
       setNote('')
       setDate(today())
