@@ -336,6 +336,7 @@ export interface Database {
           unit_cost: number | null
           reference_type: string | null
           reference_id: string | null
+          reason: string | null
           created_by: string | null
           created_at: string
         }
@@ -348,6 +349,7 @@ export interface Database {
           unit_cost?: number | null
           reference_type?: string | null
           reference_id?: string | null
+          reason?: string | null
           created_by?: string | null
           created_at?: string
         }

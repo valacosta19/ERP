@@ -123,6 +123,7 @@ export interface InventoryLot {
   notes: string | null
   created_at: string
   product?: Product
+  has_sales?: boolean
 }
 
 export interface InventoryMovement {

@@ -2,7 +2,7 @@
 
 ## Critical — Accounting Integrity
 
-- [ ] **Soft-delete transactions instead of hard-delete** — Deleting a transaction permanently erases it with no audit trail. Replace the delete action with a void/cancel mechanism: add a `voided_at` column to transactions, keep the record in the database, and exclude voided transactions from all reports and balances. Voided transactions remain visible in the list with a "Anulada" badge and can be filtered. Any user can void a transaction. Add a `user_action_logs` table to record who voided what and when (see non-essential log viewer item below).
+- [x] **Soft-delete transactions instead of hard-delete** — Deleting a transaction permanently erases it with no audit trail. Replace the delete action with a void/cancel mechanism: add a `voided_at` column to transactions, keep the record in the database, and exclude voided transactions from all reports and balances. Voided transactions remain visible in the list with a "Anulada" badge and can be filtered. Any user can void a transaction. Add a `user_action_logs` table to record who voided what and when (see non-essential log viewer item below).
 
 - [ ] **Inventory adjustments must generate a movement record** — Editing `remaining_quantity` directly on a lot (via the LotDrawer) bypasses the `inventory_movements` audit log entirely. Any change to stock quantity should insert an `adjustment` movement with the delta and an optional reason, so the movement log always reconciles with the lot quantities.
 
