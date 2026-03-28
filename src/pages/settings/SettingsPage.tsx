@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Plus, Trash2, Check, X, Pencil, UserPlus } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Plus, Trash2, Check, X, Pencil, UserPlus, Lock, LockOpen } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
 import { Select } from '@/components/ui/Select'
 import { InlineEditCell } from '@/components/ui/InlineEditCell'
-import { useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory } from '@/hooks/useCategories'
+import { useTransactionCategories, useCreateTransactionCategory, useUpdateTransactionCategory, useDeleteTransactionCategory } from '@/hooks/useTransactionCategories'
 import { useProfessionals, useCreateProfessional, useUpdateProfessional, useDeleteProfessional } from '@/hooks/useProfessionals'
 import { useCatalogItems, useCreateCatalogItem, useUpdateCatalogItem, useDeleteCatalogItem, useUpdateCatalogItemHours } from '@/hooks/useCatalogItems'
 import { usePaymentMethods, useCreatePaymentMethod, useUpdatePaymentMethod, useDeletePaymentMethod } from '@/hooks/usePaymentMethods'
@@ -12,6 +13,8 @@ import { useAuth, useUpdateProfile, useUsers, useInviteUser, useUpdateUserRole }
 import { useFixedCosts, useCreateFixedCost, useUpdateFixedCost, useDeleteFixedCost } from '@/hooks/useFixedCosts'
 import { useServiceRecipes, useUpsertServiceRecipes } from '@/hooks/useServiceRecipes'
 import { useProducts } from '@/hooks/useProducts'
+import { useLockedPeriods, useLockPeriod, useUnlockPeriod } from '@/hooks/useLockedPeriods'
+import type { LockedPeriod } from '@/hooks/useLockedPeriods'
 import type { Professional, PaymentMethodConfig, FixedCost, Product } from '@/types'
 
 function DraftInput({
@@ -166,12 +169,87 @@ function BusinessNameCard({ name, onSave }: { name: string; onSave: (v: string) 
   )
 }
 
-type SettingsTab = 'general' | 'operaciones' | 'costos' | 'catalogo'
+const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
+function PeriodLockList({
+  lockedPeriods,
+  onLock,
+  onUnlock,
+}: {
+  lockedPeriods: LockedPeriod[]
+  onLock: (year: number, month: number) => Promise<void>
+  onUnlock: (year: number, month: number) => Promise<void>
+}) {
+  const now = new Date()
+  const rows: { year: number; month: number }[] = []
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    rows.push({ year: d.getFullYear(), month: d.getMonth() + 1 })
+  }
+  const [pending, setPending] = useState<string | null>(null)
+
+  async function toggle(year: number, month: number, isLocked: boolean) {
+    const key = `${year}-${month}`
+    setPending(key)
+    try {
+      if (isLocked) {
+        await onUnlock(year, month)
+      } else {
+        await onLock(year, month)
+      }
+    } finally {
+      setPending(null)
+    }
+  }
+
+  return (
+    <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+      {rows.map(({ year, month }) => {
+        const isLocked = lockedPeriods.some(p => p.year === year && p.month === month)
+        const key = `${year}-${month}`
+        const isPending = pending === key
+        return (
+          <div key={key} className="flex items-center justify-between px-4 py-3">
+            <span className="text-sm text-[var(--color-text)]">
+              {MONTH_NAMES[month - 1]} {year}
+            </span>
+            <div className="flex items-center gap-3">
+              {isLocked && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: 'var(--color-danger-light)', color: 'var(--color-danger)' }}>
+                  Cerrado
+                </span>
+              )}
+              <button
+                onClick={() => toggle(year, month, isLocked)}
+                disabled={isPending}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40"
+                style={isLocked
+                  ? { borderColor: 'var(--color-border)', color: 'var(--color-muted)', background: 'var(--color-bg)' }
+                  : { borderColor: 'var(--color-accent)', color: 'var(--color-accent)', background: 'var(--color-accent-light)' }
+                }
+              >
+                {isLocked ? <LockOpen size={12} /> : <Lock size={12} />}
+                {isLocked ? 'Reabrir' : 'Cerrar'}
+              </button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+type SettingsTab = 'general' | 'operaciones' | 'costos' | 'catalogo' | 'periodos'
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = (searchParams.get('tab') as SettingsTab) ?? 'general'
+  function setActiveTab(tab: SettingsTab) {
+    setSearchParams(prev => { prev.set('tab', tab); return prev })
+  }
   const [addingCat, setAddingCat] = useState(false)
   const [catDraft, setCatDraft] = useState('')
+  const [catParentDraft, setCatParentDraft] = useState('')
   const catInputRef = useRef<HTMLInputElement>(null)
 
   const [addingHd, setAddingHd] = useState(false)
@@ -185,10 +263,13 @@ export function SettingsPage() {
   const [catalogDraftPriceCard, setCatalogDraftPriceCard] = useState('')
   const catalogNameRef = useRef<HTMLInputElement>(null)
 
-  const { data: categories = [], isLoading: catsLoading } = useCategories()
-  const createCat = useCreateCategory()
-  const updateCat = useUpdateCategory()
-  const deleteCat = useDeleteCategory()
+  const { data: txCategories = [], isLoading: catsLoading } = useTransactionCategories()
+  const createCat = useCreateTransactionCategory()
+  const updateCat = useUpdateTransactionCategory()
+  const deleteCat = useDeleteTransactionCategory()
+
+  const categories = txCategories.filter(c => c.parent_id !== null)
+  const parentCategories = txCategories.filter(c => c.parent_id === null)
 
   const { data: professionals = [], isLoading: hdsLoading } = useProfessionals()
   const createHd = useCreateProfessional()
@@ -222,6 +303,10 @@ export function SettingsPage() {
   const { data: users = [] } = useUsers()
   const inviteUser = useInviteUser()
   const updateUserRole = useUpdateUserRole()
+
+  const { data: lockedPeriods = [] } = useLockedPeriods()
+  const lockPeriod = useLockPeriod()
+  const unlockPeriod = useUnlockPeriod()
 
   function startAddUser() {
     setAddingUser(true)
@@ -262,19 +347,22 @@ export function SettingsPage() {
   function startAddCat() {
     setAddingCat(true)
     setCatDraft('')
+    setCatParentDraft('')
     setTimeout(() => catInputRef.current?.focus(), 0)
   }
 
   async function saveCat() {
-    if (!catDraft.trim()) return
-    await createCat.mutateAsync({ name: catDraft.trim() })
+    if (!catDraft.trim() || !catParentDraft) return
+    await createCat.mutateAsync({ name: catDraft.trim(), parent_id: catParentDraft })
     setAddingCat(false)
     setCatDraft('')
+    setCatParentDraft('')
   }
 
   function cancelCat() {
     setAddingCat(false)
     setCatDraft('')
+    setCatParentDraft('')
   }
 
   function handleCatKeyDown(e: React.KeyboardEvent) {
@@ -366,7 +454,6 @@ export function SettingsPage() {
     const priceCard = parseFloat(catalogDraftPriceCard)
     await createCatalogItem.mutateAsync({
       name: catalogDraftName.trim(),
-      category_id: addingCatalogFor,
       price: parseFloat(catalogDraftPrice) || 0,
       price_transfer: isNaN(priceTransfer) ? null : priceTransfer,
       price_card: isNaN(priceCard) ? null : priceCard,
@@ -396,9 +483,6 @@ export function SettingsPage() {
     await deleteCatalogItem.mutateAsync(id)
   }
 
-  const serviceCategories = categories.filter(c =>
-    c.name.toLowerCase() === 'servicio' || c.name.toLowerCase() === 'producto'
-  )
 
   const { data: fixedCosts = [], isLoading: fcLoading } = useFixedCosts()
   const createFc = useCreateFixedCost()
@@ -456,11 +540,8 @@ export function SettingsPage() {
   const upsertRecipes = useUpsertServiceRecipes()
 
   const serviceItems = useMemo(
-    () => allCatalogItems.filter(ci => {
-      const cat = categories.find(c => c.id === ci.category_id)
-      return cat?.name.toLowerCase() === 'servicio'
-    }),
-    [allCatalogItems, categories]
+    () => allCatalogItems.filter(ci => ci.name.toLowerCase() !== 'seña'),
+    [allCatalogItems]
   )
 
   const [selectedServiceId, setSelectedServiceId] = useState<string>('')
@@ -519,6 +600,7 @@ export function SettingsPage() {
     operaciones: 'Operaciones',
     costos: 'Costos',
     catalogo: 'Catálogo',
+    periodos: 'Períodos',
   }
 
   return (
@@ -904,6 +986,14 @@ export function SettingsPage() {
                   >
                     Nueva
                   </span>
+                  <select
+                    value={catParentDraft}
+                    onChange={e => setCatParentDraft(e.target.value)}
+                    style={{ fontSize: '12px', padding: '4px 6px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
+                  >
+                    <option value="">Grupo...</option>
+                    {parentCategories.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
                   <DraftInput
                     inputRef={catInputRef}
                     value={catDraft}
@@ -914,7 +1004,7 @@ export function SettingsPage() {
                   />
                   <button
                     onClick={saveCat}
-                    disabled={createCat.isPending || !catDraft.trim()}
+                    disabled={createCat.isPending || !catDraft.trim() || !catParentDraft}
                     className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
                     style={{ background: 'var(--color-accent)', color: '#fff' }}
                   >
@@ -1161,20 +1251,17 @@ export function SettingsPage() {
         </>)}
 
         {activeTab === 'catalogo' && (
-        <>{serviceCategories.length > 0 && (
+        <>
           <section>
             <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Catálogo</h2>
             <div className="space-y-4">
-              {serviceCategories.map(cat => {
-                const items = catalogItems.filter(ci => ci.category_id === cat.id)
-                return (
-                  <div key={cat.id}>
+              <div>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
-                        {cat.name}
+                        Servicios
                       </span>
                       <button
-                        onClick={() => startAddCatalogItem(cat.id)}
+                        onClick={() => startAddCatalogItem('__catalog__')}
                         disabled={addingCatalogFor !== null}
                         className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
                       >
@@ -1182,10 +1269,10 @@ export function SettingsPage() {
                       </button>
                     </div>
                     <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
-                      {items.length === 0 && addingCatalogFor !== cat.id && (
+                      {catalogItems.length === 0 && addingCatalogFor !== '__catalog__' && (
                         <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin items</p>
                       )}
-                      {items.map(item => (
+                      {catalogItems.map(item => (
                         <div key={item.id} className="flex items-center justify-between px-4 py-3">
                           <div className="flex items-center gap-6 flex-1 min-w-0">
                             <InlineEditCell
@@ -1239,7 +1326,7 @@ export function SettingsPage() {
                           </button>
                         </div>
                       ))}
-                      {addingCatalogFor === cat.id && (
+                      {addingCatalogFor === '__catalog__' && (
                         <div
                           className="flex items-center gap-2 px-4 py-2.5 animate-slide-in"
                           style={{
@@ -1302,12 +1389,24 @@ export function SettingsPage() {
                         </div>
                       )}
                     </div>
-                  </div>
-                )
-              })}
+              </div>
             </div>
           </section>
-        )}</>)}
+        </>)}
+
+        {activeTab === 'periodos' && profile?.role === 'admin' && (
+        <section>
+          <h2 className="text-sm font-semibold text-[var(--color-text)] mb-1">Períodos cerrados</h2>
+          <p className="text-xs text-[var(--color-muted)] mb-4">
+            Un período cerrado impide crear, editar o anular transacciones con fecha dentro de ese mes. El cierre se aplica a todos los usuarios.
+          </p>
+          <PeriodLockList
+            lockedPeriods={lockedPeriods}
+            onLock={async (year, month) => { await lockPeriod.mutateAsync({ year, month }) }}
+            onUnlock={async (year, month) => { await unlockPeriod.mutateAsync({ year, month }) }}
+          />
+        </section>
+        )}
       </div>
     </div>
   )

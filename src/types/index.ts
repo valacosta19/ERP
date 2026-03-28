@@ -1,7 +1,7 @@
 export type { Database } from './database'
 
 export type UserRole = 'admin' | 'employee'
-export type TransactionType = 'income' | 'expense'
+export type TransactionType = 'income' | 'expense' | 'transfer'
 export type Currency = 'ARS' | 'USD' | 'EUR'
 export type MovementType = 'in' | 'out' | 'adjustment'
 export type POStatus = 'draft' | 'received' | 'cancelled'
@@ -17,9 +17,11 @@ export interface Profile {
   created_at: string
 }
 
-export interface Category {
+export interface TransactionCategory {
   id: string
   name: string
+  parent_id: string | null
+  transaction_type: 'income' | 'expense' | 'transfer' | null
   created_at: string
 }
 
@@ -46,17 +48,18 @@ export interface TransactionPayment {
 export interface Transaction {
   id: string
   date: string
-  type: TransactionType
   amount: number
   currency: Currency
-  category_id: string | null
+  subcategory_id: string | null
   catalog_item_id: string | null
   description: string | null
   created_by: string | null
   created_at: string
   is_seña: boolean
   seña_amount: number | null
-  category?: Category
+  voided_at: string | null
+  voided_by: string | null
+  subcategory?: TransactionCategory
   payments?: TransactionPayment[]
   professionals?: ProfessionalAssignment[]
 }
@@ -121,6 +124,7 @@ export interface InventoryLot {
   notes: string | null
   created_at: string
   product?: Product
+  has_sales?: boolean
 }
 
 export interface InventoryMovement {
@@ -158,7 +162,6 @@ export interface PaymentMethodConfig {
 export interface CatalogItem {
   id: string
   name: string
-  category_id: string | null
   price: number
   price_transfer?: number | null
   price_card?: number | null
@@ -189,4 +192,68 @@ export interface ServiceCostRow {
   margin: number
   marginPct: number
   hasWarning: boolean
+}
+
+export interface ReserveAccount {
+  id: string
+  name: string
+  description: string | null
+  created_at: string
+}
+
+export interface ReserveMovement {
+  id: string
+  reserve_id: string
+  amount: number
+  note: string | null
+  date: string
+  created_at: string
+}
+
+export interface SupplierDebt {
+  id: string
+  purchase_order_id: string | null
+  supplier_id: string | null
+  total_amount: number
+  paid_amount: number
+  due_date: string | null
+  notes: string | null
+  created_at: string
+  supplier?: Supplier
+  payments?: SupplierDebtPayment[]
+}
+
+export interface SupplierDebtPayment {
+  id: string
+  debt_id: string
+  amount: number
+  payment_method: string
+  date: string
+  transaction_id: string | null
+  notes: string | null
+  created_at: string
+}
+
+export interface Receivable {
+  id: string
+  debtor_name: string
+  concept: string
+  total_amount: number
+  collected_amount: number
+  due_date: string | null
+  notes: string | null
+  created_at: string
+  created_by: string | null
+  collections?: ReceivableCollection[]
+}
+
+export interface ReceivableCollection {
+  id: string
+  receivable_id: string
+  amount: number
+  payment_method: string
+  date: string
+  transaction_id: string | null
+  notes: string | null
+  created_at: string
 }

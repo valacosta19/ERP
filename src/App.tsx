@@ -12,6 +12,8 @@ import { SuppliersPage } from '@/pages/suppliers/SuppliersPage'
 import { ReportsPage } from '@/pages/reports/ReportsPage'
 import { ImportPage } from '@/pages/import/ImportPage'
 import { SettingsPage } from '@/pages/settings/SettingsPage'
+import { FondosPage } from '@/pages/fondos/FondosPage'
+import { CuentasPage } from '@/pages/cuentas/CuentasPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -55,6 +57,22 @@ export default function App() {
               element={
                 <AuthGuard requireAdmin>
                   <ErrorBoundary><SettingsPage /></ErrorBoundary>
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/fondos"
+              element={
+                <AuthGuard requireAdmin>
+                  <ErrorBoundary><FondosPage /></ErrorBoundary>
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/cuentas"
+              element={
+                <AuthGuard requireAdmin>
+                  <ErrorBoundary><CuentasPage /></ErrorBoundary>
                 </AuthGuard>
               }
             />

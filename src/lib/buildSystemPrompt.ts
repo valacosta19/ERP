@@ -179,7 +179,7 @@ export function buildSystemPrompt(snapshot: BusinessSnapshot): string {
   } else {
     lines.push('Fecha | Tipo | Categoría | Monto | Moneda')
     for (const tx of snapshot.recentTransactions) {
-      lines.push(`${tx.date} | ${tx.type === 'income' ? 'Ingreso' : 'Egreso'} | ${tx.category ?? 'Sin categoría'} | ${fmtN(tx.amount)} | ${tx.currency}`)
+      lines.push(`${tx.date} | ${tx.type === 'income' ? 'Ingreso' : tx.type === 'transfer' ? 'Transferencia' : 'Egreso'} | ${tx.category ?? 'Sin categoría'} | ${fmtN(tx.amount)} | ${tx.currency}`)
     }
   }
 

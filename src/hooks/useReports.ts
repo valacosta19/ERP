@@ -19,7 +19,7 @@ export type ProfitReport = {
 }
 
 export type FinancialCategoryRow = {
-  category_id: string | null
+  subcategory_id: string | null
   category_name: string
   income: number
   expense: number
@@ -39,10 +39,9 @@ export type InventoryValuationRow = {
 }
 
 type RawTx = {
-  type: string
   amount: number
-  category_id: string | null
-  categories: { name: string } | null
+  subcategory_id: string | null
+  transaction_categories: { id: string; name: string; parent_id: string | null; transaction_type: string | null } | null
 }
 
 type RawLot = {
@@ -58,7 +57,8 @@ export function useFinancialReport(filters: { from?: string; to?: string; curren
     queryFn: async () => {
       let query = supabase
         .from('transactions')
-        .select('type, amount, category_id, categories(name)')
+        .select('amount, subcategory_id, transaction_categories!subcategory_id(id, name, parent_id, transaction_type)')
+        .is('voided_at', null)
 
       if (filters.from) query = query.gte('date', filters.from)
       if (filters.to) query = query.lte('date', filters.to)
@@ -71,9 +71,10 @@ export function useFinancialReport(filters: { from?: string; to?: string; curren
       const map = new Map<string, FinancialCategoryRow>()
 
       for (const row of rows) {
-        const key = row.category_id ?? '__none__'
-        const income = row.type === 'income' ? Number(row.amount) : 0
-        const expense = row.type === 'expense' ? Number(row.amount) : 0
+        if (row.transaction_categories?.transaction_type === 'transfer') continue
+        const key = row.subcategory_id ?? '__none__'
+        const income = row.transaction_categories?.transaction_type === 'income' ? Number(row.amount) : 0
+        const expense = row.transaction_categories?.transaction_type === 'expense' ? Number(row.amount) : 0
         const existing = map.get(key)
         if (existing) {
           existing.income += income
@@ -81,8 +82,8 @@ export function useFinancialReport(filters: { from?: string; to?: string; curren
           existing.balance = existing.income - existing.expense
         } else {
           map.set(key, {
-            category_id: row.category_id,
-            category_name: row.categories?.name ?? 'Sin categoría',
+            subcategory_id: row.subcategory_id,
+            category_name: row.transaction_categories?.name ?? 'Sin categoría',
             income,
             expense,
             balance: income - expense,
@@ -148,12 +149,11 @@ type RawSaleItem = {
 type RawTxProfit = {
   id: string
   date: string
-  type: string
   amount: number
   seña_amount: number | null
   is_seña: boolean
   currency: string
-  categories: { name: string } | null
+  transaction_categories: { name: string; transaction_type: string | null } | null
 }
 
 function monthLabel(month: string) {
@@ -171,7 +171,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
 
       const [saleItemsRes, txRes] = await Promise.all([
         supabase.from('sale_items').select('transaction_id, quantity, unit_cost, unit_sale_price, transactions(date)'),
-        supabase.from('transactions').select('id, date, type, amount, seña_amount, is_seña, currency, categories(name)'),
+        supabase.from('transactions').select('id, date, amount, seña_amount, is_seña, currency, transaction_categories!subcategory_id(name, transaction_type)').is('voided_at', null),
       ])
       if (saleItemsRes.error) throw new Error(saleItemsRes.error.message)
       if (txRes.error) throw new Error(txRes.error.message)
@@ -220,15 +220,15 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
         if (tx.is_seña) continue
         const serviceTotal = Number(tx.amount) + Number(tx.seña_amount ?? 0)
         const amountARS = toARS(serviceTotal, tx.currency)
-        if (tx.type === 'income') {
+        if (tx.transaction_categories?.transaction_type === 'income') {
           totalIncomeByMonth.set(month, (totalIncomeByMonth.get(month) ?? 0) + amountARS)
-          const cat = tx.categories?.name?.toLowerCase()
+          const cat = tx.transaction_categories?.name?.toLowerCase()
           if (cat === 'servicio') {
             byMonth.get(month)!.service_income += amountARS
-          } else if (cat === 'producto' && !saleItemTxIds.has(tx.id)) {
+          } else if (cat === 'produto' && !saleItemTxIds.has(tx.id)) {
             byMonth.get(month)!.product_revenue += amountARS
           }
-        } else {
+        } else if (tx.transaction_categories?.transaction_type === 'expense') {
           byMonth.get(month)!.total_expenses += amountARS
         }
       }

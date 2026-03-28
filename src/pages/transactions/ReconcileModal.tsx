@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
 import { supabase } from '@/lib/supabaseClient'
 import { useProducts } from '@/hooks/useProducts'
-import { useCategories } from '@/hooks/useCategories'
+import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useQueryClient } from '@tanstack/react-query'
 import { formatDate } from '@/lib/formatDate'
@@ -29,10 +29,10 @@ export function ReconcileModal({ open, onClose }: Props) {
   const [errors, setErrors] = useState<string[]>([])
   const { data: products = [] } = useProducts()
   const { data: catalogItems = [] } = useCatalogItems()
-  const { data: categories = [] } = useCategories()
+  const { data: txCategories = [] } = useTransactionCategories()
   const queryClient = useQueryClient()
 
-  const productoCatId = categories.find(c => c.name.toLowerCase() === 'producto')?.id ?? null
+  const productoCatId = txCategories.find(c => c.name.toLowerCase() === 'producto')?.id ?? null
 
   useEffect(() => {
     if (!open) return
@@ -43,10 +43,15 @@ export function ReconcileModal({ open, onClose }: Props) {
 
   async function loadUnlinked() {
     setLoading(true)
+    const { data: incomeSubcats } = await supabase
+      .from('transaction_categories')
+      .select('id')
+      .eq('transaction_type', 'income')
+
     const { data, error } = await supabase
       .from('transactions')
       .select('id, date, description, amount, sale_items(id)')
-      .eq('type', 'income')
+      .in('subcategory_id', (incomeSubcats ?? []).map(s => s.id))
       .order('date', { ascending: false })
     if (error) throw new Error(error.message)
     const unlinked = ((data as unknown as (UnlinkedTx & { sale_items: { id: string }[] })[]) ?? [])
@@ -76,20 +81,19 @@ export function ReconcileModal({ open, onClose }: Props) {
 
     for (const [txId, val] of mapped) {
       const tx = rows.find(r => r.id === txId)!
-      const [kind, itemId] = val.split(':')
+      const [kind] = val.split(':')
 
       if (kind === 'service') {
-        const svc = catalogItems.find(c => c.id === itemId)
-        const catId = svc?.category_id ?? null
-        if (catId) {
-          const { error } = await supabase.from('transactions').update({ category_id: catId }).eq('id', txId)
+        const subcatId = txCategories.find(c => c.name.toLowerCase() === 'servicio')?.id ?? null
+        if (subcatId) {
+          const { error } = await supabase.from('transactions').update({ subcategory_id: subcatId }).eq('id', txId)
           if (error) errs.push(`${formatDate(tx.date)} "${tx.description ?? ''}": ${error.message}`)
         }
       } else {
         if (!productoCatId) continue
         const { error } = await supabase
           .from('transactions')
-          .update({ category_id: productoCatId })
+          .update({ subcategory_id: productoCatId })
           .eq('id', txId)
         if (error) errs.push(`${formatDate(tx.date)} "${tx.description ?? ''}": ${error.message}`)
       }

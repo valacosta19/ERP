@@ -10,6 +10,41 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 25** — ✅ Completa
+
+### Cambios implementados en Phase 25
+
+#### Feature: Cuentas por Pagar y Cuentas por Cobrar
+
+**Migraciones:**
+- **`040_supplier_debts.sql`**: tabla `supplier_debts` (id, purchase_order_id, supplier_id, total_amount, paid_amount, due_date, notes, created_at) + tabla `supplier_debt_payments` (id, debt_id, amount, payment_method, date, transaction_id, notes, created_at). RLS admin-only.
+- **`041_receivables.sql`**: tabla `receivables` (id, debtor_name, concept, total_amount, collected_amount, due_date, notes, created_at, created_by) + tabla `receivable_collections` (id, receivable_id, amount, payment_method, date, transaction_id, notes, created_at). RLS admin-only.
+
+**Tipos:**
+- `database.ts`: 4 nuevas tablas: `supplier_debts`, `supplier_debt_payments`, `receivables`, `receivable_collections`.
+- `index.ts`: interfaces `SupplierDebt`, `SupplierDebtPayment`, `Receivable`, `ReceivableCollection`.
+
+**Hooks nuevos:**
+- **`useSupplierDebts.ts`**: `useSupplierDebts()`, `useCreateSupplierDebt()`, `useRecordSupplierDebtPayment()` — el pago actualiza `paid_amount` en la deuda.
+- **`useReceivables.ts`**: `useReceivables()`, `useCreateReceivable()`, `useRecordReceivableCollection()` — el cobro actualiza `collected_amount`.
+
+**Hook actualizado:**
+- **`usePurchaseOrders.ts`**: `useReceivePurchaseOrder` acepta `totalAmount` y `paymentOption: POPaymentOption` (`'immediate'` | `'deferred'` | `'none'`). Si `immediate`: crea transacción de salida con subcategoría "Productos profesionales" y el método de pago seleccionado. Si `deferred`: crea registro en `supplier_debts`.
+
+**UI — PO Receive modal:**
+- Nuevo panel "Pago" con 3 opciones (Sin registrar / Pago inmediato / Diferido).
+- Si inmediato: selector de método de pago + fecha.
+- Si diferido: campo de fecha de vencimiento opcional.
+
+**UI — Nueva página `/cuentas`:**
+- Tab "Cuentas por Pagar": lista de deudas a proveedores con proveedor, total, pendiente, vencimiento, estado (Pendiente/Vencida/Pagado). Expand para ver pagos. Botón "Registrar pago" con modal.
+- Tab "Cuentas por Cobrar": lista de receivables con deudor, concepto, total, pendiente, vencimiento, estado (Pendiente/Vencida/Cobrado). Expand para ver cobros. Botón "Nueva cuenta por cobrar" y "Registrar cobro".
+- URL query param `?tab=pagar|cobrar` para navegación directa.
+- Acceso admin-only desde sidebar (icono BookOpen).
+
+---
+
+## Current phase (anterior)
 **Phase 24** — ✅ Completa
 
 ### Cambios implementados en Phase 24

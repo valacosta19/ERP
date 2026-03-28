@@ -1,61 +1,62 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
-import type { Category } from '@/types'
+import type { TransactionCategory } from '@/types'
 
-export function useCategories() {
+export function useTransactionCategories() {
   return useQuery({
-    queryKey: ['categories'],
+    queryKey: ['transaction-categories'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('categories')
+        .from('transaction_categories')
         .select('*')
+        .order('parent_id', { nullsFirst: true })
         .order('name')
       if (error) throw new Error(error.message)
-      return data as Category[]
+      return data as TransactionCategory[]
     },
   })
 }
 
-export function useCreateCategory() {
+export function useCreateTransactionCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (payload: { name: string }) => {
+    mutationFn: async (payload: { name: string; parent_id: string }) => {
       const { data, error } = await supabase
-        .from('categories')
+        .from('transaction_categories')
         .insert(payload)
         .select()
         .single()
       if (error) throw new Error(error.message)
-      return data as Category
+      return data as TransactionCategory
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['transaction-categories'] }),
   })
 }
 
-export function useUpdateCategory() {
+export function useUpdateTransactionCategory() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
       const { data, error } = await supabase
-        .from('categories')
+        .from('transaction_categories')
         .update({ name })
         .eq('id', id)
         .select()
         .single()
       if (error) throw new Error(error.message)
-      return data as Category
+      return data as TransactionCategory
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['transaction-categories'] }),
   })
 }
 
-export function useDeleteCategory() {
+export function useDeleteTransactionCategory() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('categories').delete().eq('id', id)
+      const { error } = await supabase.from('transaction_categories').delete().eq('id', id)
       if (error) throw new Error(error.message)
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['transaction-categories'] }),
   })
 }

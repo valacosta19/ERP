@@ -26,20 +26,26 @@ export interface Database {
         }
         Relationships: []
       }
-      categories: {
+      transaction_categories: {
         Row: {
           id: string
           name: string
+          parent_id: string | null
+          transaction_type: 'income' | 'expense' | 'transfer' | null
           created_at: string
         }
         Insert: {
           id?: string
           name: string
+          parent_id?: string | null
+          transaction_type?: 'income' | 'expense' | 'transfer' | null
           created_at?: string
         }
         Update: {
           id?: string
           name?: string
+          parent_id?: string | null
+          transaction_type?: 'income' | 'expense' | 'transfer' | null
         }
         Relationships: []
       }
@@ -47,42 +53,134 @@ export interface Database {
         Row: {
           id: string
           date: string
-          type: 'income' | 'expense'
           amount: number
           currency: 'ARS' | 'USD' | 'EUR'
-          category_id: string | null
+          subcategory_id: string | null
           catalog_item_id: string | null
           description: string | null
           created_by: string | null
           created_at: string
           is_seña: boolean
           seña_amount: number | null
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           id?: string
           date: string
-          type: 'income' | 'expense'
           amount: number
           currency?: 'ARS' | 'USD' | 'EUR'
-          category_id?: string | null
+          subcategory_id?: string | null
           catalog_item_id?: string | null
           description?: string | null
           created_by?: string | null
           created_at?: string
           is_seña?: boolean
           seña_amount?: number | null
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           id?: string
           date?: string
-          type?: 'income' | 'expense'
           amount?: number
           currency?: 'ARS' | 'USD' | 'EUR'
-          category_id?: string | null
+          subcategory_id?: string | null
           catalog_item_id?: string | null
           description?: string | null
           is_seña?: boolean
           seña_amount?: number | null
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Relationships: []
+      }
+      user_action_logs: {
+        Row: {
+          id: string
+          user_id: string | null
+          action: string
+          entity: string
+          entity_id: string | null
+          metadata: Record<string, unknown> | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          action: string
+          entity: string
+          entity_id?: string | null
+          metadata?: Record<string, unknown> | null
+          created_at?: string
+        }
+        Update: never
+        Relationships: []
+      }
+      reserve_accounts: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+        }
+        Relationships: []
+      }
+      reserve_movements: {
+        Row: {
+          id: string
+          reserve_id: string
+          amount: number
+          note: string | null
+          date: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          reserve_id: string
+          amount: number
+          note?: string | null
+          date: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          reserve_id?: string
+          amount?: number
+          note?: string | null
+          date?: string
+        }
+        Relationships: []
+      }
+      locked_periods: {
+        Row: {
+          year: number
+          month: number
+          locked_at: string
+          locked_by: string | null
+        }
+        Insert: {
+          year: number
+          month: number
+          locked_at?: string
+          locked_by?: string | null
+        }
+        Update: {
+          year?: number
+          month?: number
+          locked_at?: string
+          locked_by?: string | null
         }
         Relationships: []
       }
@@ -308,6 +406,7 @@ export interface Database {
           unit_cost: number | null
           reference_type: string | null
           reference_id: string | null
+          reason: string | null
           created_by: string | null
           created_at: string
         }
@@ -320,6 +419,7 @@ export interface Database {
           unit_cost?: number | null
           reference_type?: string | null
           reference_id?: string | null
+          reason?: string | null
           created_by?: string | null
           created_at?: string
         }
@@ -374,7 +474,6 @@ export interface Database {
         Row: {
           id: string
           name: string
-          category_id: string | null
           price: number
           price_transfer: number | null
           price_card: number | null
@@ -384,7 +483,6 @@ export interface Database {
         Insert: {
           id?: string
           name: string
-          category_id?: string | null
           price?: number
           price_transfer?: number | null
           price_card?: number | null
@@ -394,7 +492,6 @@ export interface Database {
         Update: {
           id?: string
           name?: string
-          category_id?: string | null
           price?: number
           price_transfer?: number | null
           price_card?: number | null
@@ -447,6 +544,139 @@ export interface Database {
         }
         Relationships: []
       }
+      supplier_debts: {
+        Row: {
+          id: string
+          purchase_order_id: string | null
+          supplier_id: string | null
+          total_amount: number
+          paid_amount: number
+          due_date: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          purchase_order_id?: string | null
+          supplier_id?: string | null
+          total_amount: number
+          paid_amount?: number
+          due_date?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          purchase_order_id?: string | null
+          supplier_id?: string | null
+          total_amount?: number
+          paid_amount?: number
+          due_date?: string | null
+          notes?: string | null
+        }
+        Relationships: []
+      }
+      supplier_debt_payments: {
+        Row: {
+          id: string
+          debt_id: string
+          amount: number
+          payment_method: string
+          date: string
+          transaction_id: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          debt_id: string
+          amount: number
+          payment_method: string
+          date: string
+          transaction_id?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          debt_id?: string
+          amount?: number
+          payment_method?: string
+          date?: string
+          transaction_id?: string | null
+          notes?: string | null
+        }
+        Relationships: []
+      }
+      receivables: {
+        Row: {
+          id: string
+          debtor_name: string
+          concept: string
+          total_amount: number
+          collected_amount: number
+          due_date: string | null
+          notes: string | null
+          created_at: string
+          created_by: string | null
+          source_transaction_id: string | null
+        }
+        Insert: {
+          id?: string
+          debtor_name: string
+          concept: string
+          total_amount: number
+          collected_amount?: number
+          due_date?: string | null
+          notes?: string | null
+          created_at?: string
+          created_by?: string | null
+          source_transaction_id?: string | null
+        }
+        Update: {
+          id?: string
+          debtor_name?: string
+          concept?: string
+          total_amount?: number
+          collected_amount?: number
+          due_date?: string | null
+          notes?: string | null
+          source_transaction_id?: string | null
+        }
+        Relationships: []
+      }
+      receivable_collections: {
+        Row: {
+          id: string
+          receivable_id: string
+          amount: number
+          payment_method: string
+          date: string
+          transaction_id: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          receivable_id: string
+          amount: number
+          payment_method: string
+          date: string
+          transaction_id?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          receivable_id?: string
+          amount?: number
+          payment_method?: string
+          date?: string
+          transaction_id?: string | null
+          notes?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       products_with_stock: {
@@ -482,7 +712,7 @@ export interface Database {
       create_sale: {
         Args: {
           p_date: string
-          p_category_id: string | null
+          p_subcategory_id: string | null
           p_description: string | null
           p_created_by: string
           p_items: Json
