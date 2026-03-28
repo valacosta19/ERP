@@ -17,9 +17,11 @@ export interface Profile {
   created_at: string
 }
 
-export interface Category {
+export interface TransactionCategory {
   id: string
   name: string
+  parent_id: string | null
+  transaction_type: 'income' | 'expense' | 'transfer' | null
   created_at: string
 }
 
@@ -46,10 +48,9 @@ export interface TransactionPayment {
 export interface Transaction {
   id: string
   date: string
-  type: TransactionType
   amount: number
   currency: Currency
-  category_id: string | null
+  subcategory_id: string | null
   catalog_item_id: string | null
   description: string | null
   created_by: string | null
@@ -58,7 +59,7 @@ export interface Transaction {
   seña_amount: number | null
   voided_at: string | null
   voided_by: string | null
-  category?: Category
+  subcategory?: TransactionCategory
   payments?: TransactionPayment[]
   professionals?: ProfessionalAssignment[]
 }
@@ -161,7 +162,6 @@ export interface PaymentMethodConfig {
 export interface CatalogItem {
   id: string
   name: string
-  category_id: string | null
   price: number
   price_transfer?: number | null
   price_card?: number | null
@@ -207,5 +207,53 @@ export interface ReserveMovement {
   amount: number
   note: string | null
   date: string
+  created_at: string
+}
+
+export interface SupplierDebt {
+  id: string
+  purchase_order_id: string | null
+  supplier_id: string | null
+  total_amount: number
+  paid_amount: number
+  due_date: string | null
+  notes: string | null
+  created_at: string
+  supplier?: Supplier
+  payments?: SupplierDebtPayment[]
+}
+
+export interface SupplierDebtPayment {
+  id: string
+  debt_id: string
+  amount: number
+  payment_method: string
+  date: string
+  transaction_id: string | null
+  notes: string | null
+  created_at: string
+}
+
+export interface Receivable {
+  id: string
+  debtor_name: string
+  concept: string
+  total_amount: number
+  collected_amount: number
+  due_date: string | null
+  notes: string | null
+  created_at: string
+  created_by: string | null
+  collections?: ReceivableCollection[]
+}
+
+export interface ReceivableCollection {
+  id: string
+  receivable_id: string
+  amount: number
+  payment_method: string
+  date: string
+  transaction_id: string | null
+  notes: string | null
   created_at: string
 }

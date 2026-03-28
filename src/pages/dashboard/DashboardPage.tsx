@@ -47,8 +47,8 @@ function buildChartData(transactions: Transaction[]) {
   for (const tx of transactions) {
     const key = getMonthKey(tx.date)
     if (!map[key]) continue
-    if (tx.type === 'income') map[key].ingresos += tx.amount
-    else map[key].gastos += tx.amount
+    if (tx.subcategory?.transaction_type === 'income') map[key].ingresos += tx.amount
+    else if (tx.subcategory?.transaction_type === 'expense') map[key].gastos += tx.amount
   }
 
   return months.map(m => ({ mes: getMonthLabel(m), ingresos: map[m].ingresos, gastos: map[m].gastos }))
@@ -63,8 +63,8 @@ export function DashboardPage() {
     [transactions, currentMonth]
   )
 
-  const ingresos = useMemo(() => thisMonth.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0), [thisMonth])
-  const gastos = useMemo(() => thisMonth.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0), [thisMonth])
+  const ingresos = useMemo(() => thisMonth.filter(t => t.subcategory?.transaction_type === 'income').reduce((s, t) => s + t.amount, 0), [thisMonth])
+  const gastos = useMemo(() => thisMonth.filter(t => t.subcategory?.transaction_type === 'expense').reduce((s, t) => s + t.amount, 0), [thisMonth])
   const balance = ingresos - gastos
   const chartData = useMemo(() => buildChartData(transactions), [transactions])
 

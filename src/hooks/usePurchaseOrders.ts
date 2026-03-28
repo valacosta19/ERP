@@ -6,6 +6,7 @@ import type { PurchaseOrder } from '@/types'
 type POInsert = Database['public']['Tables']['purchase_orders']['Insert']
 type POUpdate = Database['public']['Tables']['purchase_orders']['Update']
 type POItemInsert = Database['public']['Tables']['purchase_order_items']['Insert']
+type DebtInsert = Database['public']['Tables']['supplier_debts']['Insert']
 
 export function usePurchaseOrders() {
   return useQuery({
@@ -92,10 +93,25 @@ export function useCancelPurchaseOrder() {
   })
 }
 
+export type POPaymentOption =
+  | { mode: 'immediate'; payment_method: string; date: string }
+  | { mode: 'deferred'; due_date: string | null; notes?: string | null }
+  | { mode: 'none' }
+
 export function useReceivePurchaseOrder() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ po, items }: { po: PurchaseOrder; items: { id: string; quantity: number }[] }) => {
+    mutationFn: async ({
+      po,
+      items,
+      totalAmount,
+      paymentOption,
+    }: {
+      po: PurchaseOrder
+      items: { id: string; quantity: number }[]
+      totalAmount: number
+      paymentOption: POPaymentOption
+    }) => {
       const { data: { user } } = await supabase.auth.getUser()
       const { error } = await supabase.rpc('receive_purchase_order', {
         p_po_id: po.id,
@@ -103,10 +119,60 @@ export function useReceivePurchaseOrder() {
         p_items: items,
       })
       if (error) throw new Error(error.message)
+
+      if (paymentOption.mode === 'immediate') {
+        const { data: subcat } = await supabase
+          .from('transaction_categories')
+          .select('id')
+          .eq('name', 'Productos profesionales')
+          .single()
+
+        const { data: tx, error: txErr } = await supabase
+          .from('transactions')
+          .insert({
+            date: paymentOption.date,
+            amount: totalAmount,
+            currency: 'ARS',
+            subcategory_id: subcat?.id ?? null,
+            description: `Pago OC - ${po.supplier?.name ?? ''}`.trim().replace(/- $/, ''),
+            is_seña: false,
+            seña_amount: null,
+            created_by: user?.id ?? null,
+          })
+          .select('id')
+          .single()
+        if (txErr) throw new Error(txErr.message)
+
+        const { error: pmtErr } = await supabase
+          .from('transaction_payments')
+          .insert({
+            transaction_id: tx.id,
+            payment_method: paymentOption.payment_method,
+            instrument: null,
+            amount: totalAmount,
+            type: 'salida',
+          })
+        if (pmtErr) throw new Error(pmtErr.message)
+      } else if (paymentOption.mode === 'deferred') {
+        const { error: debtErr } = await supabase
+          .from('supplier_debts')
+          .insert({
+            purchase_order_id: po.id,
+            supplier_id: po.supplier_id,
+            total_amount: totalAmount,
+            paid_amount: 0,
+            due_date: paymentOption.due_date,
+            notes: paymentOption.notes ?? null,
+          } as DebtInsert)
+        if (debtErr) throw new Error(debtErr.message)
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['purchase_orders'] })
       qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['supplier_debts'] })
+      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
     },
   })
 }

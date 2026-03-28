@@ -42,15 +42,20 @@ export function useCreateReserveMovement() {
         ? `Transferencia → ${reserve_name}`
         : `Retorno ← ${reserve_name}`
 
+      const { data: subcat } = await supabase
+        .from('transaction_categories')
+        .select('id')
+        .eq('name', 'Transferencia interna')
+        .single()
+
       const { error: txErr } = await supabase
         .from('transactions')
         .insert({
           date: payload.date,
-          type: 'transfer',
           amount: Math.abs(payload.amount),
           currency: 'ARS',
           description,
-          category_id: null,
+          subcategory_id: subcat?.id ?? null,
           catalog_item_id: null,
           is_seña: false,
           seña_amount: null,

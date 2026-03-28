@@ -11,7 +11,7 @@ import { Modal } from '@/components/ui/Modal'
 import { useTransactions, useCreateTransaction, useUpdateTransaction, useVoidTransaction, usePaymentMethodBalances } from '@/hooks/useTransactions'
 import { useLockedPeriods } from '@/hooks/useLockedPeriods'
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
-import { useCategories } from '@/hooks/useCategories'
+import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { useProfessionals } from '@/hooks/useProfessionals'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useProducts } from '@/hooks/useProducts'
@@ -43,9 +43,9 @@ const CURRENCY_FILTER_OPTIONS = [
 
 const EMPTY_DRAFT = {
   date: new Date().toISOString().slice(0, 10),
-  type: 'income' as TransactionType,
   currency: 'ARS' as Currency,
-  category_id: '',
+  category_parent_id: '',
+  subcategory_id: '',
   catalog_item_id: null as string | null,
   description: '',
   seña_amount: '',
@@ -60,8 +60,8 @@ function calcTotal(payments: PaymentRow[]) {
 
 const CURRENCY_SYMBOL: Record<Currency, string> = { ARS: '$', USD: 'U$D', EUR: '€' }
 
-function formatAmount(type: TransactionType, amount: number, currency: Currency) {
-  const sign = type === 'income' ? '+' : type === 'expense' ? '-' : ''
+function formatAmount(transactionType: TransactionType | null | undefined, amount: number, currency: Currency) {
+  const sign = transactionType === 'income' ? '+' : transactionType === 'expense' ? '-' : ''
   const sym = CURRENCY_SYMBOL[currency]
   return `${sign}${sym}${amount.toLocaleString('es-CO')}`
 }
@@ -144,8 +144,7 @@ const INLINE_SELECT_STYLE: React.CSSProperties = {
 }
 
 export function TransactionsPage() {
-  const [typeFilter, setTypeFilter] = useState<'all' | TransactionType>('all')
-  const [categoryFilter, setCategoryFilter] = useState('')
+  const [parentCategoryFilter, setParentCategoryFilter] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState<Currency | ''>('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -159,17 +158,9 @@ export function TransactionsPage() {
   const [editForm, setEditForm] = useState(EMPTY_DRAFT)
   const [formError, setFormError] = useState('')
 
-  const { data: transactions = [], isLoading } = useTransactions({
-    type: typeFilter,
-    categoryId: categoryFilter || undefined,
-    currency: currencyFilter || undefined,
-    from: from || undefined,
-    to: to || undefined,
-    showVoided,
-  })
-  const { data: categories = [] } = useCategories()
+  const { data: txCategories = [] } = useTransactionCategories()
   const { data: professionals = [] } = useProfessionals()
-  const { data: catalogItems = [] } = useCatalogItems(draft?.category_id || undefined)
+  const { data: catalogItems = [] } = useCatalogItems()
   const { data: products = [] } = useProducts()
   const createTx = useCreateTransaction()
   const updateTx = useUpdateTransaction()
@@ -188,17 +179,33 @@ export function TransactionsPage() {
     return lockedPeriods.some(p => p.year === d.getFullYear() && p.month === d.getMonth() + 1)
   }
 
+  const parents = txCategories.filter(c => c.parent_id === null)
+  const subcategories = txCategories.filter(c => c.parent_id !== null)
 
-  const allCategoryOptions = [
-    { value: '', label: 'Todas las categorías' },
-    ...categories.map(c => ({ value: c.id, label: c.name })),
-  ]
+  function subcatsForParent(parentId: string) {
+    return subcategories.filter(c => c.parent_id === parentId)
+  }
 
-  const categoryOptions = categories.map(c => ({ value: c.id, label: c.name }))
+  function typeFromParent(parentId: string): TransactionType {
+    const name = parents.find(p => p.id === parentId)?.name ?? ''
+    if (name === 'Ingresos') return 'income'
+    if (name === 'Movimientos') return 'transfer'
+    return 'expense'
+  }
 
-  const isDraftServiceCategory = categories.find(c => c.id === draft?.category_id)?.name.toLowerCase() === 'servicio'
-  const isEditServiceCategory = categories.find(c => c.id === editForm.category_id)?.name.toLowerCase() === 'servicio'
-  const isDraftProductCategory = categories.find(c => c.id === draft?.category_id)?.name.toLowerCase() === 'producto'
+  const filterSubcatIds = parentCategoryFilter ? subcatsForParent(parentCategoryFilter).map(c => c.id) : undefined
+
+  const { data: transactions = [], isLoading } = useTransactions({
+    subcategoryIds: filterSubcatIds,
+    currency: currencyFilter || undefined,
+    from: from || undefined,
+    to: to || undefined,
+    showVoided,
+  })
+
+  const isDraftServiceCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'servicio'
+  const isEditServiceCategory = subcategories.find(c => c.id === editForm.subcategory_id)?.name.toLowerCase() === 'servicio'
+  const isDraftProductCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'producto'
 
   const draftSuggestions: Suggestion[] = isDraftProductCategory
     ? products
@@ -209,7 +216,8 @@ export function TransactionsPage() {
   function startNew() {
     setFormError('')
     setDraftSelectedSuggestion(null)
-    setDraft({ ...EMPTY_DRAFT, date: new Date().toISOString().slice(0, 10) })
+    const ingrenosParent = parents.find(p => p.name === 'Ingresos')
+    setDraft({ ...EMPTY_DRAFT, date: new Date().toISOString().slice(0, 10), category_parent_id: ingrenosParent?.id ?? '' })
   }
 
   function cancelNew() {
@@ -222,9 +230,9 @@ export function TransactionsPage() {
     setEditing(tx)
     setEditForm({
       date: tx.date,
-      type: tx.type,
       currency: tx.currency,
-      category_id: tx.category_id ?? '',
+      category_parent_id: tx.subcategory?.parent_id ?? '',
+      subcategory_id: tx.subcategory_id ?? '',
       catalog_item_id: tx.catalog_item_id ?? null,
       description: tx.description ?? '',
       seña_amount: tx.seña_amount != null ? String(tx.seña_amount) : '',
@@ -266,12 +274,15 @@ export function TransactionsPage() {
       setFormError('El período de esa fecha está cerrado. No se pueden crear transacciones en períodos cerrados.')
       return
     }
+    const transactionType = typeFromParent(draft.category_parent_id)
     const isSeña = draft.description.trim().toLowerCase() === 'seña'
+    const draftSubcatName = subcategories.find(c => c.id === draft.subcategory_id)?.name ?? null
     const tx = await createTx.mutateAsync({
       date: draft.date,
-      type: draft.type,
+      transaction_type: transactionType,
       currency: draft.currency,
-      category_id: draft.category_id || null,
+      subcategory_id: draft.subcategory_id || null,
+      subcategory_name: draftSubcatName,
       catalog_item_id: draft.catalog_item_id ?? null,
       description: draft.description || null,
       is_seña: isSeña,
@@ -283,7 +294,7 @@ export function TransactionsPage() {
       })),
       professionals: draft.professionals,
     })
-    if (draft.product_id && draft.type === 'expense') {
+    if (draft.product_id && transactionType === 'expense') {
       const { data: { user } } = await supabase.auth.getUser()
       const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
         p_product_id: draft.product_id,
@@ -308,14 +319,15 @@ export function TransactionsPage() {
       setFormError('El período de esa fecha está cerrado. No se pueden editar transacciones en períodos cerrados.')
       return
     }
+    const editTransactionType = typeFromParent(editForm.category_parent_id)
     const isSeña = editForm.description.trim().toLowerCase() === 'seña'
     await updateTx.mutateAsync({
       id: editing!.id,
       date: editForm.date,
-      type: editForm.type,
+      transaction_type: editTransactionType,
       currency: editForm.currency,
       amount: total,
-      category_id: editForm.category_id || null,
+      subcategory_id: editForm.subcategory_id || null,
       catalog_item_id: editForm.catalog_item_id ?? null,
       description: editForm.description || null,
       is_seña: isSeña,
@@ -345,7 +357,7 @@ export function TransactionsPage() {
       }}
     >
       <td
-        colSpan={8}
+        colSpan={9}
         style={{ borderLeft: '3px solid var(--color-accent)', padding: '12px 16px' }}
       >
         <div className="space-y-3">
@@ -366,14 +378,6 @@ export function TransactionsPage() {
               style={{ ...INLINE_SELECT_STYLE, width: '130px' }}
             />
             <select
-              value={draft.type}
-              onChange={e => setDraft(d => d && { ...d, type: e.target.value as TransactionType, category_id: '' })}
-              style={INLINE_SELECT_STYLE}
-            >
-              <option value="income">Ingreso</option>
-              <option value="expense">Gasto</option>
-            </select>
-            <select
               value={draft.currency}
               onChange={e => setDraft(d => d && { ...d, currency: e.target.value as Currency })}
               style={INLINE_SELECT_STYLE}
@@ -381,12 +385,23 @@ export function TransactionsPage() {
               {CURRENCY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <select
-              value={draft.category_id}
-              onChange={e => setDraft(d => d && { ...d, category_id: e.target.value, product_id: null })}
+              value={draft.category_parent_id}
+              onChange={e => setDraft(d => d && { ...d, category_parent_id: e.target.value, subcategory_id: '' })}
               style={INLINE_SELECT_STYLE}
             >
-              <option value="">Sin categoría</option>
-              {categories.map(c => (
+              <option value="">Categoría</option>
+              {parents.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <select
+              value={draft.subcategory_id}
+              onChange={e => setDraft(d => d && { ...d, subcategory_id: e.target.value, product_id: null })}
+              style={INLINE_SELECT_STYLE}
+              disabled={!draft.category_parent_id}
+            >
+              <option value="">Subcategoría</option>
+              {subcatsForParent(draft.category_parent_id).map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
@@ -596,8 +611,16 @@ export function TransactionsPage() {
     {
       key: 'category',
       header: 'Categoría',
+      render: (tx: Transaction) => {
+        const parent = tx.subcategory ? txCategories.find(c => c.id === tx.subcategory!.parent_id) : null
+        return <span className="text-[var(--color-muted)] text-xs" style={tx.voided_at ? { opacity: 0.5 } : undefined}>{parent?.name || '—'}</span>
+      },
+    },
+    {
+      key: 'subcategory',
+      header: 'Subcategoría',
       render: (tx: Transaction) => (
-        <span className="text-[var(--color-muted)] text-xs" style={tx.voided_at ? { opacity: 0.5 } : undefined}>{tx.category?.name || '—'}</span>
+        <span className="text-[var(--color-muted)] text-xs" style={tx.voided_at ? { opacity: 0.5 } : undefined}>{tx.subcategory?.name || '—'}</span>
       ),
     },
     {
@@ -630,9 +653,10 @@ export function TransactionsPage() {
       className: 'text-right',
       render: (tx: Transaction) => {
         const total = tx.amount
+        const txType = tx.subcategory?.transaction_type as TransactionType | undefined
         return (
-          <span className={`font-semibold tabular-nums ${tx.type === 'income' ? 'text-[var(--color-success)]' : tx.type === 'expense' ? 'text-[var(--color-danger)]' : 'text-[var(--color-muted)]'}`} style={tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' } : undefined}>
-            {formatAmount(tx.type, total, tx.currency)}
+          <span className={`font-semibold tabular-nums ${txType === 'income' ? 'text-[var(--color-success)]' : txType === 'expense' ? 'text-[var(--color-danger)]' : 'text-[var(--color-muted)]'}`} style={tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' } : undefined}>
+            {formatAmount(txType, total, tx.currency)}
           </span>
         )
       },
@@ -688,19 +712,11 @@ export function TransactionsPage() {
         <div className="flex flex-wrap gap-3">
           <Select
             options={[
-              { value: 'all', label: 'Todos' },
-              { value: 'income', label: 'Ingreso' },
-              { value: 'expense', label: 'Gasto' },
-              { value: 'transfer', label: 'Transferencia' },
+              { value: '', label: 'Todas las categorías' },
+              ...parents.map(p => ({ value: p.id, label: p.name })),
             ]}
-            value={typeFilter}
-            onChange={e => { setTypeFilter(e.target.value as typeof typeFilter); setCategoryFilter('') }}
-            className="w-36"
-          />
-          <Select
-            options={allCategoryOptions}
-            value={categoryFilter}
-            onChange={e => setCategoryFilter(e.target.value)}
+            value={parentCategoryFilter}
+            onChange={e => { setParentCategoryFilter(e.target.value) }}
             className="w-48"
           />
           <Select
@@ -732,11 +748,11 @@ export function TransactionsPage() {
             />
             Mostrar anuladas
           </label>
-          {(from || to || categoryFilter || typeFilter !== 'all') && (
+          {(from || to || parentCategoryFilter) && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => { setTypeFilter('all'); setCategoryFilter(''); setFrom(''); setTo('') }}
+              onClick={() => { setParentCategoryFilter(''); setFrom(''); setTo('') }}
             >
               Limpiar filtros
             </Button>
@@ -785,21 +801,12 @@ export function TransactionsPage() {
         title="Editar transacción"
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Input
               label="Fecha"
               type="date"
               value={editForm.date}
               onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
-            />
-            <Select
-              label="Tipo"
-              options={[
-                { value: 'income', label: 'Ingreso' },
-                { value: 'expense', label: 'Gasto' },
-              ]}
-              value={editForm.type}
-              onChange={e => setEditForm(f => ({ ...f, type: e.target.value as TransactionType, category_id: '' }))}
             />
             <Select
               label="Moneda"
@@ -809,13 +816,26 @@ export function TransactionsPage() {
             />
           </div>
 
-          <Select
-            label="Categoría"
-            options={categoryOptions}
-            value={editForm.category_id}
-            onChange={e => setEditForm(f => ({ ...f, category_id: e.target.value }))}
-            placeholder="Sin categoría"
-          />
+          <div className="grid grid-cols-2 gap-3">
+            <Select
+              label="Categoría"
+              options={[
+                { value: '', label: 'Seleccionar...' },
+                ...parents.map(p => ({ value: p.id, label: p.name })),
+              ]}
+              value={editForm.category_parent_id}
+              onChange={e => setEditForm(f => ({ ...f, category_parent_id: e.target.value, subcategory_id: '' }))}
+            />
+            <Select
+              label="Subcategoría"
+              options={[
+                { value: '', label: 'Seleccionar...' },
+                ...subcatsForParent(editForm.category_parent_id).map(c => ({ value: c.id, label: c.name })),
+              ]}
+              value={editForm.subcategory_id}
+              onChange={e => setEditForm(f => ({ ...f, subcategory_id: e.target.value }))}
+            />
+          </div>
 
           <Input
             label="Descripción"

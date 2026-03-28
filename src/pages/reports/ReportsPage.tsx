@@ -11,7 +11,6 @@ import { useCommissionsReport } from '@/hooks/useCommissionsReport'
 import { useFixedCosts } from '@/hooks/useFixedCosts'
 import { useProducts } from '@/hooks/useProducts'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
-import { useCategories } from '@/hooks/useCategories'
 import { supabase } from '@/lib/supabaseClient'
 import type { FinancialCategoryRow, InventoryValuationRow, ProfitMonthRow } from '@/hooks/useReports'
 import type { CommissionDetailRow } from '@/hooks/useCommissionsReport'
@@ -228,7 +227,6 @@ export function ReportsPage() {
   const { data: fixedCosts = [] } = useFixedCosts()
   const { data: products = [] } = useProducts()
   const { data: allCatalogItems = [] } = useCatalogItems()
-  const { data: categories = [] } = useCategories()
 
   const { data: allRecipes = [] } = useQuery<ServiceRecipe[]>({
     queryKey: ['service-recipes-all'],
@@ -244,13 +242,13 @@ export function ReportsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('transactions')
-        .select('id, catalog_item_id, amount, seña_amount, currency, date')
-        .eq('type', 'income')
+        .select('id, catalog_item_id, amount, seña_amount, currency, date, transaction_categories!subcategory_id!inner(transaction_type)')
+        .eq('transaction_categories.transaction_type', 'income')
         .eq('is_seña', false)
         .not('catalog_item_id', 'is', null)
         .is('voided_at', null)
       if (error) throw new Error(error.message)
-      return data as unknown as { id: string; catalog_item_id: string; amount: number; seña_amount: number | null; currency: string; date: string }[]
+      return (data as unknown as ({ id: string; catalog_item_id: string; amount: number; seña_amount: number | null; currency: string; date: string; transaction_categories: unknown })[]).map(({ transaction_categories: _tc, ...row }) => row)
     },
   })
 
@@ -314,10 +312,7 @@ export function ReportsPage() {
   }, [serviceDeductionsByMonth])
 
   const costRows = useMemo<ServiceCostRow[]>(() => {
-    const serviceCategory = categories.find(c => c.name.toLowerCase() === 'servicio')
-    const services = serviceCategory
-      ? allCatalogItems.filter(ci => ci.category_id === serviceCategory.id)
-      : []
+    const services = allCatalogItems.filter(ci => ci.name.toLowerCase() !== 'seña')
 
     const usdRate = dolarBlue?.venta ?? 1
 
@@ -326,9 +321,7 @@ export function ReportsPage() {
       commissionRateByTx.set(tc.transaction_id, (commissionRateByTx.get(tc.transaction_id) ?? 0) + tc.commission_rate)
     }
 
-    const filteredServices = services.filter(s => s.name.toLowerCase() !== 'seña')
-
-    return filteredServices.map(service => {
+    return services.map(service => {
       const recipes = allRecipes.filter(r => r.catalog_item_id === service.id)
       const materialCost = recipes.reduce((s, r) => {
         const product = products.find(p => p.id === r.product_id)
@@ -366,7 +359,7 @@ export function ReportsPage() {
 
       return { service, materialCost, commissionCost: avgCommissionCost, totalCost, salePrice, margin, marginPct, hasWarning }
     })
-  }, [categories, allCatalogItems, allRecipes, products, txRevenue, txCommissions, dolarBlue])
+  }, [allCatalogItems, allRecipes, products, txRevenue, txCommissions, dolarBlue])
 
   function marginColor(pct: number): string {
     if (pct > 30) return 'var(--color-success)'

@@ -37,7 +37,7 @@ function parseNum(s: string): number {
   return parseFloat(normalized) || 0
 }
 
-function parseType(s: string): 'income' | 'expense' {
+function parseDirection(s: string): 'income' | 'expense' {
   const lower = s.toLowerCase()
   if (lower === 'income' || lower === 'ingreso' || lower === 'entrada') return 'income'
   return 'expense'
@@ -69,12 +69,14 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
 
   const runImport = async () => {
     try {
-      const [catRes, supRes, prodRes, hdRes, svcRes] = await Promise.all([
-        supabase.from('categories').select('id, name'),
+      const [catRes, supRes, prodRes, hdRes, svcRes, incomeCatRes, expenseCatRes] = await Promise.all([
+        supabase.from('transaction_categories').select('id, name').not('parent_id', 'is', null),
         supabase.from('suppliers').select('id, name'),
         supabase.from('products').select('id, sku').is('deleted_at', null),
         supabase.from('hairdressers').select('id, name'),
         supabase.from('catalog_items').select('id, name'),
+        supabase.from('transaction_categories').select('id').eq('transaction_type', 'income').limit(1).single(),
+        supabase.from('transaction_categories').select('id').eq('name', 'Otros gastos').single(),
       ])
       if (catRes.error) throw new Error(catRes.error.message)
       if (supRes.error) throw new Error(supRes.error.message)
@@ -82,7 +84,10 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
       if (hdRes.error) throw new Error(hdRes.error.message)
       if (svcRes.error) throw new Error(svcRes.error.message)
 
-      const catMap = new Map(catRes.data.map(c => [c.name.toLowerCase(), c.id]))
+      const defaultIncomeSubcatId: string | null = incomeCatRes.data?.id ?? null
+      const defaultExpenseSubcatId: string | null = expenseCatRes.data?.id ?? null
+
+      const catMap = new Map((catRes.data as { id: string; name: string }[]).map(c => [c.name.toLowerCase(), c.id]))
       const supMap = new Map(supRes.data.map(s => [s.name.toLowerCase(), s.id]))
       const skuMap = new Map(prodRes.data.map(p => [p.sku, p.id]))
       const hdMap = new Map(hdRes.data.map(h => [h.name.toLowerCase(), h.id]))
@@ -104,10 +109,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               const name = getVal(row, m, 'name')
               if (!name) { result.skipped++; continue }
               if (catMap.has(name.toLowerCase())) { result.skipped++; continue }
-              const { data, error } = await supabase.from('categories').insert({ name }).select('id, name').single()
-              if (error) { result.errors.push(`${name}: ${error.message}`); continue }
-              catMap.set(name.toLowerCase(), data.id)
-              result.inserted++
+              result.skipped++
             }
           }
 
@@ -175,26 +177,28 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               const rawAmount = parseNum(getVal(row, m, 'amount'))
 
               let amount: number
-              let type: 'income' | 'expense'
+              let direction: 'income' | 'expense'
 
               if (entradaVal > 0) {
                 amount = entradaVal
-                type = 'income'
+                direction = 'income'
               } else if (salidaVal > 0) {
                 amount = salidaVal
-                type = 'expense'
+                direction = 'expense'
               } else if (rawAmount < 0) {
                 amount = Math.abs(rawAmount)
-                type = 'expense'
+                direction = 'expense'
               } else {
                 amount = rawAmount
-                type = parseType(getVal(row, m, 'type'))
+                direction = parseDirection(getVal(row, m, 'type'))
               }
 
               if (!date || amount === 0) { result.skipped++; continue }
 
               const categoryName = getVal(row, m, 'category')
-              const category_id = categoryName ? (catMap.get(categoryName.toLowerCase()) ?? null) : null
+              const subcategory_id = categoryName
+                ? (catMap.get(categoryName.toLowerCase()) ?? (direction === 'income' ? defaultIncomeSubcatId : defaultExpenseSubcatId))
+                : (direction === 'income' ? defaultIncomeSubcatId : defaultExpenseSubcatId)
               const description = getVal(row, m, 'description') || null
 
               const señaRaw = getVal(row, m, 'is_seña')
@@ -209,7 +213,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
 
               const { data: txData, error: txError } = await supabase
                 .from('transactions')
-                .insert({ date, type, amount, currency, category_id, description, is_seña, seña_amount })
+                .insert({ date, amount, currency, subcategory_id, description, is_seña, seña_amount })
                 .select('id')
                 .single()
               if (txError) { result.errors.push(`${date} $${amount}: ${txError.message}`); continue }
@@ -222,7 +226,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
                   payment_method: paymentMethod,
                   instrument,
                   amount,
-                  type: type === 'income' ? 'entrada' : 'salida',
+                  type: direction === 'income' ? 'entrada' : 'salida',
                 })
                 if (pmError) { result.errors.push(`${date} payment: ${pmError.message}`); continue }
               }
@@ -255,19 +259,12 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
           }
 
           if (entityType === 'services') {
-            let servicesCatId = catMap.get('servicio')
-            if (!servicesCatId) {
-              const { data: newCat, error: catErr } = await supabase.from('categories').insert({ name: 'Servicio' }).select('id').single()
-              if (catErr) { result.errors.push(`Categoría Servicio: ${catErr.message}`); continue }
-              catMap.set('servicio', newCat.id)
-              servicesCatId = newCat.id
-            }
             for (const row of sheet.rows) {
               const name = getVal(row, m, 'name')
               if (!name) { result.skipped++; continue }
               if (svcMap.has(name.toLowerCase())) { result.skipped++; continue }
               const price = parseNum(getVal(row, m, 'price'))
-              const { error } = await supabase.from('catalog_items').insert({ name, category_id: servicesCatId, price })
+              const { error } = await supabase.from('catalog_items').insert({ name, price })
               if (error) { result.errors.push(`${name}: ${error.message}`); continue }
               svcMap.add(name.toLowerCase())
               result.inserted++

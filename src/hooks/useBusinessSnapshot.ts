@@ -37,10 +37,9 @@ type RawTxHd = {
 
 type RawTx = {
   date: string
-  type: string
   amount: number
   currency: string
-  categories: { name: string } | null
+  transaction_categories: { name: string; transaction_type: string | null } | null
 }
 
 type RawSaleItem = {
@@ -54,12 +53,11 @@ type RawSaleItem = {
 type RawTxProfit = {
   id: string
   date: string
-  type: string
   amount: number
   seña_amount: number | null
   is_seña: boolean
   currency: string
-  categories: { name: string } | null
+  transaction_categories: { name: string; transaction_type: string | null } | null
 }
 
 function monthLabel(month: string) {
@@ -106,7 +104,7 @@ export function useBusinessSnapshot() {
           .gte('transactions.date', from90),
         supabase
           .from('transactions')
-          .select('date, type, amount, currency, categories(name)')
+          .select('date, amount, currency, transaction_categories!subcategory_id(name, transaction_type)')
           .is('voided_at', null)
           .gte('date', from30)
           .order('date', { ascending: false }),
@@ -116,12 +114,12 @@ export function useBusinessSnapshot() {
           .gte('transactions.date', from180),
         supabase
           .from('transactions')
-          .select('id, date, type, amount, seña_amount, is_seña, currency, categories(name)')
+          .select('id, date, amount, seña_amount, is_seña, currency, transaction_categories!subcategory_id(name, transaction_type)')
           .is('voided_at', null)
           .gte('date', from180),
         supabase
           .from('transactions')
-          .select('type, amount, seña_amount, is_seña, category_id, categories(name)')
+          .select('amount, seña_amount, is_seña, subcategory_id, transaction_categories!subcategory_id(name, transaction_type)')
           .is('voided_at', null)
           .gte('date', from90),
       ])
@@ -158,8 +156,8 @@ export function useBusinessSnapshot() {
 
       const recentTransactions: RecentTransactionRow[] = ((recentTxRes.data as unknown as RawTx[]) ?? []).map(tx => ({
         date: tx.date,
-        type: tx.type,
-        category: (tx as unknown as { categories: { name: string } | null }).categories?.name ?? null,
+        type: tx.transaction_categories?.transaction_type ?? 'expense',
+        category: tx.transaction_categories?.name ?? null,
         amount: Number(tx.amount),
         currency: tx.currency,
       }))
@@ -189,15 +187,15 @@ export function useBusinessSnapshot() {
         ensure(month)
         if (tx.is_seña) continue
         const serviceTotal = Number(tx.amount) + Number(tx.seña_amount ?? 0)
-        if (tx.type === 'income') {
+        if (tx.transaction_categories?.transaction_type === 'income') {
           totalIncomeByMonth.set(month, (totalIncomeByMonth.get(month) ?? 0) + serviceTotal)
-          const cat = tx.categories?.name?.toLowerCase()
+          const cat = tx.transaction_categories?.name?.toLowerCase()
           if (cat === 'servicio') {
             byMonth.get(month)!.service_income += serviceTotal
           } else if (cat === 'producto' && !saleItemTxIds.has(tx.id)) {
             byMonth.get(month)!.product_revenue += serviceTotal
           }
-        } else {
+        } else if (tx.transaction_categories?.transaction_type === 'expense') {
           byMonth.get(month)!.total_expenses += serviceTotal
         }
       }
@@ -213,15 +211,16 @@ export function useBusinessSnapshot() {
         .sort((a, b) => b.month.localeCompare(a.month))
         .slice(0, 6)
 
-      type RawCatTx = { type: string; amount: number; seña_amount: number | null; is_seña: boolean; category_id: string | null; categories: { name: string } | null }
+      type RawCatTx = { amount: number; seña_amount: number | null; is_seña: boolean; subcategory_id: string | null; transaction_categories: { name: string; transaction_type: string | null } | null }
       const catTxRows = (catTxRes.data as unknown as RawCatTx[]) ?? []
       const catMap = new Map<string, FinancialCategoryRow>()
       for (const row of catTxRows) {
         if (row.is_seña) continue
-        const key = row.category_id ?? '__none__'
+        if (row.transaction_categories?.transaction_type === 'transfer') continue
+        const key = row.subcategory_id ?? '__none__'
         const total = Number(row.amount) + Number(row.seña_amount ?? 0)
-        const income = row.type === 'income' ? total : 0
-        const expense = row.type === 'expense' ? total : 0
+        const income = row.transaction_categories?.transaction_type === 'income' ? total : 0
+        const expense = row.transaction_categories?.transaction_type === 'expense' ? total : 0
         const existing = catMap.get(key)
         if (existing) {
           existing.income += income
@@ -229,8 +228,8 @@ export function useBusinessSnapshot() {
           existing.balance = existing.income - existing.expense
         } else {
           catMap.set(key, {
-            category_id: row.category_id,
-            category_name: row.categories?.name ?? 'Sin categoría',
+            subcategory_id: row.subcategory_id,
+            category_name: row.transaction_categories?.name ?? 'Sin categoría',
             income,
             expense,
             balance: income - expense,

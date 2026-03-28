@@ -1,10 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
-import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, ProfessionalAssignment } from '@/types'
+import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, ProfessionalAssignment, TransactionCategory } from '@/types'
 
 interface TransactionFilters {
-  type?: TransactionType | 'all'
-  categoryId?: string
+  subcategoryIds?: string[]
   currency?: Currency
   from?: string
   to?: string
@@ -17,13 +16,12 @@ export function useTransactions(filters: TransactionFilters = {}) {
     queryFn: async () => {
       let query = supabase
         .from('transactions')
-        .select('*, category:categories(*), payments:transaction_payments(*), transaction_hairdressers(hairdresser_id, commission_rate, hairdressers(id, name, active, created_at))')
+        .select('*, subcategory:transaction_categories!subcategory_id(id, name, parent_id, transaction_type, created_at), payments:transaction_payments(*), transaction_hairdressers(hairdresser_id, commission_rate, hairdressers(id, name, active, created_at))')
         .order('date', { ascending: false })
         .order('created_at', { ascending: false })
 
       if (!filters.showVoided) query = query.is('voided_at', null)
-      if (filters.type && filters.type !== 'all') query = query.eq('type', filters.type)
-      if (filters.categoryId) query = query.eq('category_id', filters.categoryId)
+      if (filters.subcategoryIds && filters.subcategoryIds.length > 0) query = query.in('subcategory_id', filters.subcategoryIds)
       if (filters.currency) query = query.eq('currency', filters.currency)
       if (filters.from) query = query.gte('date', filters.from)
       if (filters.to) query = query.lte('date', filters.to)
@@ -31,7 +29,8 @@ export function useTransactions(filters: TransactionFilters = {}) {
       const { data, error } = await query
       if (error) throw new Error(error.message)
 
-      type RawTx = Omit<Transaction, 'professionals'> & {
+      type RawTx = Omit<Transaction, 'professionals' | 'subcategory'> & {
+        subcategory: TransactionCategory | null
         transaction_hairdressers: { hairdresser_id: string; commission_rate: number; hairdressers: Omit<ProfessionalAssignment, 'commission_rate'> | null }[]
       }
 
@@ -53,9 +52,10 @@ export interface PaymentRow {
 
 interface TransactionPayload {
   date: string
-  type: TransactionType
+  transaction_type: TransactionType
   currency: Currency
-  category_id: string | null
+  subcategory_id?: string | null
+  subcategory_name?: string | null
   catalog_item_id: string | null
   description: string | null
   is_seña: boolean
@@ -76,10 +76,9 @@ export function useCreateTransaction() {
         .from('transactions')
         .insert({
           date: payload.date,
-          type: payload.type,
           amount,
           currency: payload.currency,
-          category_id: payload.category_id,
+          subcategory_id: payload.subcategory_id ?? null,
           catalog_item_id: payload.catalog_item_id,
           description: payload.description,
           is_seña: payload.is_seña,
@@ -91,7 +90,7 @@ export function useCreateTransaction() {
       if (txError) throw new Error(txError.message)
 
       if (payload.payments.length > 0) {
-        const direction = payload.type === 'income' ? 'entrada' : 'salida'
+        const direction = payload.transaction_type === 'income' ? 'entrada' : 'salida'
         const { error: pmtError } = await supabase
           .from('transaction_payments')
           .insert(payload.payments.map(p => ({ ...p, type: direction, transaction_id: tx.id })))
@@ -103,6 +102,20 @@ export function useCreateTransaction() {
           .from('transaction_hairdressers')
           .insert(payload.professionals.map(p => ({ transaction_id: tx.id, hairdresser_id: p.id, commission_rate: p.commission_rate })))
         if (hdError) throw new Error(hdError.message)
+      }
+
+      if (payload.subcategory_name === 'Préstamos otorgados') {
+        const { data: { user } } = await supabase.auth.getUser()
+        const { error: recvError } = await supabase
+          .from('receivables')
+          .insert({
+            debtor_name: payload.description ?? 'Sin nombre',
+            concept: 'Préstamo',
+            total_amount: amount,
+            source_transaction_id: tx.id,
+            created_by: user?.id ?? null,
+          })
+        if (recvError) throw new Error(recvError.message)
       }
 
       return tx
@@ -117,12 +130,12 @@ export function useCreateTransaction() {
 export function useUpdateTransaction() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, payments, professionals, ...payload }: TransactionPayload & { id: string; amount: number }) => {
+    mutationFn: async ({ id, payments, professionals, transaction_type, ...payload }: TransactionPayload & { id: string; amount: number }) => {
       const { data, error } = await supabase
         .from('transactions')
         .update(payload)
         .eq('id', id)
-        .select('*, category:categories(*)')
+        .select('*, subcategory:transaction_categories!subcategory_id(id, name, parent_id, transaction_type, created_at)')
         .single()
       if (error) throw new Error(error.message)
 
@@ -133,7 +146,7 @@ export function useUpdateTransaction() {
       if (delPmtError) throw new Error(delPmtError.message)
 
       if (payments.length > 0) {
-        const direction = payload.type === 'income' ? 'entrada' : 'salida'
+        const direction = transaction_type === 'income' ? 'entrada' : 'salida'
         const { error: insError } = await supabase
           .from('transaction_payments')
           .insert(payments.map(p => ({ ...p, type: direction, transaction_id: id })))
@@ -197,7 +210,7 @@ export function usePaymentMethodBalances(filters: { from?: string; to?: string; 
     queryFn: async () => {
       let query = supabase
         .from('transaction_payments')
-        .select('payment_method, amount, transactions!inner(date, type, currency, voided_at)')
+        .select('payment_method, amount, type, transactions!inner(date, currency, voided_at)')
         .is('transactions.voided_at', null)
 
       if (filters.from) query = query.gte('transactions.date', filters.from)
@@ -207,7 +220,7 @@ export function usePaymentMethodBalances(filters: { from?: string; to?: string; 
       const { data, error } = await query
       if (error) throw new Error(error.message)
 
-      type Row = { payment_method: PaymentMethod; amount: number; transactions: { type: string; currency: string; voided_at: string | null } }
+      type Row = { payment_method: PaymentMethod; amount: number; type: string; transactions: { currency: string; voided_at: string | null; date: string } }
       const rows = data as unknown as Row[]
 
       const methodKeySet = [...new Set(rows.map(r => r.payment_method.toLowerCase()))].sort()
@@ -218,7 +231,7 @@ export function usePaymentMethodBalances(filters: { from?: string; to?: string; 
         const currencies = currencySet.map(currency => {
           const balance = subset
             .filter(r => r.transactions.currency === currency)
-            .reduce((sum, r) => sum + (r.transactions.type === 'income' ? r.amount : -r.amount), 0)
+            .reduce((sum, r) => sum + (r.type === 'entrada' ? r.amount : -r.amount), 0)
           return { currency, balance }
         })
         return { method: displayName, currencies }

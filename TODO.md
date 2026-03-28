@@ -10,22 +10,29 @@
 
 ## Important — Missing Best Practices
 
-- [ ] **Expense categories (required for meaningful reporting)** — Currently expenses have no category, so they all fall into "Sin categoría" in the Financial report. The balance per category row is meaningless until expenses are categorized. Category should be required on all expense transactions.
+- [ ] **Expense categories (required for meaningful reporting)** — Currently expenses have no category, so they all fall into "Sin categoría" in the Financial report. The balance per category row is meaningless until transactions are categorized.
 
-  Standard expense categories for a hair salon:
-  - **Alquiler** — monthly rent
-  - **Sueldos y cargas sociales** — payroll and social contributions (if employees are not on commission only)
-  - **Productos / Insumos** — professional products and materials used in services
-  - **Servicios públicos** — electricity, water, internet, phone
-  - **Mantenimiento y reparaciones** — equipment repair, salon maintenance
-  - **Marketing y publicidad** — social media, promotions, printed materials
-  - **Impuestos y tasas** — monotributo, municipal fees, etc.
-  - **Equipamiento** — tools and furniture (one-time or amortizable)
-  - **Otros gastos** — catch-all for anything that doesn't fit above
+  **Model: two-level hierarchy (category → subcategory)**
 
-  Implementation: make `category_id` required when `type = 'expense'` in the transaction form. Seed the above categories in a migration or via the Settings UI.
+  Top-level categories are fixed and map to transaction types:
+  - **Ingresos** — maps to `type = 'income'` transactions
+  - **Costos** — maps to `type = 'expense'` transactions that are direct cost of service delivery (COGS)
+  - **Gastos** — maps to `type = 'expense'` transactions that are operating expenses
+  - **Movimientos** — maps to transfers and reserve movements (non-P&L)
 
-  **Decision (2026-03-27): deferred — not implementing now.**
+  Subcategories are user-defined and belong to one parent category. They are managed from Settings → Categorías. Examples:
+  - Under **Ingresos**: Servicios, Productos (retail)
+  - Under **Costos**: Insumos, Productos profesionales
+  - Under **Gastos**: Alquiler, Sueldos y cargas sociales, Servicios públicos, Mantenimiento y reparaciones, Marketing y publicidad, Impuestos y tasas, Equipamiento, Otros gastos
+
+  **UX rules:**
+  - `subcategory_id` is required when `type = 'expense'` in the transaction form.
+  - The subcategory picker is filtered by the parent category inferred from the transaction type.
+  - Subcategories can be created, renamed, and soft-deleted from Settings. Deleting a subcategory with linked transactions is not allowed.
+
+  **Schema:**
+  - `transaction_categories (id, name, parent_id nullable, created_at)` — flat table with self-referential FK. Top-level rows have `parent_id = null`. Only two levels allowed.
+  - `transactions.subcategory_id` — FK to `transaction_categories`, nullable until migration is enforced.
 
 - [x] **Period locking** — Add the ability to close a fiscal month, preventing any creation, edit, or void of transactions dated within that period. Standard pattern in accounting systems (QuickBooks, Xero, etc.):
   - A `locked_periods` table stores `(year, month, locked_at, locked_by)`.
@@ -47,7 +54,14 @@
 
 - [x] **Add reserves from bank** - Report with general balance (Bank, Cashflow, Utility...).
 
-- [ ] **Agregar cuentas por cobrar**
+- [x] **Agregar cuentas por cobrar**
+
+- [x] **Cuentas por pagar a proveedores** — Separar la recepción del pedido (que mueve el stock) del pago al proveedor (que mueve el dinero). Actualmente recibir una OC no genera transacción de caja, por lo que si el pago es a plazo, parcial o con seña, no hay forma de registrarlo sin entrada manual. Requerimientos:
+  - Al recibir una OC, preguntar si el pago es inmediato, parcial o diferido.
+  - Si es inmediato: crear transacción de salida automáticamente con el monto total, método de pago y subcategoría (Costos → Productos profesionales).
+  - Si es diferido: crear un registro de "deuda pendiente" con el proveedor, monto y fecha límite de pago.
+  - Permitir registrar pagos parciales contra esa deuda, cada uno generando su transacción de caja.
+  - Vista de cuentas por pagar pendientes (proveedor, monto, vencimiento, saldo pendiente).
 
 - [ ] **Agregar Automatic inventory consumption based on services + manual inventory adjustment**
 

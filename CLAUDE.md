@@ -23,7 +23,7 @@ npm run lint      # eslint on all .ts/.tsx
 - If a task is too large, propose how to split it first.
 - When a phase closes: `npm run build` passes, user validates manually, then write `PHASE_N_SUMMARY.md` and update `PROJECT_STATE.md`.
 
-**Current phase: 24** — See `PROJECT_STATE.md` for current scope.
+**Current phase: 25** — See `PROJECT_STATE.md` for current scope.
 
 ---
 
@@ -136,10 +136,7 @@ Rules:
 - **Inventory movements always.** Any change to `inventory_lots.remaining_quantity` (e.g., via LotDrawer) must insert an `adjustment` row in `inventory_movements` with the delta and an optional reason.
 - **Lock `unit_cost` when sold.** If a lot has `sale_items` rows referencing it, its `unit_cost` is read-only.
 - **Period locking.** A `locked_periods (year, month, locked_at, locked_by)` table prevents creating/editing/voiding transactions in closed months. Enforced at DB level (trigger or RPC check). Lock/unlock is admin-only UI in Settings.
-- **Expense category required.** `category_id` is required when `type = 'expense'` in the transaction form (not yet implemented — deferred).
-
-### Standard expense categories (hair salon)
-Alquiler · Sueldos y cargas sociales · Productos / Insumos · Servicios públicos · Mantenimiento y reparaciones · Marketing y publicidad · Impuestos y tasas · Equipamiento · Otros gastos
+- **Expense category required.** `subcategory_id` is required when `type = 'expense'` in the transaction form (not yet implemented — deferred). Categories are two-level: fixed top-level (Ingresos, Costos, Gastos, Movimientos) + user-defined subcategories managed from Settings. Schema: `transaction_categories (id, name, parent_id nullable)`.
 
 ---
 

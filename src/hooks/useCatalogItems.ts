@@ -2,13 +2,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 import type { CatalogItem } from '@/types'
 
-export function useCatalogItems(categoryId?: string) {
+export function useCatalogItems() {
   return useQuery({
-    queryKey: ['catalog_items', categoryId],
+    queryKey: ['catalog_items'],
     queryFn: async () => {
-      let q = supabase.from('catalog_items').select('*').order('name')
-      if (categoryId) q = q.eq('category_id', categoryId)
-      const { data, error } = await q
+      const { data, error } = await supabase.from('catalog_items').select('*').order('name')
       if (error) throw new Error(error.message)
       return data as CatalogItem[]
     },
@@ -18,7 +16,7 @@ export function useCatalogItems(categoryId?: string) {
 export function useCreateCatalogItem() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (payload: { name: string; category_id: string; price: number; price_transfer?: number | null; price_card?: number | null; hours?: number | null }) => {
+    mutationFn: async (payload: { name: string; price: number; price_transfer?: number | null; price_card?: number | null; hours?: number | null }) => {
       const { data, error } = await supabase.from('catalog_items').insert(payload).select().single()
       if (error) throw new Error(error.message)
       return data as CatalogItem

@@ -9,9 +9,10 @@ import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Modal } from '@/components/ui/Modal'
-import { usePurchaseOrders, useCreatePurchaseOrder, useCancelPurchaseOrder, useReceivePurchaseOrder, useUpdateShippingCost } from '@/hooks/usePurchaseOrders'
+import { usePurchaseOrders, useCreatePurchaseOrder, useCancelPurchaseOrder, useReceivePurchaseOrder, useUpdateShippingCost, type POPaymentOption } from '@/hooks/usePurchaseOrders'
 import { useSuppliers } from '@/hooks/useSuppliers'
 import { useProducts } from '@/hooks/useProducts'
+import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useReorderSuggestion } from '@/hooks/useReorderSuggestion'
 import type { PurchaseOrder, PurchaseOrderItem } from '@/types'
 
@@ -258,6 +259,10 @@ export function PurchaseOrdersPage() {
     checked: boolean
   }
   const [receiveLines, setReceiveLines] = useState<ReceiveLine[]>([])
+  const [paymentMode, setPaymentMode] = useState<'immediate' | 'deferred' | 'none'>('none')
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10))
+  const [dueDate, setDueDate] = useState('')
 
   const [form, setForm] = useState({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '' })
   const [lines, setLines] = useState<LineItem[]>([{ ...EMPTY_LINE }])
@@ -268,6 +273,7 @@ export function PurchaseOrdersPage() {
   const { data: orders = [], isLoading } = usePurchaseOrders()
   const { data: suppliers = [] } = useSuppliers()
   const { data: products = [] } = useProducts()
+  const { data: paymentMethods = [] } = usePaymentMethods()
   const createPO = useCreatePurchaseOrder()
   const cancelPO = useCancelPurchaseOrder()
   const receivePO = useReceivePurchaseOrder()
@@ -419,6 +425,10 @@ export function PurchaseOrdersPage() {
         checked: true,
       }))
     )
+    setPaymentMode('none')
+    setPaymentMethod(paymentMethods.find(m => m.active)?.name ?? '')
+    setPaymentDate(new Date().toISOString().slice(0, 10))
+    setDueDate('')
     setReceiveOpen(true)
   }
 
@@ -428,7 +438,24 @@ export function PurchaseOrdersPage() {
       .filter(l => l.checked && parseFloat(l.received) > 0)
       .map(l => ({ id: l.id, quantity: parseFloat(l.received) }))
     if (items.length === 0) return
-    await receivePO.mutateAsync({ po: selectedPO, items })
+
+    const receivedItems = receiveLines.filter(l => l.checked && parseFloat(l.received) > 0)
+    const itemsTotal = receivedItems.reduce((sum, l) => {
+      const orig = selectedPO.items?.find(i => i.id === l.id)
+      return sum + (orig ? orig.unit_cost * parseFloat(l.received) : 0)
+    }, 0)
+    const totalAmount = itemsTotal + (selectedPO.shipping_cost ?? 0)
+
+    let paymentOption: POPaymentOption
+    if (paymentMode === 'immediate') {
+      paymentOption = { mode: 'immediate', payment_method: paymentMethod, date: paymentDate }
+    } else if (paymentMode === 'deferred') {
+      paymentOption = { mode: 'deferred', due_date: dueDate || null }
+    } else {
+      paymentOption = { mode: 'none' }
+    }
+
+    await receivePO.mutateAsync({ po: selectedPO, items, totalAmount, paymentOption })
     setReceiveOpen(false)
     setSelectedPO(null)
   }
@@ -1001,6 +1028,52 @@ export function PurchaseOrdersPage() {
             {receiveLines.every(l => !l.checked || parseFloat(l.received) <= 0) && (
               <p className="text-xs text-[var(--color-danger)]">Seleccioná al menos un producto con cantidad mayor a 0.</p>
             )}
+
+            <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Pago</p>
+              <div className="flex gap-2">
+                {(['none', 'immediate', 'deferred'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setPaymentMode(mode)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                      paymentMode === mode
+                        ? 'border-[var(--color-accent)] bg-[var(--color-accent)] text-white'
+                        : 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-text)]'
+                    }`}
+                  >
+                    {mode === 'none' ? 'Sin registrar' : mode === 'immediate' ? 'Pago inmediato' : 'Diferido'}
+                  </button>
+                ))}
+              </div>
+
+              {paymentMode === 'immediate' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <Select
+                    label="Método de pago"
+                    options={paymentMethods.filter(m => m.active).map(m => ({ value: m.name, label: m.name }))}
+                    value={paymentMethod}
+                    onChange={e => setPaymentMethod(e.target.value)}
+                  />
+                  <Input
+                    label="Fecha de pago"
+                    type="date"
+                    value={paymentDate}
+                    onChange={e => setPaymentDate(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {paymentMode === 'deferred' && (
+                <Input
+                  label="Fecha de vencimiento (opcional)"
+                  type="date"
+                  value={dueDate}
+                  onChange={e => setDueDate(e.target.value)}
+                />
+              )}
+            </div>
 
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setReceiveOpen(false)}>
