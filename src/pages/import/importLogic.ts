@@ -45,8 +45,8 @@ export const ENTITY_FIELDS: Record<EntityType, FieldDef[]> = {
   ],
   transactions: [
     { key: 'date', label: 'Fecha', required: true },
-    { key: 'type', label: 'Tipo (income / expense)', required: false },
-    { key: 'amount', label: 'Monto', required: false },
+    { key: 'entrada', label: 'Entrada', required: false },
+    { key: 'salida', label: 'Salida', required: false },
     { key: 'currency', label: 'Moneda (ARS / USD / EUR)', required: false },
     { key: 'category', label: 'Categoría (nombre)', required: false },
     { key: 'description', label: 'Descripción', required: false },
