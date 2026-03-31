@@ -42,6 +42,7 @@ export interface TransactionPayment {
   payment_method: PaymentMethod
   instrument: PaymentInstrument | null
   amount: number
+  type: string
   created_at: string
 }
 
@@ -59,6 +60,7 @@ export interface Transaction {
   seña_amount: number | null
   voided_at: string | null
   voided_by: string | null
+  refunds_anticipo_id: string | null
   subcategory?: TransactionCategory
   payments?: TransactionPayment[]
   professionals?: ProfessionalAssignment[]
