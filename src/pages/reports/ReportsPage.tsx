@@ -312,7 +312,7 @@ export function ReportsPage() {
   }, [serviceDeductionsByMonth])
 
   const costRows = useMemo<ServiceCostRow[]>(() => {
-    const services = allCatalogItems.filter(ci => ci.name.toLowerCase() !== 'seña')
+    const services = allCatalogItems.filter(ci => ci.name.toLowerCase() !== 'anticipo')
 
     const usdRate = dolarBlue?.venta ?? 1
 

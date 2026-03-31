@@ -540,7 +540,7 @@ export function SettingsPage() {
   const upsertRecipes = useUpsertServiceRecipes()
 
   const serviceItems = useMemo(
-    () => allCatalogItems.filter(ci => ci.name.toLowerCase() !== 'seña'),
+    () => allCatalogItems.filter(ci => ci.name.toLowerCase() !== 'anticipo'),
     [allCatalogItems]
   )
 

@@ -60,6 +60,8 @@ interface TransactionPayload {
   description: string | null
   is_seña: boolean
   seña_amount: number | null
+  refunds_anticipo_id: string | null
+  transfer_direction?: 'entrada' | 'salida'
   payments: PaymentRow[]
   professionals: { id: string; commission_rate: number }[]
 }
@@ -83,6 +85,7 @@ export function useCreateTransaction() {
           description: payload.description,
           is_seña: payload.is_seña,
           seña_amount: payload.seña_amount,
+          refunds_anticipo_id: payload.refunds_anticipo_id,
           created_by: user?.id ?? null,
         })
         .select('*')
@@ -90,7 +93,11 @@ export function useCreateTransaction() {
       if (txError) throw new Error(txError.message)
 
       if (payload.payments.length > 0) {
-        const direction = payload.transaction_type === 'income' ? 'entrada' : 'salida'
+        const direction = payload.is_seña
+          ? payload.description?.trim().toLowerCase() === 'anticipo' ? 'entrada' : 'salida'
+          : payload.transaction_type === 'income' ? 'entrada'
+          : payload.transaction_type === 'transfer' ? (payload.transfer_direction ?? 'entrada')
+          : 'salida'
         const { error: pmtError } = await supabase
           .from('transaction_payments')
           .insert(payload.payments.map(p => ({ ...p, type: direction, transaction_id: tx.id })))
@@ -123,6 +130,7 @@ export function useCreateTransaction() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
+      qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
     },
   })
 }
@@ -130,7 +138,7 @@ export function useCreateTransaction() {
 export function useUpdateTransaction() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, payments, professionals, transaction_type, ...payload }: TransactionPayload & { id: string; amount: number }) => {
+    mutationFn: async ({ id, payments, professionals, transaction_type, transfer_direction, ...payload }: TransactionPayload & { id: string; amount: number }) => {
       const { data, error } = await supabase
         .from('transactions')
         .update(payload)
@@ -146,7 +154,12 @@ export function useUpdateTransaction() {
       if (delPmtError) throw new Error(delPmtError.message)
 
       if (payments.length > 0) {
-        const direction = transaction_type === 'income' ? 'entrada' : 'salida'
+        const isSeña = payload.is_seña
+        const direction = isSeña
+          ? payload.description?.trim().toLowerCase() === 'anticipo' ? 'entrada' : 'salida'
+          : transaction_type === 'income' ? 'entrada'
+          : transaction_type === 'transfer' ? (transfer_direction ?? 'entrada')
+          : 'salida'
         const { error: insError } = await supabase
           .from('transaction_payments')
           .insert(payments.map(p => ({ ...p, type: direction, transaction_id: id })))
@@ -171,6 +184,7 @@ export function useUpdateTransaction() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
+      qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
     },
   })
 }
@@ -195,6 +209,7 @@ export function useVoidTransaction() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
+      qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
     },
   })
 }
@@ -202,6 +217,30 @@ export function useVoidTransaction() {
 export interface PaymentMethodBalance {
   method: PaymentMethod
   currencies: { currency: string; balance: number }[]
+}
+
+export function useUnrefundedAnticipos() {
+  return useQuery({
+    queryKey: ['unrefunded-anticipos'],
+    queryFn: async () => {
+      const { data: anticipos, error: aErr } = await supabase
+        .from('transactions')
+        .select('id, date, amount, currency, subcategory_id')
+        .eq('is_seña', true)
+        .is('voided_at', null)
+        .order('date', { ascending: false })
+      if (aErr) throw new Error(aErr.message)
+
+      const { data: refunded, error: rErr } = await supabase
+        .from('transactions')
+        .select('refunds_anticipo_id')
+        .not('refunds_anticipo_id', 'is', null)
+      if (rErr) throw new Error(rErr.message)
+
+      const refundedIds = new Set((refunded as { refunds_anticipo_id: string }[]).map(r => r.refunds_anticipo_id))
+      return (anticipos as { id: string; date: string; amount: number; currency: string; subcategory_id: string | null }[]).filter(a => !refundedIds.has(a.id))
+    },
+  })
 }
 
 export function usePaymentMethodBalances(filters: { from?: string; to?: string; currency?: Currency } = {}) {

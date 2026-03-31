@@ -59,7 +59,7 @@ interface RecordCollectionPayload {
   amount: number
   payment_method: string
   date: string
-  transaction_id: string | null
+  description: string
   notes?: string | null
 }
 
@@ -67,6 +67,30 @@ export function useRecordReceivableCollection() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (payload: RecordCollectionPayload) => {
+      const { data: { user } } = await supabase.auth.getUser()
+
+      const { data: tx, error: txErr } = await supabase
+        .from('transactions')
+        .insert({
+          date: payload.date,
+          amount: payload.amount,
+          currency: 'ARS',
+          description: payload.description,
+          subcategory_id: null,
+          catalog_item_id: null,
+          is_seña: false,
+          seña_amount: null,
+          created_by: user?.id ?? null,
+        })
+        .select('id')
+        .single()
+      if (txErr) throw new Error(txErr.message)
+
+      const { error: pmtErr } = await supabase
+        .from('transaction_payments')
+        .insert({ transaction_id: tx.id, payment_method: payload.payment_method, instrument: null, amount: payload.amount, type: 'entrada' })
+      if (pmtErr) throw new Error(pmtErr.message)
+
       const { data: collection, error: colErr } = await supabase
         .from('receivable_collections')
         .insert({
@@ -74,7 +98,7 @@ export function useRecordReceivableCollection() {
           amount: payload.amount,
           payment_method: payload.payment_method,
           date: payload.date,
-          transaction_id: payload.transaction_id,
+          transaction_id: tx.id,
           notes: payload.notes ?? null,
         } as CollectionInsert)
         .select('*')
@@ -97,6 +121,10 @@ export function useRecordReceivableCollection() {
 
       return collection as unknown as ReceivableCollection
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['receivables'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['receivables'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
+    },
   })
 }

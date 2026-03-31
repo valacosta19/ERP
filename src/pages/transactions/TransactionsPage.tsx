@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Table } from '@/components/ui/Table'
 import { Modal } from '@/components/ui/Modal'
-import { useTransactions, useCreateTransaction, useUpdateTransaction, useVoidTransaction, usePaymentMethodBalances } from '@/hooks/useTransactions'
+import { useTransactions, useCreateTransaction, useUpdateTransaction, useVoidTransaction, usePaymentMethodBalances, useUnrefundedAnticipos } from '@/hooks/useTransactions'
 import { useLockedPeriods } from '@/hooks/useLockedPeriods'
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useTransactionCategories } from '@/hooks/useTransactionCategories'
@@ -49,6 +49,8 @@ const EMPTY_DRAFT = {
   catalog_item_id: null as string | null,
   description: '',
   seña_amount: '',
+  refunds_anticipo_id: null as string | null,
+  transfer_direction: 'entrada' as 'entrada' | 'salida',
   payments: [makeEmptyPayment()] as PaymentRow[],
   professionals: [] as { id: string; commission_rate: number }[],
   product_id: null as string | null,
@@ -60,10 +62,12 @@ function calcTotal(payments: PaymentRow[]) {
 
 const CURRENCY_SYMBOL: Record<Currency, string> = { ARS: '$', USD: 'U$D', EUR: '€' }
 
-function formatAmount(transactionType: TransactionType | null | undefined, amount: number, currency: Currency) {
-  const sign = transactionType === 'income' ? '+' : transactionType === 'expense' ? '-' : ''
-  const sym = CURRENCY_SYMBOL[currency]
-  return `${sign}${sym}${amount.toLocaleString('es-CO')}`
+function getTxDirection(tx: Transaction): 'entrada' | 'salida' {
+  if (tx.is_seña) return tx.description?.trim().toLowerCase() === 'anticipo' ? 'entrada' : 'salida'
+  const txType = tx.subcategory?.transaction_type
+  if (txType === 'income') return 'entrada'
+  if (txType === 'expense') return 'salida'
+  return (tx.payments?.[0]?.type as 'entrada' | 'salida') ?? 'entrada'
 }
 
 type Suggestion = {
@@ -146,6 +150,7 @@ const INLINE_SELECT_STYLE: React.CSSProperties = {
 export function TransactionsPage() {
   const [parentCategoryFilter, setParentCategoryFilter] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState<Currency | ''>('')
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [showVoided, setShowVoided] = useState(false)
@@ -162,6 +167,7 @@ export function TransactionsPage() {
   const { data: professionals = [] } = useProfessionals()
   const { data: catalogItems = [] } = useCatalogItems()
   const { data: products = [] } = useProducts()
+  const { data: unrefundedAnticipos = [] } = useUnrefundedAnticipos()
   const createTx = useCreateTransaction()
   const updateTx = useUpdateTransaction()
   const voidTx = useVoidTransaction()
@@ -203,6 +209,25 @@ export function TransactionsPage() {
     showVoided,
   })
 
+  const filteredTransactions = paymentMethodFilter
+    ? transactions.filter(tx => tx.payments?.some(p => p.payment_method.toLowerCase() === paymentMethodFilter.toLowerCase()))
+    : transactions
+
+  const totals = filteredTransactions
+    .filter(tx => !tx.voided_at)
+    .reduce((acc, tx) => {
+      const dir = getTxDirection(tx)
+      const cur = tx.currency
+      if (!acc[cur]) acc[cur] = { entrada: 0, salida: 0 }
+      if (dir === 'entrada') acc[cur].entrada += tx.amount
+      else acc[cur].salida += tx.amount
+      return acc
+    }, {} as Record<string, { entrada: number; salida: number }>)
+
+  const refundedAntipoIds = new Set(
+    transactions.filter(t => t.refunds_anticipo_id !== null).map(t => t.refunds_anticipo_id as string)
+  )
+
   const isDraftServiceCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'servicio'
   const isEditServiceCategory = subcategories.find(c => c.id === editForm.subcategory_id)?.name.toLowerCase() === 'servicio'
   const isDraftProductCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'producto'
@@ -236,6 +261,10 @@ export function TransactionsPage() {
       catalog_item_id: tx.catalog_item_id ?? null,
       description: tx.description ?? '',
       seña_amount: tx.seña_amount != null ? String(tx.seña_amount) : '',
+      refunds_anticipo_id: tx.refunds_anticipo_id ?? null,
+      transfer_direction: (tx.payments?.[0]?.type === 'entrada' || tx.payments?.[0]?.type === 'salida')
+        ? tx.payments[0].type
+        : 'entrada',
       payments: tx.payments && tx.payments.length > 0
         ? tx.payments.map(p => {
             const validMethod = paymentMethodsData.some(pm => pm.active && pm.name === p.payment_method)
@@ -275,7 +304,9 @@ export function TransactionsPage() {
       return
     }
     const transactionType = typeFromParent(draft.category_parent_id)
-    const isSeña = draft.description.trim().toLowerCase() === 'seña'
+    const draftDesc = draft.description.trim().toLowerCase()
+    const isAnticipo = draftDesc === 'anticipo'
+    const isDevolución = draftDesc === 'devolución de anticipo'
     const draftSubcatName = subcategories.find(c => c.id === draft.subcategory_id)?.name ?? null
     const tx = await createTx.mutateAsync({
       date: draft.date,
@@ -285,8 +316,10 @@ export function TransactionsPage() {
       subcategory_name: draftSubcatName,
       catalog_item_id: draft.catalog_item_id ?? null,
       description: draft.description || null,
-      is_seña: isSeña,
-      seña_amount: !isSeña && isDraftServiceCategory && draft.seña_amount ? parseFloat(draft.seña_amount) : null,
+      is_seña: isAnticipo || isDevolución,
+      seña_amount: !isAnticipo && !isDevolución && isDraftServiceCategory && draft.seña_amount ? parseFloat(draft.seña_amount) : null,
+      refunds_anticipo_id: isDevolución ? draft.refunds_anticipo_id : null,
+      transfer_direction: transactionType === 'transfer' ? draft.transfer_direction : undefined,
       payments: draft.payments.map(p => ({
         ...p,
         instrument: p.instrument || null,
@@ -320,7 +353,9 @@ export function TransactionsPage() {
       return
     }
     const editTransactionType = typeFromParent(editForm.category_parent_id)
-    const isSeña = editForm.description.trim().toLowerCase() === 'seña'
+    const editDesc = editForm.description.trim().toLowerCase()
+    const isEditAnticipo = editDesc === 'anticipo'
+    const isEditDevolución = editDesc === 'devolución de anticipo'
     await updateTx.mutateAsync({
       id: editing!.id,
       date: editForm.date,
@@ -330,8 +365,10 @@ export function TransactionsPage() {
       subcategory_id: editForm.subcategory_id || null,
       catalog_item_id: editForm.catalog_item_id ?? null,
       description: editForm.description || null,
-      is_seña: isSeña,
-      seña_amount: !isSeña && isEditServiceCategory && editForm.seña_amount ? parseFloat(editForm.seña_amount) : null,
+      is_seña: isEditAnticipo || isEditDevolución,
+      seña_amount: !isEditAnticipo && !isEditDevolución && isEditServiceCategory && editForm.seña_amount ? parseFloat(editForm.seña_amount) : null,
+      refunds_anticipo_id: isEditDevolución ? editForm.refunds_anticipo_id : null,
+      transfer_direction: editTransactionType === 'transfer' ? editForm.transfer_direction : undefined,
       payments: editForm.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
       professionals: editForm.professionals,
     })
@@ -405,6 +442,16 @@ export function TransactionsPage() {
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
+            {typeFromParent(draft.category_parent_id) === 'transfer' && (
+              <select
+                value={draft.transfer_direction}
+                onChange={e => setDraft(d => d && { ...d, transfer_direction: e.target.value as 'entrada' | 'salida' })}
+                style={INLINE_SELECT_STYLE}
+              >
+                <option value="entrada">Entrada</option>
+                <option value="salida">Salida</option>
+              </select>
+            )}
             <DescriptionCombobox
               value={draft.description}
               onChange={v => { setDraftSelectedSuggestion(null); setDraft(d => d && { ...d, description: v, product_id: null }) }}
@@ -544,16 +591,41 @@ export function TransactionsPage() {
           )}
 
           <div className="flex items-center gap-3 flex-wrap">
-            {isDraftServiceCategory && draft.description.trim().toLowerCase() !== 'seña' && (
+            {isDraftServiceCategory && draft.description.trim().toLowerCase() !== 'anticipo' && draft.description.trim().toLowerCase() !== 'devolución de anticipo' && (
               <input
                 type="number"
                 min="0"
                 step="0.01"
                 value={draft.seña_amount}
                 onChange={e => setDraft(d => d && { ...d, seña_amount: e.target.value })}
-                placeholder="Seña cobrada previamente"
-                style={{ ...INLINE_SELECT_STYLE, width: '190px' }}
+                placeholder="Anticipo cobrado previamente"
+                style={{ ...INLINE_SELECT_STYLE, width: '210px' }}
               />
+            )}
+            {draft.description.trim().toLowerCase() === 'devolución de anticipo' && (
+              <select
+                value={draft.refunds_anticipo_id ?? ''}
+                onChange={e => {
+                  const anticipo = unrefundedAnticipos.find(a => a.id === e.target.value)
+                  const parentId = anticipo?.subcategory_id
+                    ? txCategories.find(c => c.id === anticipo.subcategory_id)?.parent_id ?? ''
+                    : ''
+                  setDraft(d => d && {
+                    ...d,
+                    refunds_anticipo_id: e.target.value || null,
+                    subcategory_id: anticipo?.subcategory_id ?? d.subcategory_id,
+                    category_parent_id: parentId || d.category_parent_id,
+                  })
+                }}
+                style={INLINE_SELECT_STYLE}
+              >
+                <option value="">Anticipo a devolver...</option>
+                {unrefundedAnticipos.filter(a => a.date <= draft.date).map(a => (
+                  <option key={a.id} value={a.id}>
+                    {formatDate(a.date)} — ${a.amount.toLocaleString('es-CO')} {a.currency !== 'ARS' ? a.currency : ''}
+                  </option>
+                ))}
+              </select>
             )}
             <span className="text-sm font-semibold text-[var(--color-text)] ml-auto tabular-nums">
               Total: {CURRENCY_SYMBOL[draft.currency]}{calcTotal(draft.payments).toLocaleString('es-CO')}
@@ -599,6 +671,7 @@ export function TransactionsPage() {
           <div className="flex items-center gap-1.5">
             <span className="text-[var(--color-text)]">{tx.description || '—'}</span>
             {tx.voided_at && <Badge variant="danger">Anulada</Badge>}
+            {tx.is_seña && !tx.voided_at && tx.description?.trim().toLowerCase() === 'anticipo' && refundedAntipoIds.has(tx.id) && <Badge variant="warning">Devuelta</Badge>}
           </div>
           {tx.professionals && tx.professionals.length > 0 && (
             <span className="text-xs text-[var(--color-muted)]">
@@ -639,7 +712,7 @@ export function TransactionsPage() {
     },
     {
       key: 'seña_amount',
-      header: 'Seña',
+      header: 'Anticipo',
       className: 'text-right',
       render: (tx: Transaction) => (
         tx.seña_amount != null && tx.seña_amount > 0
@@ -648,17 +721,27 @@ export function TransactionsPage() {
       ),
     },
     {
-      key: 'amount',
-      header: 'Monto',
+      key: 'entrada',
+      header: 'Entrada',
       className: 'text-right',
       render: (tx: Transaction) => {
-        const total = tx.amount
-        const txType = tx.subcategory?.transaction_type as TransactionType | undefined
-        return (
-          <span className={`font-semibold tabular-nums ${txType === 'income' ? 'text-[var(--color-success)]' : txType === 'expense' ? 'text-[var(--color-danger)]' : 'text-[var(--color-muted)]'}`} style={tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' } : undefined}>
-            {formatAmount(txType, total, tx.currency)}
-          </span>
-        )
+        const dir = getTxDirection(tx)
+        const sym = CURRENCY_SYMBOL[tx.currency]
+        return dir === 'entrada'
+          ? <span className="font-semibold tabular-nums text-[var(--color-success)]" style={tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' } : undefined}>{sym}{tx.amount.toLocaleString('es-CO')}</span>
+          : <span style={{ color: 'var(--color-muted)', ...(tx.voided_at ? { opacity: 0.5 } : {}) }}>—</span>
+      },
+    },
+    {
+      key: 'salida',
+      header: 'Salida',
+      className: 'text-right',
+      render: (tx: Transaction) => {
+        const dir = getTxDirection(tx)
+        const sym = CURRENCY_SYMBOL[tx.currency]
+        return dir === 'salida'
+          ? <span className="font-semibold tabular-nums text-[var(--color-danger)]" style={tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' } : undefined}>{sym}{tx.amount.toLocaleString('es-CO')}</span>
+          : <span style={{ color: 'var(--color-muted)', ...(tx.voided_at ? { opacity: 0.5 } : {}) }}>—</span>
       },
     },
     {
@@ -693,7 +776,7 @@ export function TransactionsPage() {
     <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar
         title="Transacciones"
-        subtitle={`${transactions.length} registros`}
+        subtitle={`${filteredTransactions.length} registros`}
         actions={
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => setReconcileOpen(true)} disabled={!!draft}>
@@ -725,6 +808,15 @@ export function TransactionsPage() {
             onChange={e => setCurrencyFilter(e.target.value as Currency | '')}
             className="w-40"
           />
+          <Select
+            options={[
+              { value: '', label: 'Todos los métodos' },
+              ...paymentMethodOptions,
+            ]}
+            value={paymentMethodFilter}
+            onChange={e => setPaymentMethodFilter(e.target.value)}
+            className="w-44"
+          />
           <Input
             type="date"
             value={from}
@@ -748,11 +840,11 @@ export function TransactionsPage() {
             />
             Mostrar anuladas
           </label>
-          {(from || to || parentCategoryFilter) && (
+          {(from || to || parentCategoryFilter || paymentMethodFilter) && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => { setParentCategoryFilter(''); setFrom(''); setTo('') }}
+              onClick={() => { setParentCategoryFilter(''); setFrom(''); setTo(''); setPaymentMethodFilter('') }}
             >
               Limpiar filtros
             </Button>
@@ -786,11 +878,35 @@ export function TransactionsPage() {
         <div className="flex-1 min-h-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
           <Table
             columns={columns}
-            data={transactions}
+            data={filteredTransactions}
             keyField="id"
             loading={isLoading}
             emptyMessage="No hay transacciones para los filtros seleccionados"
             prependRow={newRow}
+            appendRow={
+              Object.keys(totals).length > 0 ? (
+                <>
+                  {Object.entries(totals).map(([currency, { entrada, salida }]) => (
+                    <tr key={currency} className="border-t-2 border-[var(--color-border)]" style={{ background: 'var(--color-bg)' }}>
+                      <td colSpan={6} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+                        Total {Object.keys(totals).length > 1 ? currency : ''}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="font-semibold tabular-nums text-[var(--color-success)]">
+                          {CURRENCY_SYMBOL[currency as Currency] ?? ''}{entrada.toLocaleString('es-CO')}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="font-semibold tabular-nums text-[var(--color-danger)]">
+                          {CURRENCY_SYMBOL[currency as Currency] ?? ''}{salida.toLocaleString('es-CO')}
+                        </span>
+                      </td>
+                      <td />
+                    </tr>
+                  ))}
+                </>
+              ) : undefined
+            }
           />
         </div>
       </div>
@@ -836,6 +952,18 @@ export function TransactionsPage() {
               onChange={e => setEditForm(f => ({ ...f, subcategory_id: e.target.value }))}
             />
           </div>
+
+          {typeFromParent(editForm.category_parent_id) === 'transfer' && (
+            <Select
+              label="Dirección"
+              options={[
+                { value: 'entrada', label: 'Entrada' },
+                { value: 'salida', label: 'Salida' },
+              ]}
+              value={editForm.transfer_direction}
+              onChange={e => setEditForm(f => ({ ...f, transfer_direction: e.target.value as 'entrada' | 'salida' }))}
+            />
+          )}
 
           <Input
             label="Descripción"
@@ -948,16 +1076,41 @@ export function TransactionsPage() {
             </div>
           )}
 
-          {isEditServiceCategory && editForm.description.trim().toLowerCase() !== 'seña' && (
+          {isEditServiceCategory && editForm.description.trim().toLowerCase() !== 'anticipo' && editForm.description.trim().toLowerCase() !== 'devolución de anticipo' && (
             <Input
               type="number"
               min="0"
               step="0.01"
               value={editForm.seña_amount}
               onChange={e => setEditForm(f => ({ ...f, seña_amount: e.target.value }))}
-              placeholder="Seña cobrada previamente"
+              placeholder="Anticipo cobrado previamente"
               prefix="$"
               className="w-40"
+            />
+          )}
+          {editForm.description.trim().toLowerCase() === 'devolución de anticipo' && (
+            <Select
+              label="Anticipo que se devuelve"
+              options={[
+                { value: '', label: 'Seleccionar anticipo...' },
+                ...unrefundedAnticipos.filter(a => a.date <= editForm.date).map(a => ({
+                  value: a.id,
+                  label: `${formatDate(a.date)} — $${a.amount.toLocaleString('es-CO')}${a.currency !== 'ARS' ? ` ${a.currency}` : ''}`,
+                })),
+              ]}
+              value={editForm.refunds_anticipo_id ?? ''}
+              onChange={e => {
+                const anticipo = unrefundedAnticipos.find(a => a.id === e.target.value)
+                const parentId = anticipo?.subcategory_id
+                  ? txCategories.find(c => c.id === anticipo.subcategory_id)?.parent_id ?? ''
+                  : ''
+                setEditForm(f => ({
+                  ...f,
+                  refunds_anticipo_id: e.target.value || null,
+                  subcategory_id: anticipo?.subcategory_id ?? f.subcategory_id,
+                  category_parent_id: parentId || f.category_parent_id,
+                }))
+              }}
             />
           )}
 

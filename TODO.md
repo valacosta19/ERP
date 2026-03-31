@@ -44,6 +44,8 @@
 
 - [ ] **Double-entry bookkeeping (long term)** — The system currently uses single-entry accounting (one income or expense per transaction). True double-entry assigns a debit and a credit to every movement, ensuring the ledger always balances. This is required to generate a proper Balance Sheet (assets vs. liabilities vs. equity), which is what an accountant or bank will ask for. This is a significant architectural change and should be evaluated before any multi-tenant or SaaS expansion.
 
+- [ ] **Las reservas no están creando categorias o subcategorías** - Ademas cuando intento editarlas me dice que no tiene cargado el Monto, pero si lo veo en la tabla
+
 ## Feature
 
 - [x] **Bi-weekly commission splits** — Commissions should be calculated and divided on a bi-weekly (quincenal) basis, not monthly. The commission report or payout logic must split earnings into two periods per month (e.g., 1–15 and 16–end of month) so that stylists can be paid twice a month accurately.
@@ -100,6 +102,8 @@ Expected outcome:
 * Real-time stock tracking without operational friction
 * Clean separation between profitability and cash flow
 * A system that is simple enough for small businesses but scalable for future growth
+
+- [ ] **Agregar opción para exportar las transacciones**
 
 
 ## Non-essential — Audit & Observability

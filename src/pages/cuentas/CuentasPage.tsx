@@ -333,7 +333,7 @@ function ARTab() {
       amount,
       payment_method: collectForm.payment_method,
       date: collectForm.date,
-      transaction_id: null,
+      description: `${collectModal.receivable.concept} - ${collectModal.receivable.debtor_name}`,
       notes: collectForm.notes || null,
     })
     setCollectModal(null)
@@ -490,7 +490,7 @@ function ARTab() {
           />
           <Input
             label="Concepto"
-            placeholder="Seña, préstamo, etc."
+            placeholder="Anticipo, préstamo, etc."
             value={createForm.concept}
             onChange={e => setCreateForm(f => ({ ...f, concept: e.target.value }))}
           />

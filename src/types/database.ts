@@ -64,6 +64,7 @@ export interface Database {
           seña_amount: number | null
           voided_at: string | null
           voided_by: string | null
+          refunds_anticipo_id: string | null
         }
         Insert: {
           id?: string
@@ -79,6 +80,7 @@ export interface Database {
           seña_amount?: number | null
           voided_at?: string | null
           voided_by?: string | null
+          refunds_anticipo_id?: string | null
         }
         Update: {
           id?: string
@@ -92,6 +94,7 @@ export interface Database {
           seña_amount?: number | null
           voided_at?: string | null
           voided_by?: string | null
+          refunds_anticipo_id?: string | null
         }
         Relationships: []
       }
