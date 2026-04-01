@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { useFinancialReport, useInventoryValuation, useProfitReport } from '@/hooks/useReports'
 import { useCommissionsReport } from '@/hooks/useCommissionsReport'
-import { useFixedCosts } from '@/hooks/useFixedCosts'
+import { useFixedCosts, useAllFixedCostRates } from '@/hooks/useFixedCosts'
 import { useProducts } from '@/hooks/useProducts'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { supabase } from '@/lib/supabaseClient'
@@ -225,6 +225,7 @@ export function ReportsPage() {
   }, [commissions.data])
 
   const { data: fixedCosts = [] } = useFixedCosts()
+  const { data: allRates = [] } = useAllFixedCostRates()
   const { data: products = [] } = useProducts()
   const { data: allCatalogItems = [] } = useCatalogItems()
 
@@ -267,6 +268,18 @@ export function ReportsPage() {
     () => fixedCosts.filter(fc => fc.active).reduce((s, fc) => s + fc.monthly_amount, 0),
     [fixedCosts]
   )
+
+  const getFixedForMonth = useCallback((month: string): number => {
+    const monthDate = `${month}-01`
+    let total = 0
+    for (const fc of fixedCosts.filter(f => f.active)) {
+      const applicable = allRates.filter(r => r.fixed_cost_id === fc.id && r.effective_from <= monthDate)
+      if (applicable.length > 0) {
+        total += applicable[applicable.length - 1].monthly_amount
+      }
+    }
+    return total
+  }, [fixedCosts, allRates])
 
   const serviceDeductionsByMonth = useMemo(() => {
     const usdRate = dolarBlue?.venta ?? 1
@@ -665,7 +678,7 @@ export function ReportsPage() {
                   const utilServicios = (profit.data?.totals.service_income ?? 0) - serviceDeductionTotals.commission - serviceDeductionTotals.materials
                   const totalGP = gpProductos + utilServicios
                   const numMonths = profit.data?.rows.length ?? 1
-                  const fixedForPeriod = totalMonthlyFixed * numMonths
+                  const fixedForPeriod = (profit.data?.rows ?? []).reduce((s, row) => s + getFixedForMonth(row.month), 0)
                   const utilidadNeta = totalGP - fixedForPeriod
                   return (
                     <>
@@ -710,7 +723,7 @@ export function ReportsPage() {
                             <span className={`text-sm font-semibold tabular-nums ${totalGP >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(totalGP)}</span>
                           </div>
                           <div className="flex items-center justify-between px-4 py-3">
-                            <span className="text-sm text-[var(--color-muted)]">Gastos fijos del período ({numMonths} mes{numMonths !== 1 ? 'es' : ''} × {fmtAmount(totalMonthlyFixed)})</span>
+                            <span className="text-sm text-[var(--color-muted)]">Gastos fijos del período ({numMonths} mes{numMonths !== 1 ? 'es' : ''})</span>
                             <span className="text-sm tabular-nums text-[var(--color-danger)]">−{fmtAmount(fixedForPeriod)}</span>
                           </div>
                           <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg)]">
@@ -744,7 +757,8 @@ export function ReportsPage() {
                                     const d = serviceDeductionsByMonth.get(row.month)
                                     const rowUtil = row.service_income - (d?.commission ?? 0) - (d?.materials ?? 0)
                                     const rowGP = row.product_profit + rowUtil
-                                    const rowNeta = rowGP - totalMonthlyFixed
+                                    const rowFixed = getFixedForMonth(row.month)
+                                    const rowNeta = rowGP - rowFixed
                                     return (
                                       <tr key={row.month} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
                                         <td className="px-4 py-3 font-medium text-[var(--color-text)] capitalize">{row.month_label}</td>
@@ -756,7 +770,7 @@ export function ReportsPage() {
                                           <span className={rowUtil >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}>{fmtAmount(rowUtil)}</span>
                                           <span className="block text-xs text-[var(--color-muted)]">ing. {fmtAmount(row.service_income)}</span>
                                         </td>
-                                        <td className="px-4 py-3 text-right tabular-nums text-[var(--color-danger)]">−{fmtAmount(totalMonthlyFixed)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums text-[var(--color-danger)]">−{fmtAmount(rowFixed)}</td>
                                         <td className={`px-4 py-3 text-right tabular-nums font-semibold ${rowNeta >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
                                           {fmtAmount(rowNeta)}
                                         </td>

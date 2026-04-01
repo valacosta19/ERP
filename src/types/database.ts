@@ -502,6 +502,30 @@ export interface Database {
         }
         Relationships: []
       }
+      fixed_cost_rates: {
+        Row: {
+          id: string
+          fixed_cost_id: string
+          monthly_amount: number
+          effective_from: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          fixed_cost_id: string
+          monthly_amount: number
+          effective_from: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          fixed_cost_id?: string
+          monthly_amount?: number
+          effective_from?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       fixed_costs: {
         Row: {
           id: string

@@ -178,6 +178,14 @@ export interface FixedCost {
   active: boolean
 }
 
+export interface FixedCostRate {
+  id: string
+  fixed_cost_id: string
+  monthly_amount: number
+  effective_from: string
+  created_at: string
+}
+
 export interface ServiceRecipe {
   id: string
   catalog_item_id: string
