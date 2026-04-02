@@ -704,6 +704,30 @@ export interface Database {
         }
         Relationships: []
       }
+      transaction_recipe_costs: {
+        Row: {
+          id: string
+          transaction_id: string
+          catalog_item_id: string
+          product_id: string
+          quantity_grams: number
+          avg_unit_cost: number
+          unit_size: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          transaction_id: string
+          catalog_item_id: string
+          product_id: string
+          quantity_grams: number
+          avg_unit_cost: number
+          unit_size: number
+          created_at?: string
+        }
+        Update: never
+        Relationships: []
+      }
     }
     Views: {
       products_with_stock: {

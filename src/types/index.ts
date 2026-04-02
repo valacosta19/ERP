@@ -193,6 +193,17 @@ export interface ServiceRecipe {
   quantity_grams: number
 }
 
+export interface TransactionRecipeCost {
+  id: string
+  transaction_id: string
+  catalog_item_id: string
+  product_id: string
+  quantity_grams: number
+  avg_unit_cost: number
+  unit_size: number
+  created_at: string
+}
+
 export interface ServiceCostRow {
   service: CatalogItem
   materialCost: number

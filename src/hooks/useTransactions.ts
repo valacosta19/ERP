@@ -111,6 +111,50 @@ export function useCreateTransaction() {
         if (hdError) throw new Error(hdError.message)
       }
 
+      if (payload.catalog_item_id) {
+        const { data: recipes, error: recipeError } = await supabase
+          .from('service_recipes')
+          .select('product_id, quantity_grams')
+          .eq('catalog_item_id', payload.catalog_item_id)
+        if (recipeError) throw new Error(recipeError.message)
+
+        if (recipes && recipes.length > 0) {
+          const productIds = recipes.map(r => r.product_id)
+          const { data: prods, error: prodsError } = await supabase
+            .from('products_with_stock')
+            .select('id, min_cost, max_cost, unit_size')
+            .in('id', productIds)
+          if (prodsError) throw new Error(prodsError.message)
+
+          const prodMap = new Map((prods ?? []).map((p: { id: string; min_cost: number | null; max_cost: number | null; unit_size: number | null }) => [p.id, p]))
+          const snapshotRows = recipes
+            .filter(r => {
+              const p = prodMap.get(r.product_id)
+              return p?.unit_size != null
+            })
+            .map(r => {
+              const p = prodMap.get(r.product_id)!
+              const min = p.min_cost ?? 0
+              const max = p.max_cost ?? min
+              return {
+                transaction_id: tx.id,
+                catalog_item_id: payload.catalog_item_id!,
+                product_id: r.product_id,
+                quantity_grams: r.quantity_grams,
+                avg_unit_cost: (min + max) / 2,
+                unit_size: p.unit_size!,
+              }
+            })
+
+          if (snapshotRows.length > 0) {
+            const { error: snapError } = await supabase
+              .from('transaction_recipe_costs')
+              .insert(snapshotRows)
+            if (snapError) throw new Error(snapError.message)
+          }
+        }
+      }
+
       if (payload.subcategory_name === 'Préstamos otorgados') {
         const { data: { user } } = await supabase.auth.getUser()
         const { error: recvError } = await supabase
@@ -131,6 +175,7 @@ export function useCreateTransaction() {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
       qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
+      qc.invalidateQueries({ queryKey: ['transaction-recipe-costs'] })
     },
   })
 }

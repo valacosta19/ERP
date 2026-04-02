@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -6,18 +6,20 @@ import { TopBar } from '@/components/layout/TopBar'
 import { Table } from '@/components/ui/Table'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
-import { useFinancialReport, useInventoryValuation, useProfitReport } from '@/hooks/useReports'
+import { useFinancialReport, useInventoryValuation, useProfitReport, useBalanceSheet } from '@/hooks/useReports'
 import { useCommissionsReport } from '@/hooks/useCommissionsReport'
-import { useFixedCosts, useAllFixedCostRates } from '@/hooks/useFixedCosts'
+import { useFixedCosts } from '@/hooks/useFixedCosts'
 import { useProducts } from '@/hooks/useProducts'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
+import { useTransactionRecipeCosts } from '@/hooks/useTransactionRecipeCosts'
 import { supabase } from '@/lib/supabaseClient'
 import type { FinancialCategoryRow, InventoryValuationRow, ProfitMonthRow } from '@/hooks/useReports'
+
 import type { CommissionDetailRow } from '@/hooks/useCommissionsReport'
 import type { Currency, ServiceRecipe, ServiceCostRow } from '@/types'
 import { formatDate } from '@/lib/formatDate'
 
-type Tab = 'financiero' | 'comisiones' | 'utilidad' | 'costos'
+type Tab = 'financiero' | 'comisiones' | 'utilidad' | 'costos' | 'balance'
 type CommViewMode = 'detalle' | 'quincenal'
 
 const MONTH_NAMES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
@@ -110,6 +112,7 @@ export function ReportsPage() {
   const [commViewMode, setCommViewMode] = useState<CommViewMode>('detalle')
   const [profitFrom, setProfitFrom] = useState('')
   const [profitTo, setProfitTo] = useState('')
+  const [balanceDate, setBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
 
   const { data: dolarBlue } = useQuery<{ venta: number; fechaActualizacion: string }>({
     queryKey: ['dolar-blue'],
@@ -125,6 +128,7 @@ export function ReportsPage() {
   const valuation = useInventoryValuation()
   const commissions = useCommissionsReport({ from: commFrom || undefined, to: commTo || undefined, usdRate: dolarBlue?.venta })
   const profit = useProfitReport({ from: profitFrom || undefined, to: profitTo || undefined, usdRate: dolarBlue?.venta })
+  const balanceSheet = useBalanceSheet(balanceDate)
 
   const { summary } = financial.data ?? { summary: { total_income: 0, total_expense: 0, balance: 0 } }
   const totalInventoryValue = valuation.data?.reduce((s, r) => s + r.total_value, 0) ?? 0
@@ -225,9 +229,9 @@ export function ReportsPage() {
   }, [commissions.data])
 
   const { data: fixedCosts = [] } = useFixedCosts()
-  const { data: allRates = [] } = useAllFixedCostRates()
   const { data: products = [] } = useProducts()
   const { data: allCatalogItems = [] } = useCatalogItems()
+  const { data: txRecipeCosts = [] } = useTransactionRecipeCosts()
 
   const { data: allRecipes = [] } = useQuery<ServiceRecipe[]>({
     queryKey: ['service-recipes-all'],
@@ -269,17 +273,6 @@ export function ReportsPage() {
     [fixedCosts]
   )
 
-  const getFixedForMonth = useCallback((month: string): number => {
-    const monthDate = `${month}-01`
-    let total = 0
-    for (const fc of fixedCosts.filter(f => f.active)) {
-      const applicable = allRates.filter(r => r.fixed_cost_id === fc.id && r.effective_from <= monthDate)
-      if (applicable.length > 0) {
-        total += applicable[applicable.length - 1].monthly_amount
-      }
-    }
-    return total
-  }, [fixedCosts, allRates])
 
   const serviceDeductionsByMonth = useMemo(() => {
     const usdRate = dolarBlue?.venta ?? 1
@@ -293,6 +286,10 @@ export function ReportsPage() {
       if (!recipesByService.has(r.catalog_item_id)) recipesByService.set(r.catalog_item_id, [])
       recipesByService.get(r.catalog_item_id)!.push(r)
     }
+    const snapshotByTx = new Map<string, number>()
+    for (const s of txRecipeCosts) {
+      snapshotByTx.set(s.transaction_id, (snapshotByTx.get(s.transaction_id) ?? 0) + s.quantity_grams * s.avg_unit_cost / s.unit_size)
+    }
     const byMonth = new Map<string, { commission: number; materials: number }>()
     for (const tx of txRevenue) {
       if (profitFrom && tx.date < profitFrom) continue
@@ -303,16 +300,20 @@ export function ReportsPage() {
       const base = tx.amount + (tx.seña_amount ?? 0)
       const amountARS = tx.currency === 'USD' ? base * usdRate : base
       row.commission += amountARS * ((commRateByTx.get(tx.id) ?? 0) / 100)
-      for (const recipe of (recipesByService.get(tx.catalog_item_id) ?? [])) {
-        const product = productMap.get(recipe.product_id)
-        if (!product?.unit_size) continue
-        const min = product.min_cost ?? 0
-        const max = product.max_cost ?? min
-        row.materials += recipe.quantity_grams * ((min + max) / 2) / product.unit_size
+      if (snapshotByTx.has(tx.id)) {
+        row.materials += snapshotByTx.get(tx.id)!
+      } else {
+        for (const recipe of (recipesByService.get(tx.catalog_item_id) ?? [])) {
+          const product = productMap.get(recipe.product_id)
+          if (!product?.unit_size) continue
+          const min = product.min_cost ?? 0
+          const max = product.max_cost ?? min
+          row.materials += recipe.quantity_grams * ((min + max) / 2) / product.unit_size
+        }
       }
     }
     return byMonth
-  }, [txRevenue, txCommissions, allRecipes, products, profitFrom, profitTo, dolarBlue])
+  }, [txRevenue, txCommissions, allRecipes, products, txRecipeCosts, profitFrom, profitTo, dolarBlue])
 
   const serviceDeductionTotals = useMemo(() => {
     let commission = 0
@@ -424,6 +425,16 @@ export function ReportsPage() {
             }`}
           >
             Costos
+          </button>
+          <button
+            onClick={() => setActiveTab('balance')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'balance'
+                ? 'border-[var(--color-accent)] text-[var(--color-accent)]'
+                : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'
+            }`}
+          >
+            Balance
           </button>
         </div>
 
@@ -674,64 +685,78 @@ export function ReportsPage() {
             ) : (
               <>
                 {(() => {
-                  const gpProductos = profit.data?.totals.product_profit ?? 0
-                  const utilServicios = (profit.data?.totals.service_income ?? 0) - serviceDeductionTotals.commission - serviceDeductionTotals.materials
-                  const totalGP = gpProductos + utilServicios
-                  const numMonths = profit.data?.rows.length ?? 1
-                  const fixedForPeriod = (profit.data?.rows ?? []).reduce((s, row) => s + getFixedForMonth(row.month), 0)
-                  const utilidadNeta = totalGP - fixedForPeriod
+                  const serviceIncome = profit.data?.totals.service_income ?? 0
+                  const productRevenue = profit.data?.totals.product_revenue ?? 0
+                  const totalIngresos = serviceIncome + productRevenue
+
+                  const productCOGS = profit.data?.totals.product_cogs ?? 0
+                  const serviceMaterials = serviceDeductionTotals.materials
+                  const costosDirectos = profit.data?.totals.direct_costs ?? 0
+                  const totalCOGS = productCOGS + serviceMaterials + costosDirectos
+
+                  const utilidadBruta = totalIngresos - totalCOGS
+
+                  const gastosOp = profit.data?.totals.operating_expenses ?? 0
+
+                  const utilidadNeta = utilidadBruta - gastosOp
+
                   return (
                     <>
-                      <section>
-                        <h2 className="text-base font-semibold text-[var(--color-text)] mb-1">Gross profit por línea de negocio</h2>
-                        <p className="text-xs text-[var(--color-muted)] mb-3">El detalle por servicio está en el tab Costos.</p>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
-                            <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Utilidad bruta productos (venta − COGS)</p>
-                            <p className={`text-2xl font-semibold mt-1 ${gpProductos >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
-                              {fmtAmount(gpProductos)}
-                            </p>
-                            <p className="text-xs text-[var(--color-muted)] mt-1">
-                              Rev. {fmtAmount(profit.data?.totals.product_revenue ?? 0)} · COGS -{fmtAmount(profit.data?.totals.product_cogs ?? 0)}
-                            </p>
-                          </div>
-                          <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
-                            <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Utilidad servicios (ing. − com. − mat.)</p>
-                            <p className={`text-2xl font-semibold mt-1 ${utilServicios >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
-                              {fmtAmount(utilServicios)}
-                            </p>
-                            <p className="text-xs text-[var(--color-muted)] mt-1">
-                              Ing. {fmtAmount(profit.data?.totals.service_income ?? 0)} · Com. -{fmtAmount(serviceDeductionTotals.commission)} · Mat. -{fmtAmount(serviceDeductionTotals.materials)}
-                            </p>
-                          </div>
+                      <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg divide-y divide-[var(--color-border)]">
+                        <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-bg)]">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Ingresos</span>
                         </div>
-                      </section>
+                        <div className="flex items-center justify-between px-4 py-3">
+                          <span className="text-sm text-[var(--color-muted)] pl-4">Servicios</span>
+                          <span className="text-sm tabular-nums text-[var(--color-success)]">{fmtAmount(serviceIncome)}</span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-3">
+                          <span className="text-sm text-[var(--color-muted)] pl-4">Venta de productos</span>
+                          <span className="text-sm tabular-nums text-[var(--color-success)]">{fmtAmount(productRevenue)}</span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg)]">
+                          <span className="text-sm font-semibold text-[var(--color-text)]">Total Ingresos</span>
+                          <span className="text-sm font-semibold tabular-nums text-[var(--color-success)]">{fmtAmount(totalIngresos)}</span>
+                        </div>
 
-                      <section>
-                        <h2 className="text-base font-semibold text-[var(--color-text)] mb-3">Utilidad neta estimada</h2>
-                        <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg divide-y divide-[var(--color-border)]">
-                          <div className="flex items-center justify-between px-4 py-3">
-                            <span className="text-sm text-[var(--color-muted)]">Utilidad bruta productos</span>
-                            <span className={`text-sm tabular-nums ${gpProductos >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(gpProductos)}</span>
-                          </div>
-                          <div className="flex items-center justify-between px-4 py-3">
-                            <span className="text-sm text-[var(--color-muted)]">Utilidad bruta servicios</span>
-                            <span className={`text-sm tabular-nums ${utilServicios >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(utilServicios)}</span>
-                          </div>
-                          <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg)]">
-                            <span className="text-sm font-semibold text-[var(--color-text)]">Total utilidad bruta</span>
-                            <span className={`text-sm font-semibold tabular-nums ${totalGP >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(totalGP)}</span>
-                          </div>
-                          <div className="flex items-center justify-between px-4 py-3">
-                            <span className="text-sm text-[var(--color-muted)]">Gastos fijos del período ({numMonths} mes{numMonths !== 1 ? 'es' : ''})</span>
-                            <span className="text-sm tabular-nums text-[var(--color-danger)]">−{fmtAmount(fixedForPeriod)}</span>
-                          </div>
-                          <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg)]">
-                            <span className="text-sm font-bold text-[var(--color-text)]">Utilidad neta estimada</span>
-                            <span className={`text-lg font-bold tabular-nums ${utilidadNeta >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(utilidadNeta)}</span>
-                          </div>
+                        <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-bg)]">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Costo de ventas</span>
                         </div>
-                      </section>
+                        <div className="flex items-center justify-between px-4 py-3">
+                          <span className="text-sm text-[var(--color-muted)] pl-4">COGS productos (FIFO)</span>
+                          <span className="text-sm tabular-nums text-[var(--color-danger)]">−{fmtAmount(productCOGS)}</span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-3">
+                          <span className="text-sm text-[var(--color-muted)] pl-4">Insumos servicios</span>
+                          <span className="text-sm tabular-nums text-[var(--color-danger)]">−{fmtAmount(serviceMaterials)}</span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-3">
+                          <span className="text-sm text-[var(--color-muted)] pl-4">Costos directos</span>
+                          <span className="text-sm tabular-nums text-[var(--color-danger)]">−{fmtAmount(costosDirectos)}</span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg)]">
+                          <span className="text-sm font-semibold text-[var(--color-text)]">Total Costo de ventas</span>
+                          <span className="text-sm font-semibold tabular-nums text-[var(--color-danger)]">−{fmtAmount(totalCOGS)}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between px-4 py-4">
+                          <span className="text-base font-bold text-[var(--color-text)]">Utilidad Bruta</span>
+                          <span className={`text-base font-bold tabular-nums ${utilidadBruta >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(utilidadBruta)}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-bg)]">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Gastos operativos</span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-3">
+                          <span className="text-sm text-[var(--color-muted)] pl-4">Gastos</span>
+                          <span className="text-sm tabular-nums text-[var(--color-danger)]">−{fmtAmount(gastosOp)}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between px-4 py-5">
+                          <span className="text-lg font-bold text-[var(--color-text)]">Utilidad Neta</span>
+                          <span className={`text-2xl font-bold tabular-nums ${utilidadNeta >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(utilidadNeta)}</span>
+                        </div>
+                      </div>
 
                       <section>
                         <h2 className="text-base font-semibold text-[var(--color-text)] mb-3">Detalle mensual</h2>
@@ -740,9 +765,9 @@ export function ReportsPage() {
                             <thead>
                               <tr className="border-b border-[var(--color-border)]">
                                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Mes</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Utilidad bruta productos</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Utilidad bruta servicios</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Gastos fijos</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Ingresos</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Costo ventas</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Gastos oper.</th>
                                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Utilidad neta</th>
                               </tr>
                             </thead>
@@ -755,22 +780,16 @@ export function ReportsPage() {
                                 <>
                                   {(profit.data?.rows ?? []).map((row: ProfitMonthRow) => {
                                     const d = serviceDeductionsByMonth.get(row.month)
-                                    const rowUtil = row.service_income - (d?.commission ?? 0) - (d?.materials ?? 0)
-                                    const rowGP = row.product_profit + rowUtil
-                                    const rowFixed = getFixedForMonth(row.month)
-                                    const rowNeta = rowGP - rowFixed
+                                    const rowIngresos = row.product_revenue + row.service_income
+                                    const rowCOGS = row.product_cogs + (d?.materials ?? 0) + row.direct_costs
+                                    const rowGastos = row.operating_expenses
+                                    const rowNeta = rowIngresos - rowCOGS - rowGastos
                                     return (
                                       <tr key={row.month} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
                                         <td className="px-4 py-3 font-medium text-[var(--color-text)] capitalize">{row.month_label}</td>
-                                        <td className="px-4 py-3 text-right tabular-nums">
-                                          <span className={row.product_profit >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}>{fmtAmount(row.product_profit)}</span>
-                                          <span className="block text-xs text-[var(--color-muted)]">rev {fmtAmount(row.product_revenue)} · cogs -{fmtAmount(row.product_cogs)}</span>
-                                        </td>
-                                        <td className="px-4 py-3 text-right tabular-nums">
-                                          <span className={rowUtil >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}>{fmtAmount(rowUtil)}</span>
-                                          <span className="block text-xs text-[var(--color-muted)]">ing. {fmtAmount(row.service_income)}</span>
-                                        </td>
-                                        <td className="px-4 py-3 text-right tabular-nums text-[var(--color-danger)]">−{fmtAmount(rowFixed)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums text-[var(--color-success)]">{fmtAmount(rowIngresos)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums text-[var(--color-danger)]">−{fmtAmount(rowCOGS)}</td>
+                                        <td className="px-4 py-3 text-right tabular-nums text-[var(--color-danger)]">−{fmtAmount(rowGastos)}</td>
                                         <td className={`px-4 py-3 text-right tabular-nums font-semibold ${rowNeta >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
                                           {fmtAmount(rowNeta)}
                                         </td>
@@ -779,9 +798,9 @@ export function ReportsPage() {
                                   })}
                                   <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-bg)]">
                                     <td className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Total</td>
-                                    <td className={`px-4 py-3 text-right tabular-nums font-semibold ${gpProductos >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(gpProductos)}</td>
-                                    <td className={`px-4 py-3 text-right tabular-nums font-semibold ${utilServicios >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(utilServicios)}</td>
-                                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--color-danger)]">−{fmtAmount(fixedForPeriod)}</td>
+                                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--color-success)]">{fmtAmount(totalIngresos)}</td>
+                                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--color-danger)]">−{fmtAmount(totalCOGS)}</td>
+                                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--color-danger)]">−{fmtAmount(gastosOp)}</td>
                                     <td className={`px-4 py-3 text-right tabular-nums font-semibold ${utilidadNeta >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(utilidadNeta)}</td>
                                   </tr>
                                 </>
@@ -813,7 +832,7 @@ export function ReportsPage() {
                   <p className="text-2xl font-semibold text-[var(--color-text)] mt-1">
                     {fmtAmount(totalMonthlyFixed)}
                   </p>
-                  <p className="text-xs text-[var(--color-muted)] mt-1">se descuentan del gross profit en el tab Utilidad</p>
+                  <p className="text-xs text-[var(--color-muted)] mt-1">referencia de montos mensuales configurados</p>
                 </div>
                 <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4">
                   <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Margen bruto promedio</p>
@@ -890,6 +909,65 @@ export function ReportsPage() {
               )}
             </div>
           </section>
+          </>
+        )}
+        {activeTab === 'balance' && (
+          <>
+            <div className="flex flex-wrap gap-3 items-end">
+              <Input label="Al día" type="date" value={balanceDate} onChange={e => setBalanceDate(e.target.value)} className="w-40" />
+            </div>
+
+            {balanceSheet.isLoading ? (
+              <div className="flex justify-center py-12">
+                <span className="w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg divide-y divide-[var(--color-border)]">
+                <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-bg)]">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Activos</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-bg)]">
+                  <span className="text-xs text-[var(--color-muted)] pl-2">Efectivo por método de pago</span>
+                </div>
+                {(balanceSheet.data?.cash ?? []).map(c => (
+                  <div key={c.method} className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-sm text-[var(--color-muted)] pl-8 capitalize">{c.method}</span>
+                    <span className={`text-sm tabular-nums ${c.amount >= 0 ? 'text-[var(--color-text)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(c.amount)}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between px-4 py-3">
+                  <span className="text-sm text-[var(--color-muted)] pl-4">Cuentas por cobrar</span>
+                  <span className="text-sm tabular-nums">{fmtAmount(balanceSheet.data?.receivables ?? 0)}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3">
+                  <span className="text-sm text-[var(--color-muted)] pl-4">Inventario (valor FIFO)</span>
+                  <span className="text-sm tabular-nums">{fmtAmount(balanceSheet.data?.inventoryValue ?? 0)}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg)]">
+                  <span className="text-sm font-semibold text-[var(--color-text)]">Total Activos</span>
+                  <span className="text-sm font-semibold tabular-nums">{fmtAmount(balanceSheet.data?.totalAssets ?? 0)}</span>
+                </div>
+
+                <div className="flex items-center justify-between px-4 py-2 bg-[var(--color-bg)]">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Pasivos</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3">
+                  <span className="text-sm text-[var(--color-muted)] pl-4">Cuentas por pagar</span>
+                  <span className="text-sm tabular-nums">{fmtAmount(balanceSheet.data?.payables ?? 0)}</span>
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg)]">
+                  <span className="text-sm font-semibold text-[var(--color-text)]">Total Pasivos</span>
+                  <span className="text-sm font-semibold tabular-nums">{fmtAmount(balanceSheet.data?.totalLiabilities ?? 0)}</span>
+                </div>
+
+                <div className="flex items-center justify-between px-4 py-5">
+                  <span className="text-lg font-bold text-[var(--color-text)]">Patrimonio Neto</span>
+                  <span className={`text-2xl font-bold tabular-nums ${(balanceSheet.data?.equity ?? 0) >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+                    {fmtAmount(balanceSheet.data?.equity ?? 0)}
+                  </span>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
