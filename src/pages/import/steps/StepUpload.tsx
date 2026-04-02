@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Upload } from 'lucide-react'
-import { parseWorkbook } from '../importLogic'
+import { parseWorkbook, downloadSampleTemplate } from '../importLogic'
 import type { ParsedSheet } from '../importTypes'
 
 interface Props {
@@ -52,6 +52,13 @@ export function StepUpload({ onParsed }: Props) {
       </div>
       {loading && <p className="text-sm text-[var(--color-muted)]">Procesando...</p>}
       {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
+      <button
+        type="button"
+        onClick={downloadSampleTemplate}
+        className="text-sm text-[var(--color-accent)] underline underline-offset-2 hover:opacity-75 transition-opacity"
+      >
+        Descargar plantilla de ejemplo
+      </button>
     </div>
   )
 }
