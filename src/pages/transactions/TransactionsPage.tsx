@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Plus, X, Check, Link, Ban } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { TopBar } from '@/components/layout/TopBar'
@@ -233,6 +233,31 @@ export function TransactionsPage() {
   const isEditServiceCategory = subcategories.find(c => c.id === editForm.subcategory_id)?.name.toLowerCase() === 'servicio'
   const isDraftProductCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'producto'
   const isDraftExpense = draft ? typeFromParent(draft.category_parent_id) === 'expense' : false
+
+  const fifoCostRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!draft?.product_id || !isDraftExpense || isDraftProductCategory) {
+      fifoCostRef.current = null
+      return
+    }
+    supabase
+      .from('inventory_lots')
+      .select('unit_cost')
+      .eq('product_id', draft.product_id)
+      .gt('remaining_quantity', 0)
+      .order('received_date', { ascending: true })
+      .limit(1)
+      .single()
+      .then(({ data }) => {
+        if (!data) return
+        fifoCostRef.current = data.unit_cost
+        setDraft(d => d && {
+          ...d,
+          payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: data.unit_cost * d.product_quantity } : p),
+        })
+      })
+  }, [draft?.product_id])
 
   const draftSuggestions: Suggestion[] = isDraftProductCategory
     ? products
@@ -493,7 +518,16 @@ export function TransactionsPage() {
                   min="1"
                   step="1"
                   value={draft.product_quantity}
-                  onChange={e => setDraft(d => d && { ...d, product_quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                  onChange={e => {
+                    const qty = Math.max(1, parseInt(e.target.value) || 1)
+                    setDraft(d => d && {
+                      ...d,
+                      product_quantity: qty,
+                      payments: fifoCostRef.current != null
+                        ? d.payments.map((p, i) => i === 0 ? { ...p, amount: fifoCostRef.current! * qty } : p)
+                        : d.payments,
+                    })
+                  }}
                   style={{ ...INLINE_SELECT_STYLE, width: '70px' }}
                   placeholder="Cant."
                 />
