@@ -250,6 +250,7 @@ export function SettingsPage() {
   const [addingCat, setAddingCat] = useState(false)
   const [catDraft, setCatDraft] = useState('')
   const [catParentDraft, setCatParentDraft] = useState('')
+  const [catDeductsInventory, setCatDeductsInventory] = useState(false)
   const catInputRef = useRef<HTMLInputElement>(null)
 
   const [addingHd, setAddingHd] = useState(false)
@@ -348,21 +349,24 @@ export function SettingsPage() {
     setAddingCat(true)
     setCatDraft('')
     setCatParentDraft('')
+    setCatDeductsInventory(false)
     setTimeout(() => catInputRef.current?.focus(), 0)
   }
 
   async function saveCat() {
     if (!catDraft.trim() || !catParentDraft) return
-    await createCat.mutateAsync({ name: catDraft.trim(), parent_id: catParentDraft })
+    await createCat.mutateAsync({ name: catDraft.trim(), parent_id: catParentDraft, deducts_inventory: catDeductsInventory })
     setAddingCat(false)
     setCatDraft('')
     setCatParentDraft('')
+    setCatDeductsInventory(false)
   }
 
   function cancelCat() {
     setAddingCat(false)
     setCatDraft('')
     setCatParentDraft('')
+    setCatDeductsInventory(false)
   }
 
   function handleCatKeyDown(e: React.KeyboardEvent) {
@@ -974,32 +978,27 @@ export function SettingsPage() {
               )}
               {categories.map(cat => (
                 <div key={cat.id} className="flex items-center justify-between px-4 py-3">
-                  <InlineEditCell
-                    value={cat.name}
-                    onSave={async v => { await updateCat.mutateAsync({ id: cat.id, name: v }) }}
-                    className="text-sm text-[var(--color-text)]"
-                  />
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => updateCat.mutateAsync({ id: cat.id, deducts_inventory: !cat.deducts_inventory })}
-                      title={cat.deducts_inventory ? 'Descuenta inventario' : 'No descuenta inventario'}
-                      className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-colors"
-                      style={{
-                        borderColor: cat.deducts_inventory ? 'var(--color-accent)' : 'var(--color-border)',
-                        color: cat.deducts_inventory ? 'var(--color-accent)' : 'var(--color-muted)',
-                        background: cat.deducts_inventory ? 'color-mix(in srgb, var(--color-accent) 10%, transparent)' : 'transparent',
-                      }}
-                    >
-                      ◆ inventario
-                    </button>
-                    <button
-                      onClick={() => handleCatDelete(cat.id)}
-                      className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <InlineEditCell
+                      value={cat.name}
+                      onSave={async v => { await updateCat.mutateAsync({ id: cat.id, name: v }) }}
+                      className="text-sm text-[var(--color-text)]"
+                    />
+                    {cat.deducts_inventory && (
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded-full"
+                        style={{ color: 'var(--color-accent)', background: 'color-mix(in srgb, var(--color-accent) 10%, transparent)' }}
+                      >
+                        ◆ inventario
+                      </span>
+                    )}
                   </div>
+                  <button
+                    onClick={() => handleCatDelete(cat.id)}
+                    className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               ))}
               {addingCat && (
@@ -1035,6 +1034,19 @@ export function SettingsPage() {
                     placeholder="Nombre de la categoría"
                     autoFocus
                   />
+                  <button
+                    type="button"
+                    onClick={() => setCatDeductsInventory(v => !v)}
+                    title="Descuenta inventario al registrar"
+                    className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-colors shrink-0"
+                    style={{
+                      borderColor: catDeductsInventory ? 'var(--color-accent)' : 'var(--color-border)',
+                      color: catDeductsInventory ? 'var(--color-accent)' : 'var(--color-muted)',
+                      background: catDeductsInventory ? 'color-mix(in srgb, var(--color-accent) 10%, transparent)' : 'transparent',
+                    }}
+                  >
+                    ◆ inventario
+                  </button>
                   <button
                     onClick={saveCat}
                     disabled={createCat.isPending || !catDraft.trim() || !catParentDraft}

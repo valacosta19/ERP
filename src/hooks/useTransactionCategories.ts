@@ -20,7 +20,7 @@ export function useTransactionCategories() {
 export function useCreateTransactionCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (payload: { name: string; parent_id: string }) => {
+    mutationFn: async (payload: { name: string; parent_id: string; deducts_inventory?: boolean }) => {
       const { data, error } = await supabase
         .from('transaction_categories')
         .insert(payload)
