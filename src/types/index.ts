@@ -22,6 +22,7 @@ export interface TransactionCategory {
   name: string
   parent_id: string | null
   transaction_type: 'income' | 'expense' | 'transfer' | null
+  deducts_inventory: boolean
   created_at: string
 }
 

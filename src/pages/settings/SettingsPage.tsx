@@ -979,12 +979,27 @@ export function SettingsPage() {
                     onSave={async v => { await updateCat.mutateAsync({ id: cat.id, name: v }) }}
                     className="text-sm text-[var(--color-text)]"
                   />
-                  <button
-                    onClick={() => handleCatDelete(cat.id)}
-                    className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => updateCat.mutateAsync({ id: cat.id, deducts_inventory: !cat.deducts_inventory })}
+                      title={cat.deducts_inventory ? 'Descuenta inventario' : 'No descuenta inventario'}
+                      className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-colors"
+                      style={{
+                        borderColor: cat.deducts_inventory ? 'var(--color-accent)' : 'var(--color-border)',
+                        color: cat.deducts_inventory ? 'var(--color-accent)' : 'var(--color-muted)',
+                        background: cat.deducts_inventory ? 'color-mix(in srgb, var(--color-accent) 10%, transparent)' : 'transparent',
+                      }}
+                    >
+                      ◆ inventario
+                    </button>
+                    <button
+                      onClick={() => handleCatDelete(cat.id)}
+                      className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
               ))}
               {addingCat && (

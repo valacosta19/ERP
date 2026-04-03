@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { Plus, X, Check, Link, Ban } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { TopBar } from '@/components/layout/TopBar'
@@ -55,6 +55,7 @@ const EMPTY_DRAFT = {
   professionals: [] as { id: string; commission_rate: number }[],
   product_id: null as string | null,
   product_quantity: 1,
+  inventory_items: [] as Array<{ product_id: string; quantity: number }>,
 }
 
 function calcTotal(payments: PaymentRow[]) {
@@ -232,32 +233,43 @@ export function TransactionsPage() {
   const isDraftServiceCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'servicio'
   const isEditServiceCategory = subcategories.find(c => c.id === editForm.subcategory_id)?.name.toLowerCase() === 'servicio'
   const isDraftProductCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'producto'
-  const isDraftExpense = draft ? typeFromParent(draft.category_parent_id) === 'expense' : false
+  const isDraftInventoryCategory = !!(draft && subcategories.find(c => c.id === draft.subcategory_id)?.deducts_inventory)
 
-  const fifoCostRef = useRef<number | null>(null)
+  const fifoCostsRef = useRef<Record<string, number>>({})
 
-  useEffect(() => {
-    if (!draft?.product_id || !isDraftExpense || isDraftProductCategory) {
-      fifoCostRef.current = null
-      return
+  function computeInventoryTotal(items: Array<{ product_id: string; quantity: number }>) {
+    return items.reduce((sum, item) => sum + (fifoCostsRef.current[item.product_id] ?? 0) * item.quantity, 0)
+  }
+
+  async function handleInventoryProductChange(index: number, productId: string) {
+    const updated = (draft?.inventory_items ?? []).map((item, i) => i === index ? { ...item, product_id: productId } : item)
+    if (productId && !(productId in fifoCostsRef.current)) {
+      const { data } = await supabase
+        .from('inventory_lots')
+        .select('unit_cost')
+        .eq('product_id', productId)
+        .gt('remaining_quantity', 0)
+        .order('received_date', { ascending: true })
+        .limit(1)
+        .single()
+      fifoCostsRef.current[productId] = data?.unit_cost ?? 0
     }
-    supabase
-      .from('inventory_lots')
-      .select('unit_cost')
-      .eq('product_id', draft.product_id)
-      .gt('remaining_quantity', 0)
-      .order('received_date', { ascending: true })
-      .limit(1)
-      .single()
-      .then(({ data }) => {
-        if (!data) return
-        fifoCostRef.current = data.unit_cost
-        setDraft(d => d && {
-          ...d,
-          payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: data.unit_cost * d.product_quantity } : p),
-        })
-      })
-  }, [draft?.product_id])
+    setDraft(d => {
+      if (!d) return d
+      const items = updated
+      const total = items.reduce((sum, item) => sum + (fifoCostsRef.current[item.product_id] ?? 0) * item.quantity, 0)
+      return { ...d, inventory_items: items, payments: [{ payment_method: 'Inventario', instrument: null, amount: total }] }
+    })
+  }
+
+  function handleInventoryQuantityChange(index: number, quantity: number) {
+    setDraft(d => {
+      if (!d) return d
+      const items = d.inventory_items.map((item, i) => i === index ? { ...item, quantity } : item)
+      const total = items.reduce((sum, item) => sum + (fifoCostsRef.current[item.product_id] ?? 0) * item.quantity, 0)
+      return { ...d, inventory_items: items, payments: [{ payment_method: 'Inventario', instrument: null, amount: total }] }
+    })
+  }
 
   const draftSuggestions: Suggestion[] = isDraftProductCategory
     ? products
@@ -305,6 +317,7 @@ export function TransactionsPage() {
       professionals: tx.professionals?.map(h => ({ id: h.id, commission_rate: h.commission_rate })) ?? [],
       product_id: null,
       product_quantity: 1,
+      inventory_items: [],
     })
     setFormError('')
     setModalOpen(true)
@@ -322,8 +335,19 @@ export function TransactionsPage() {
 
   async function handleCreate() {
     if (!draft) return
-    const total = calcTotal(draft.payments)
-    if (!draft.date || total <= 0) {
+    const isInventoryCategory = !!subcategories.find(c => c.id === draft.subcategory_id)?.deducts_inventory
+    const total = isInventoryCategory
+      ? computeInventoryTotal(draft.inventory_items)
+      : calcTotal(draft.payments)
+    if (!draft.date) {
+      setFormError('La fecha es obligatoria.')
+      return
+    }
+    if (isInventoryCategory && draft.inventory_items.filter(i => i.product_id).length === 0) {
+      setFormError('Agregá al menos un producto para descontar del inventario.')
+      return
+    }
+    if (!isInventoryCategory && total <= 0) {
       setFormError('Fecha y al menos un pago con monto son obligatorios.')
       return
     }
@@ -348,15 +372,24 @@ export function TransactionsPage() {
       seña_amount: !isAnticipo && !isDevolución && isDraftServiceCategory && draft.seña_amount ? parseFloat(draft.seña_amount) : null,
       refunds_anticipo_id: isDevolución ? draft.refunds_anticipo_id : null,
       transfer_direction: transactionType === 'transfer' ? draft.transfer_direction : undefined,
-      payments: draft.payments.map(p => ({
-        ...p,
-        instrument: p.instrument || null,
-        amount: Number(p.amount),
-      })),
+      payments: isInventoryCategory
+        ? [{ payment_method: 'Inventario', instrument: null, amount: total }]
+        : draft.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
       professionals: draft.professionals,
     })
-    if (draft.product_id && transactionType === 'expense') {
-      const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (isInventoryCategory) {
+      for (const item of draft.inventory_items.filter(i => i.product_id)) {
+        const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
+          p_product_id: item.product_id,
+          p_quantity: item.quantity,
+          p_transaction_id: tx.id,
+          p_unit_sale_price: 0,
+          p_created_by: user!.id,
+        })
+        if (fifoError) throw new Error(fifoError.message)
+      }
+    } else if (draft.product_id && transactionType === 'expense') {
       const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
         p_product_id: draft.product_id,
         p_quantity: draft.product_quantity,
@@ -461,7 +494,7 @@ export function TransactionsPage() {
             </select>
             <select
               value={draft.subcategory_id}
-              onChange={e => setDraft(d => d && { ...d, subcategory_id: e.target.value, product_id: null, product_quantity: 1 })}
+              onChange={e => setDraft(d => d && { ...d, subcategory_id: e.target.value, product_id: null, product_quantity: 1, inventory_items: [] })}
               style={INLINE_SELECT_STYLE}
               disabled={!draft.category_parent_id}
             >
@@ -499,38 +532,65 @@ export function TransactionsPage() {
             )}
           </div>
 
-          {isDraftExpense && !isDraftProductCategory && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-[var(--color-muted)]">Descontar del inventario</span>
-              <select
-                value={draft.product_id ?? ''}
-                onChange={e => setDraft(d => d && { ...d, product_id: e.target.value || null, product_quantity: 1 })}
-                style={INLINE_SELECT_STYLE}
-              >
-                <option value="">— ninguno —</option>
-                {products.filter((p: Product) => (p.stock ?? 0) > 0).map((p: Product) => (
-                  <option key={p.id} value={p.id}>{p.name} (stock: {p.stock})</option>
-                ))}
-              </select>
-              {draft.product_id && (
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={draft.product_quantity}
-                  onChange={e => {
-                    const qty = Math.max(1, parseInt(e.target.value) || 1)
-                    setDraft(d => d && {
-                      ...d,
-                      product_quantity: qty,
-                      payments: fifoCostRef.current != null
-                        ? d.payments.map((p, i) => i === 0 ? { ...p, amount: fifoCostRef.current! * qty } : p)
-                        : d.payments,
-                    })
-                  }}
-                  style={{ ...INLINE_SELECT_STYLE, width: '70px' }}
-                  placeholder="Cant."
-                />
+          {isDraftInventoryCategory && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-[var(--color-muted)]">Productos a descontar</span>
+                <button
+                  type="button"
+                  onClick={() => setDraft(d => d && { ...d, inventory_items: [...d.inventory_items, { product_id: '', quantity: 1 }] })}
+                  className="text-xs text-[var(--color-accent)] hover:underline"
+                >
+                  + Agregar producto
+                </button>
+              </div>
+              {draft.inventory_items.length === 0 && (
+                <p className="text-xs text-[var(--color-muted)]">Agregá al menos un producto.</p>
+              )}
+              {draft.inventory_items.map((item, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <select
+                    value={item.product_id}
+                    onChange={e => handleInventoryProductChange(i, e.target.value)}
+                    style={INLINE_SELECT_STYLE}
+                  >
+                    <option value="">— producto —</option>
+                    {products.filter((p: Product) => (p.stock ?? 0) > 0).map((p: Product) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={item.quantity}
+                    onChange={e => handleInventoryQuantityChange(i, Math.max(1, parseInt(e.target.value) || 1))}
+                    style={{ ...INLINE_SELECT_STYLE, width: '65px' }}
+                    placeholder="Cant."
+                  />
+                  {item.product_id && fifoCostsRef.current[item.product_id] != null && (
+                    <span className="text-xs text-[var(--color-muted)]">
+                      costo: ${(fifoCostsRef.current[item.product_id] * item.quantity).toLocaleString('es-CO')}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setDraft(d => {
+                      if (!d) return d
+                      const items = d.inventory_items.filter((_, ii) => ii !== i)
+                      const total = items.reduce((sum, it) => sum + (fifoCostsRef.current[it.product_id] ?? 0) * it.quantity, 0)
+                      return { ...d, inventory_items: items, payments: [{ payment_method: 'Inventario', instrument: null, amount: total }] }
+                    })}
+                    className="text-[var(--color-muted)] hover:text-[var(--color-danger)] transition-colors"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+              {draft.inventory_items.length > 0 && (
+                <p className="text-xs text-[var(--color-muted)]">
+                  Total costo: ${computeInventoryTotal(draft.inventory_items).toLocaleString('es-CO')}
+                </p>
               )}
             </div>
           )}
@@ -570,7 +630,7 @@ export function TransactionsPage() {
             </div>
           )}
 
-          <div className="space-y-1.5">
+          {!isDraftInventoryCategory && <div className="space-y-1.5">
             <div className="flex items-center gap-3">
               <span className="text-xs font-medium text-[var(--color-muted)]">Métodos de pago</span>
               <button
@@ -617,7 +677,7 @@ export function TransactionsPage() {
                 )}
               </div>
             ))}
-          </div>
+          </div>}
 
           {isDraftServiceCategory && (
             <div className="space-y-1.5">

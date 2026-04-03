@@ -32,6 +32,7 @@ export interface Database {
           name: string
           parent_id: string | null
           transaction_type: 'income' | 'expense' | 'transfer' | null
+          deducts_inventory: boolean
           created_at: string
         }
         Insert: {
@@ -39,6 +40,7 @@ export interface Database {
           name: string
           parent_id?: string | null
           transaction_type?: 'income' | 'expense' | 'transfer' | null
+          deducts_inventory?: boolean
           created_at?: string
         }
         Update: {
@@ -46,6 +48,7 @@ export interface Database {
           name?: string
           parent_id?: string | null
           transaction_type?: 'income' | 'expense' | 'transfer' | null
+          deducts_inventory?: boolean
         }
         Relationships: []
       }
