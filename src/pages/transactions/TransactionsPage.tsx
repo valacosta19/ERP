@@ -54,6 +54,7 @@ const EMPTY_DRAFT = {
   payments: [makeEmptyPayment()] as PaymentRow[],
   professionals: [] as { id: string; commission_rate: number }[],
   product_id: null as string | null,
+  product_quantity: 1,
 }
 
 function calcTotal(payments: PaymentRow[]) {
@@ -231,6 +232,7 @@ export function TransactionsPage() {
   const isDraftServiceCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'servicio'
   const isEditServiceCategory = subcategories.find(c => c.id === editForm.subcategory_id)?.name.toLowerCase() === 'servicio'
   const isDraftProductCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'producto'
+  const isDraftExpense = draft ? typeFromParent(draft.category_parent_id) === 'expense' : false
 
   const draftSuggestions: Suggestion[] = isDraftProductCategory
     ? products
@@ -277,6 +279,7 @@ export function TransactionsPage() {
         : [makeEmptyPayment()],
       professionals: tx.professionals?.map(h => ({ id: h.id, commission_rate: h.commission_rate })) ?? [],
       product_id: null,
+      product_quantity: 1,
     })
     setFormError('')
     setModalOpen(true)
@@ -331,7 +334,7 @@ export function TransactionsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
         p_product_id: draft.product_id,
-        p_quantity: 1,
+        p_quantity: draft.product_quantity,
         p_transaction_id: tx.id,
         p_unit_sale_price: total,
         p_created_by: user!.id,
@@ -433,7 +436,7 @@ export function TransactionsPage() {
             </select>
             <select
               value={draft.subcategory_id}
-              onChange={e => setDraft(d => d && { ...d, subcategory_id: e.target.value, product_id: null })}
+              onChange={e => setDraft(d => d && { ...d, subcategory_id: e.target.value, product_id: null, product_quantity: 1 })}
               style={INLINE_SELECT_STYLE}
               disabled={!draft.category_parent_id}
             >
@@ -454,11 +457,49 @@ export function TransactionsPage() {
             )}
             <DescriptionCombobox
               value={draft.description}
-              onChange={v => { setDraftSelectedSuggestion(null); setDraft(d => d && { ...d, description: v, product_id: null }) }}
+              onChange={v => { setDraftSelectedSuggestion(null); setDraft(d => d && { ...d, description: v, product_id: null, product_quantity: 1 }) }}
               onSelect={handleSuggestionSelect}
               suggestions={draftSuggestions}
             />
+            {isDraftProductCategory && draft.product_id && (
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={draft.product_quantity}
+                onChange={e => setDraft(d => d && { ...d, product_quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                style={{ ...INLINE_SELECT_STYLE, width: '70px' }}
+                placeholder="Cant."
+              />
+            )}
           </div>
+
+          {isDraftExpense && !isDraftProductCategory && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-[var(--color-muted)]">Descontar del inventario</span>
+              <select
+                value={draft.product_id ?? ''}
+                onChange={e => setDraft(d => d && { ...d, product_id: e.target.value || null, product_quantity: 1 })}
+                style={INLINE_SELECT_STYLE}
+              >
+                <option value="">— ninguno —</option>
+                {products.filter((p: Product) => (p.stock ?? 0) > 0).map((p: Product) => (
+                  <option key={p.id} value={p.id}>{p.name} (stock: {p.stock})</option>
+                ))}
+              </select>
+              {draft.product_id && (
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={draft.product_quantity}
+                  onChange={e => setDraft(d => d && { ...d, product_quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                  style={{ ...INLINE_SELECT_STYLE, width: '70px' }}
+                  placeholder="Cant."
+                />
+              )}
+            </div>
+          )}
 
           {draftSelectedSuggestion && (draftSelectedSuggestion.priceCash > 0 || draftSelectedSuggestion.priceTransfer != null || draftSelectedSuggestion.priceCard != null) && (
             <div className="flex items-center gap-1.5 flex-wrap">
