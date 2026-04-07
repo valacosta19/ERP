@@ -271,11 +271,16 @@ export function TransactionsPage() {
     })
   }
 
+  const isDraftExpense = draft ? typeFromParent(draft.category_parent_id) === 'expense' : false
+
   const draftSuggestions: Suggestion[] = isDraftProductCategory
     ? products
         .filter((p: Product) => (p.stock ?? 0) > 0)
         .map((p: Product) => ({ id: p.id, name: p.name, priceCash: p.sale_price, priceTransfer: null, priceCard: null, productId: p.id }))
-    : catalogItems.map((ci: CatalogItem) => ({ id: ci.id, name: ci.name, priceCash: ci.price, priceTransfer: ci.price_transfer ?? null, priceCard: ci.price_card ?? null }))
+    : [
+        ...catalogItems.map((ci: CatalogItem) => ({ id: ci.id, name: ci.name, priceCash: ci.price, priceTransfer: ci.price_transfer ?? null, priceCard: ci.price_card ?? null })),
+        ...(isDraftExpense ? products.map((p: Product) => ({ id: p.id, name: p.name, priceCash: 0, priceTransfer: null, priceCard: null, productId: p.id })) : []),
+      ]
 
   function startNew() {
     setFormError('')
