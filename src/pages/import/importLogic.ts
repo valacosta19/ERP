@@ -102,6 +102,75 @@ export function parseWorkbook(file: File): Promise<ParsedSheet[]> {
   })
 }
 
+export function downloadSampleTemplate() {
+  const wb = XLSX.utils.book_new()
+
+  const sheets: { name: string; data: (string | number)[][] }[] = [
+    {
+      name: 'Categorías',
+      data: [
+        ['Nombre'],
+        ['Coloración'],
+        ['Tratamientos'],
+      ],
+    },
+    {
+      name: 'Proveedores',
+      data: [
+        ['Nombre', 'Contacto', 'Teléfono', 'Email', 'Notas'],
+        ['L\'Oréal Argentina', 'Juan Pérez', '1145678901', 'juan@loreal.com', 'Distribuidor oficial'],
+        ['Wella Professionals', 'María López', '1156789012', 'maria@wella.com', ''],
+      ],
+    },
+    {
+      name: 'Productos',
+      data: [
+        ['Nombre', 'SKU', 'Precio', 'Costo', 'Cantidad', 'Fecha', 'Marca', 'Unidad', 'Stock mínimo'],
+        ['Tinte Rubio 9.0', 'TIN-001', 2500, 1200, 10, '01/03/2024', 'L\'Oréal', 'tubo', 2],
+        ['Shampoo Hidratante 500ml', 'SHA-001', 3800, 1800, 5, '01/03/2024', 'Wella', 'unidad', 1],
+      ],
+    },
+    {
+      name: 'Servicios',
+      data: [
+        ['Nombre', 'Precio'],
+        ['Corte de cabello', 8000],
+        ['Coloración completa', 25000],
+      ],
+    },
+    {
+      name: 'Transacciones',
+      data: [
+        ['Fecha', 'Entrada', 'Salida', 'Moneda', 'Categoría', 'Descripción', 'Medio de pago', 'Instrumento', 'Seña', 'Peluquera'],
+        ['15/03/2024', 25000, '', 'ARS', 'Ingresos', 'Coloración completa - cliente Ana', 'Efectivo', '', '', 'Laura'],
+        ['15/03/2024', '', 5000, 'ARS', 'Gastos', 'Compra de insumos', 'Transferencia', 'Transferencia', '', ''],
+      ],
+    },
+    {
+      name: 'Lotes',
+      data: [
+        ['SKU', 'Fecha', 'Cantidad', 'Costo', 'Precio', 'Notas'],
+        ['TIN-001', '01/03/2024', 10, 1200, 2500, 'Lote inicial'],
+        ['SHA-001', '01/03/2024', 5, 1800, 3800, ''],
+      ],
+    },
+    {
+      name: 'Profesionales',
+      data: [
+        ['Nombre', 'Activo'],
+        ['Laura García', 'true'],
+        ['Sofía Martínez', 'true'],
+      ],
+    },
+  ]
+
+  for (const { name, data } of sheets) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), name)
+  }
+
+  XLSX.writeFile(wb, 'plantilla-importacion.xlsx')
+}
+
 export function autoSuggestMapping(headers: string[], entityType: EntityType): Record<string, string> {
   const fields = ENTITY_FIELDS[entityType]
   const mapping: Record<string, string> = {}

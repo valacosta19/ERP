@@ -20,7 +20,7 @@ export function useTransactionCategories() {
 export function useCreateTransactionCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (payload: { name: string; parent_id: string }) => {
+    mutationFn: async (payload: { name: string; parent_id: string; deducts_inventory?: boolean }) => {
       const { data, error } = await supabase
         .from('transaction_categories')
         .insert(payload)
@@ -36,10 +36,13 @@ export function useCreateTransactionCategory() {
 export function useUpdateTransactionCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+    mutationFn: async ({ id, name, deducts_inventory }: { id: string; name?: string; deducts_inventory?: boolean }) => {
+      const patch: Record<string, unknown> = {}
+      if (name !== undefined) patch.name = name
+      if (deducts_inventory !== undefined) patch.deducts_inventory = deducts_inventory
       const { data, error } = await supabase
         .from('transaction_categories')
-        .update({ name })
+        .update(patch)
         .eq('id', id)
         .select()
         .single()

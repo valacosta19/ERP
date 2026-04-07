@@ -169,7 +169,7 @@ export function useBusinessSnapshot() {
       const byMonth = new Map<string, Omit<ProfitMonthRow, 'month' | 'month_label'>>()
       function ensure(month: string) {
         if (!byMonth.has(month)) {
-          byMonth.set(month, { product_revenue: 0, product_cogs: 0, product_profit: 0, service_income: 0, total_expenses: 0, total_profit: 0 })
+          byMonth.set(month, { product_revenue: 0, product_cogs: 0, product_profit: 0, service_income: 0, direct_costs: 0, operating_expenses: 0, total_profit: 0 })
         }
         return byMonth.get(month)!
       }
@@ -196,14 +196,14 @@ export function useBusinessSnapshot() {
             byMonth.get(month)!.product_revenue += serviceTotal
           }
         } else if (tx.transaction_categories?.transaction_type === 'expense') {
-          byMonth.get(month)!.total_expenses += serviceTotal
+          byMonth.get(month)!.operating_expenses += serviceTotal
         }
       }
 
       for (const [month, row] of byMonth) {
         const totalIncome = totalIncomeByMonth.get(month) ?? 0
         row.product_profit = row.product_revenue - row.product_cogs
-        row.total_profit = totalIncome - row.product_cogs - row.total_expenses
+        row.total_profit = totalIncome - row.product_cogs - row.direct_costs - row.operating_expenses
       }
 
       const profitRows: ProfitMonthRow[] = Array.from(byMonth.entries())

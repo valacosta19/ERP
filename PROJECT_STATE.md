@@ -10,6 +10,39 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 26** — ✅ Completa
+
+### Cambios implementados en Phase 26
+
+#### Feature: Historial de montos en gastos fijos con fecha de vigencia
+
+**Problema resuelto:** Los gastos fijos tenían un único `monthly_amount` aplicado uniformemente a todos los meses. Al actualizar un monto se sobreescribía el valor anterior, rompiendo el cálculo histórico de utilidad neta.
+
+**Migración:**
+- **`044_fixed_cost_rates.sql`**: tabla `fixed_cost_rates` (id, fixed_cost_id uuid→fixed_costs, monthly_amount, effective_from date, created_at). RLS authenticated. Migra los montos existentes con `effective_from = '2000-01-01'`.
+
+**Tipos:**
+- `database.ts`: tabla `fixed_cost_rates` con Row/Insert/Update/Relationships: [].
+- `index.ts`: interfaz `FixedCostRate`.
+
+**Hooks nuevos (`useFixedCosts.ts`):**
+- `useAllFixedCostRates()`: trae todos los rates ordenados por `effective_from ASC`.
+- `useAddFixedCostRate()`: inserta un rate nuevo; si `effective_from <= hoy`, sincroniza `fixed_costs.monthly_amount`. Invalida `['fixed-costs']` y `['fixed-cost-rates']`.
+
+**ReportsPage.tsx — tab Utilidad:**
+- `getFixedForMonth(month)`: por cada costo activo busca el rate con el mayor `effective_from <= YYYY-MM-01` y suma. Usa `useCallback` sobre `fixedCosts` + `allRates`.
+- `fixedForPeriod`: ahora es `sum(getFixedForMonth(row.month))` en lugar de `totalMonthlyFixed × numMonths`.
+- Cada fila mensual muestra el gasto fijo correcto para ese mes. La columna "Gastos fijos" refleja el rate vigente en cada período.
+- `totalMonthlyFixed` se mantiene sin cambios para el tab Costos (referencia del monto vigente actual).
+
+**SettingsPage.tsx:**
+- Botón "Actualizar monto" por gasto fijo: despliega formulario inline con `Nuevo monto` + `Vigente desde` (date).
+- Al guardar llama `useAddFixedCostRate`. Muestra historial de los últimos 3 rates (fecha → monto).
+- `monthly_amount` pasa a ser display read-only (se actualiza vía rates).
+
+---
+
+## Current phase (anterior)
 **Phase 25** — ✅ Completa
 
 ### Cambios implementados en Phase 25

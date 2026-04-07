@@ -10,12 +10,12 @@ import { useProfessionals, useCreateProfessional, useUpdateProfessional, useDele
 import { useCatalogItems, useCreateCatalogItem, useUpdateCatalogItem, useDeleteCatalogItem, useUpdateCatalogItemHours } from '@/hooks/useCatalogItems'
 import { usePaymentMethods, useCreatePaymentMethod, useUpdatePaymentMethod, useDeletePaymentMethod } from '@/hooks/usePaymentMethods'
 import { useAuth, useUpdateProfile, useUsers, useInviteUser, useUpdateUserRole } from '@/hooks/useAuth'
-import { useFixedCosts, useCreateFixedCost, useUpdateFixedCost, useDeleteFixedCost } from '@/hooks/useFixedCosts'
+import { useFixedCosts, useCreateFixedCost, useUpdateFixedCost, useDeleteFixedCost, useAllFixedCostRates, useAddFixedCostRate } from '@/hooks/useFixedCosts'
 import { useServiceRecipes, useUpsertServiceRecipes } from '@/hooks/useServiceRecipes'
 import { useProducts } from '@/hooks/useProducts'
 import { useLockedPeriods, useLockPeriod, useUnlockPeriod } from '@/hooks/useLockedPeriods'
 import type { LockedPeriod } from '@/hooks/useLockedPeriods'
-import type { Professional, PaymentMethodConfig, FixedCost, Product } from '@/types'
+import type { Professional, PaymentMethodConfig, FixedCost, Product, FixedCostRate } from '@/types'
 
 function DraftInput({
   inputRef,
@@ -250,6 +250,7 @@ export function SettingsPage() {
   const [addingCat, setAddingCat] = useState(false)
   const [catDraft, setCatDraft] = useState('')
   const [catParentDraft, setCatParentDraft] = useState('')
+  const [catDeductsInventory, setCatDeductsInventory] = useState(false)
   const catInputRef = useRef<HTMLInputElement>(null)
 
   const [addingHd, setAddingHd] = useState(false)
@@ -348,21 +349,24 @@ export function SettingsPage() {
     setAddingCat(true)
     setCatDraft('')
     setCatParentDraft('')
+    setCatDeductsInventory(false)
     setTimeout(() => catInputRef.current?.focus(), 0)
   }
 
   async function saveCat() {
     if (!catDraft.trim() || !catParentDraft) return
-    await createCat.mutateAsync({ name: catDraft.trim(), parent_id: catParentDraft })
+    await createCat.mutateAsync({ name: catDraft.trim(), parent_id: catParentDraft, deducts_inventory: catDeductsInventory })
     setAddingCat(false)
     setCatDraft('')
     setCatParentDraft('')
+    setCatDeductsInventory(false)
   }
 
   function cancelCat() {
     setAddingCat(false)
     setCatDraft('')
     setCatParentDraft('')
+    setCatDeductsInventory(false)
   }
 
   function handleCatKeyDown(e: React.KeyboardEvent) {
@@ -488,11 +492,29 @@ export function SettingsPage() {
   const createFc = useCreateFixedCost()
   const updateFc = useUpdateFixedCost()
   const deleteFc = useDeleteFixedCost()
+  const { data: allRates = [] } = useAllFixedCostRates()
+  const addRate = useAddFixedCostRate()
 
   const [addingFc, setAddingFc] = useState(false)
   const [fcDraftName, setFcDraftName] = useState('')
   const [fcDraftAmount, setFcDraftAmount] = useState('')
   const fcNameRef = useRef<HTMLInputElement>(null)
+
+  const [expandedRatesId, setExpandedRatesId] = useState<string | null>(null)
+  const [newRateAmount, setNewRateAmount] = useState('')
+  const [newRateDate, setNewRateDate] = useState('')
+
+  function getRatesForCost(fcId: string): FixedCostRate[] {
+    return allRates.filter(r => r.fixed_cost_id === fcId)
+  }
+
+  async function handleAddRate(fcId: string) {
+    if (!newRateAmount || !newRateDate) return
+    await addRate.mutateAsync({ fixed_cost_id: fcId, monthly_amount: parseFloat(newRateAmount) || 0, effective_from: newRateDate })
+    setExpandedRatesId(null)
+    setNewRateAmount('')
+    setNewRateDate('')
+  }
 
   function startAddFc() {
     setAddingFc(true)
@@ -956,11 +978,21 @@ export function SettingsPage() {
               )}
               {categories.map(cat => (
                 <div key={cat.id} className="flex items-center justify-between px-4 py-3">
-                  <InlineEditCell
-                    value={cat.name}
-                    onSave={async v => { await updateCat.mutateAsync({ id: cat.id, name: v }) }}
-                    className="text-sm text-[var(--color-text)]"
-                  />
+                  <div className="flex items-center gap-2">
+                    <InlineEditCell
+                      value={cat.name}
+                      onSave={async v => { await updateCat.mutateAsync({ id: cat.id, name: v }) }}
+                      className="text-sm text-[var(--color-text)]"
+                    />
+                    {cat.deducts_inventory && (
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded-full"
+                        style={{ color: 'var(--color-accent)', background: 'color-mix(in srgb, var(--color-accent) 10%, transparent)' }}
+                      >
+                        ◆ inventario
+                      </span>
+                    )}
+                  </div>
                   <button
                     onClick={() => handleCatDelete(cat.id)}
                     className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
@@ -1002,6 +1034,19 @@ export function SettingsPage() {
                     placeholder="Nombre de la categoría"
                     autoFocus
                   />
+                  <button
+                    type="button"
+                    onClick={() => setCatDeductsInventory(v => !v)}
+                    title="Descuenta inventario al registrar"
+                    className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-colors shrink-0"
+                    style={{
+                      borderColor: catDeductsInventory ? 'var(--color-accent)' : 'var(--color-border)',
+                      color: catDeductsInventory ? 'var(--color-accent)' : 'var(--color-muted)',
+                      background: catDeductsInventory ? 'color-mix(in srgb, var(--color-accent) 10%, transparent)' : 'transparent',
+                    }}
+                  >
+                    ◆ inventario
+                  </button>
                   <button
                     onClick={saveCat}
                     disabled={createCat.isPending || !catDraft.trim() || !catParentDraft}
@@ -1073,39 +1118,98 @@ export function SettingsPage() {
               {fixedCosts.length === 0 && !addingFc && (
                 <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin gastos fijos</p>
               )}
-              {fixedCosts.map(fc => (
-                <div key={fc.id} className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <InlineEditCell
-                      value={fc.name}
-                      onSave={async v => { await updateFc.mutateAsync({ id: fc.id, name: v }) }}
-                      className="text-sm text-[var(--color-text)]"
-                    />
-                    <InlineEditCell
-                      value={String(fc.monthly_amount)}
-                      type="number"
-                      displayValue={`$${fc.monthly_amount.toLocaleString('es-AR')}`}
-                      onSave={async v => { await updateFc.mutateAsync({ id: fc.id, monthly_amount: parseFloat(v) || 0 }) }}
-                      className="text-sm tabular-nums text-[var(--color-muted)]"
-                    />
+              {fixedCosts.map(fc => {
+                const rates = getRatesForCost(fc.id)
+                const isExpanded = expandedRatesId === fc.id
+                return (
+                  <div key={fc.id} className="border-t border-[var(--color-border)] first:border-t-0">
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                        <InlineEditCell
+                          value={fc.name}
+                          onSave={async v => { await updateFc.mutateAsync({ id: fc.id, name: v }) }}
+                          className="text-sm text-[var(--color-text)]"
+                        />
+                        <span className="text-sm tabular-nums text-[var(--color-muted)]">${fc.monthly_amount.toLocaleString('es-AR')}/mes</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            if (isExpanded) { setExpandedRatesId(null); setNewRateAmount(''); setNewRateDate('') }
+                            else { setExpandedRatesId(fc.id); setNewRateAmount(''); setNewRateDate('') }
+                          }}
+                          className="px-2 py-1 rounded-lg text-xs text-[var(--color-accent)] hover:bg-[var(--color-bg)] transition-colors"
+                        >
+                          Actualizar monto
+                        </button>
+                        <Badge variant={fc.active ? 'success' : 'default'}>{fc.active ? 'Activo' : 'Inactivo'}</Badge>
+                        <button
+                          onClick={() => handleFcToggleActive(fc)}
+                          className="px-2 py-1 rounded-lg text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+                        >
+                          {fc.active ? 'Desactivar' : 'Activar'}
+                        </button>
+                        <button
+                          onClick={() => handleFcDelete(fc.id)}
+                          className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    {isExpanded && (
+                      <div className="px-4 pb-3 space-y-2">
+                        <div className="flex items-end gap-2">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-[var(--color-muted)]">Nuevo monto</label>
+                            <input
+                              type="number"
+                              value={newRateAmount}
+                              onChange={e => setNewRateAmount(e.target.value)}
+                              placeholder="0"
+                              style={{ width: '120px', padding: '4px 8px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-[var(--color-muted)]">Vigente desde</label>
+                            <input
+                              type="date"
+                              value={newRateDate}
+                              onChange={e => setNewRateDate(e.target.value)}
+                              style={{ padding: '4px 8px', fontSize: '13px', borderRadius: '6px', border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'var(--color-text)' }}
+                            />
+                          </div>
+                          <button
+                            onClick={() => handleAddRate(fc.id)}
+                            disabled={!newRateAmount || !newRateDate || addRate.isPending}
+                            className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+                            style={{ background: 'var(--color-accent)', color: '#fff' }}
+                          >
+                            <Check size={13} />
+                          </button>
+                          <button
+                            onClick={() => { setExpandedRatesId(null); setNewRateAmount(''); setNewRateDate('') }}
+                            className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                        {rates.length > 0 && (
+                          <div className="text-xs text-[var(--color-muted)] space-y-0.5">
+                            {rates.slice(-3).reverse().map(r => (
+                              <div key={r.id} className="flex gap-2">
+                                <span className="tabular-nums">{r.effective_from}</span>
+                                <span>→</span>
+                                <span className="tabular-nums">${r.monthly_amount.toLocaleString('es-AR')}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Badge variant={fc.active ? 'success' : 'default'}>{fc.active ? 'Activo' : 'Inactivo'}</Badge>
-                    <button
-                      onClick={() => handleFcToggleActive(fc)}
-                      className="px-2 py-1 rounded-lg text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
-                    >
-                      {fc.active ? 'Desactivar' : 'Activar'}
-                    </button>
-                    <button
-                      onClick={() => handleFcDelete(fc.id)}
-                      className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
               <div className="px-4 py-3 text-xs text-[var(--color-muted)]">
                 Total activos: <span className="font-semibold text-[var(--color-text)]">${activeFcTotal.toLocaleString('es-AR')}/mes</span>
                 {' → '}

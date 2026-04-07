@@ -109,9 +109,9 @@ export function buildSystemPrompt(snapshot: BusinessSnapshot): string {
   if (snapshot.profitRows.length === 0) {
     lines.push('Sin datos.')
   } else {
-    lines.push('Mes | Ing.Servicios | Ing.Productos | COGS | Gastos Fijos | Ganancia Neta')
+    lines.push('Mes | Ing.Servicios | Ing.Productos | COGS | Costos+Gastos | Ganancia Neta')
     for (const r of snapshot.profitRows) {
-      lines.push(`${r.month_label} | ${fmtN(r.service_income)} | ${fmtN(r.product_revenue)} | ${fmtN(r.product_cogs)} | ${fmtN(r.total_expenses)} | ${fmtN(r.total_profit)}`)
+      lines.push(`${r.month_label} | ${fmtN(r.service_income)} | ${fmtN(r.product_revenue)} | ${fmtN(r.product_cogs)} | ${fmtN(r.direct_costs + r.operating_expenses)} | ${fmtN(r.total_profit)}`)
     }
   }
   lines.push('')

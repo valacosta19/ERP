@@ -2,6 +2,17 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 import type { Currency } from '@/types'
 
+export type BalanceSheet = {
+  cash: { method: string; amount: number }[]
+  totalCash: number
+  receivables: number
+  inventoryValue: number
+  totalAssets: number
+  payables: number
+  totalLiabilities: number
+  equity: number
+}
+
 export type ProfitMonthRow = {
   month: string
   month_label: string
@@ -9,7 +20,8 @@ export type ProfitMonthRow = {
   product_cogs: number
   product_profit: number
   service_income: number
-  total_expenses: number
+  direct_costs: number
+  operating_expenses: number
   total_profit: number
 }
 
@@ -138,6 +150,69 @@ export function useInventoryValuation() {
   })
 }
 
+type RawPaymentWithTx = {
+  payment_method: string
+  amount: number
+  transactions: {
+    date: string
+    voided_at: string | null
+    transaction_categories: { transaction_type: string | null } | null
+  } | null
+}
+
+export function useBalanceSheet(asOfDate?: string) {
+  return useQuery<BalanceSheet>({
+    queryKey: ['reports', 'balance-sheet', asOfDate],
+    queryFn: async () => {
+      const dateFilter = asOfDate ?? new Date().toISOString().slice(0, 10)
+
+      const [paymentsRes, receivablesRes, lotsRes, debtsRes] = await Promise.all([
+        supabase
+          .from('transaction_payments')
+          .select('payment_method, amount, transactions!inner(date, voided_at, transaction_categories!subcategory_id(transaction_type))')
+          .is('transactions.voided_at', null)
+          .lte('transactions.date', dateFilter),
+        supabase.from('receivables').select('total_amount, collected_amount'),
+        supabase.from('inventory_lots').select('remaining_quantity, unit_cost').gt('remaining_quantity', 0),
+        supabase.from('supplier_debts').select('total_amount, paid_amount'),
+      ])
+
+      if (paymentsRes.error) throw new Error(paymentsRes.error.message)
+      if (receivablesRes.error) throw new Error(receivablesRes.error.message)
+      if (lotsRes.error) throw new Error(lotsRes.error.message)
+      if (debtsRes.error) throw new Error(debtsRes.error.message)
+
+      const cashMap = new Map<string, number>()
+      for (const p of (paymentsRes.data as unknown as RawPaymentWithTx[])) {
+        const txType = p.transactions?.transaction_categories?.transaction_type
+        if (!txType || txType === 'transfer') continue
+        const sign = txType === 'income' ? 1 : -1
+        cashMap.set(p.payment_method, (cashMap.get(p.payment_method) ?? 0) + sign * Number(p.amount))
+      }
+
+      const cash = Array.from(cashMap.entries())
+        .map(([method, amount]) => ({ method, amount }))
+        .sort((a, b) => b.amount - a.amount)
+      const totalCash = cash.reduce((s, c) => s + c.amount, 0)
+
+      const receivables = ((receivablesRes.data ?? []) as { total_amount: number; collected_amount: number }[])
+        .reduce((s, r) => s + (Number(r.total_amount) - Number(r.collected_amount)), 0)
+
+      const inventoryValue = ((lotsRes.data ?? []) as { remaining_quantity: number; unit_cost: number }[])
+        .reduce((s, l) => s + Number(l.remaining_quantity) * Number(l.unit_cost), 0)
+
+      const payables = ((debtsRes.data ?? []) as { total_amount: number; paid_amount: number }[])
+        .reduce((s, d) => s + (Number(d.total_amount) - Number(d.paid_amount)), 0)
+
+      const totalAssets = totalCash + receivables + inventoryValue
+      const totalLiabilities = payables
+      const equity = totalAssets - totalLiabilities
+
+      return { cash, totalCash, receivables, inventoryValue, totalAssets, payables, totalLiabilities, equity }
+    },
+  })
+}
+
 type RawSaleItem = {
   transaction_id: string
   quantity: number
@@ -153,7 +228,8 @@ type RawTxProfit = {
   seña_amount: number | null
   is_seña: boolean
   currency: string
-  transaction_categories: { name: string; transaction_type: string | null } | null
+  subcategory_id: string | null
+  transaction_categories: { name: string; transaction_type: string | null; parent_id: string | null } | null
 }
 
 function monthLabel(month: string) {
@@ -169,12 +245,19 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
       const toARS = (amount: number, currency: string) =>
         currency === 'USD' ? amount * usdRate : amount
 
-      const [saleItemsRes, txRes] = await Promise.all([
+      const [saleItemsRes, txRes, catsRes] = await Promise.all([
         supabase.from('sale_items').select('transaction_id, quantity, unit_cost, unit_sale_price, transactions(date)'),
-        supabase.from('transactions').select('id, date, amount, seña_amount, is_seña, currency, transaction_categories!subcategory_id(name, transaction_type)').is('voided_at', null),
+        supabase.from('transactions').select('id, date, amount, seña_amount, is_seña, currency, subcategory_id, transaction_categories!subcategory_id(name, transaction_type, parent_id)').is('voided_at', null),
+        supabase.from('transaction_categories').select('id, name'),
       ])
       if (saleItemsRes.error) throw new Error(saleItemsRes.error.message)
       if (txRes.error) throw new Error(txRes.error.message)
+      if (catsRes.error) throw new Error(catsRes.error.message)
+
+      const catNameById = new Map<string, string>()
+      for (const c of ((catsRes.data ?? []) as { id: string; name: string }[])) {
+        catNameById.set(c.id, c.name)
+      }
 
       const saleItems = ((saleItemsRes.data as unknown as RawSaleItem[]) ?? []).filter(si => {
         const date = si.transactions?.date
@@ -198,7 +281,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
         if (!byMonth.has(month)) {
           byMonth.set(month, {
             product_revenue: 0, product_cogs: 0, product_profit: 0,
-            service_income: 0, total_expenses: 0, total_profit: 0,
+            service_income: 0, direct_costs: 0, operating_expenses: 0, total_profit: 0,
           })
         }
         return byMonth.get(month)!
@@ -229,14 +312,20 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
             byMonth.get(month)!.product_revenue += amountARS
           }
         } else if (tx.transaction_categories?.transaction_type === 'expense') {
-          byMonth.get(month)!.total_expenses += amountARS
+          const parentId = tx.transaction_categories.parent_id
+          const parentName = parentId ? (catNameById.get(parentId) ?? '') : ''
+          if (parentName.toLowerCase() === 'costos') {
+            byMonth.get(month)!.direct_costs += amountARS
+          } else {
+            byMonth.get(month)!.operating_expenses += amountARS
+          }
         }
       }
 
       for (const [month, row] of byMonth) {
         const totalIncome = totalIncomeByMonth.get(month) ?? 0
         row.product_profit = row.product_revenue - row.product_cogs
-        row.total_profit = totalIncome - row.product_cogs - row.total_expenses
+        row.total_profit = totalIncome - row.product_cogs - row.direct_costs - row.operating_expenses
       }
 
       const rows: ProfitMonthRow[] = Array.from(byMonth.entries())
@@ -249,10 +338,11 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
           product_cogs: acc.product_cogs + r.product_cogs,
           product_profit: acc.product_profit + r.product_profit,
           service_income: acc.service_income + r.service_income,
-          total_expenses: acc.total_expenses + r.total_expenses,
+          direct_costs: acc.direct_costs + r.direct_costs,
+          operating_expenses: acc.operating_expenses + r.operating_expenses,
           total_profit: acc.total_profit + r.total_profit,
         }),
-        { product_revenue: 0, product_cogs: 0, product_profit: 0, service_income: 0, total_expenses: 0, total_profit: 0 }
+        { product_revenue: 0, product_cogs: 0, product_profit: 0, service_income: 0, direct_costs: 0, operating_expenses: 0, total_profit: 0 }
       )
 
       return { rows, totals }

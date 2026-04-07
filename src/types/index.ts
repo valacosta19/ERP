@@ -22,6 +22,7 @@ export interface TransactionCategory {
   name: string
   parent_id: string | null
   transaction_type: 'income' | 'expense' | 'transfer' | null
+  deducts_inventory: boolean
   created_at: string
 }
 
@@ -178,11 +179,30 @@ export interface FixedCost {
   active: boolean
 }
 
+export interface FixedCostRate {
+  id: string
+  fixed_cost_id: string
+  monthly_amount: number
+  effective_from: string
+  created_at: string
+}
+
 export interface ServiceRecipe {
   id: string
   catalog_item_id: string
   product_id: string
   quantity_grams: number
+}
+
+export interface TransactionRecipeCost {
+  id: string
+  transaction_id: string
+  catalog_item_id: string
+  product_id: string
+  quantity_grams: number
+  avg_unit_cost: number
+  unit_size: number
+  created_at: string
 }
 
 export interface ServiceCostRow {

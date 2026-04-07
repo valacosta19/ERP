@@ -32,6 +32,7 @@ export interface Database {
           name: string
           parent_id: string | null
           transaction_type: 'income' | 'expense' | 'transfer' | null
+          deducts_inventory: boolean
           created_at: string
         }
         Insert: {
@@ -39,6 +40,7 @@ export interface Database {
           name: string
           parent_id?: string | null
           transaction_type?: 'income' | 'expense' | 'transfer' | null
+          deducts_inventory?: boolean
           created_at?: string
         }
         Update: {
@@ -46,6 +48,7 @@ export interface Database {
           name?: string
           parent_id?: string | null
           transaction_type?: 'income' | 'expense' | 'transfer' | null
+          deducts_inventory?: boolean
         }
         Relationships: []
       }
@@ -502,6 +505,30 @@ export interface Database {
         }
         Relationships: []
       }
+      fixed_cost_rates: {
+        Row: {
+          id: string
+          fixed_cost_id: string
+          monthly_amount: number
+          effective_from: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          fixed_cost_id: string
+          monthly_amount: number
+          effective_from: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          fixed_cost_id?: string
+          monthly_amount?: number
+          effective_from?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       fixed_costs: {
         Row: {
           id: string
@@ -678,6 +705,30 @@ export interface Database {
           transaction_id?: string | null
           notes?: string | null
         }
+        Relationships: []
+      }
+      transaction_recipe_costs: {
+        Row: {
+          id: string
+          transaction_id: string
+          catalog_item_id: string
+          product_id: string
+          quantity_grams: number
+          avg_unit_cost: number
+          unit_size: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          transaction_id: string
+          catalog_item_id: string
+          product_id: string
+          quantity_grams: number
+          avg_unit_cost: number
+          unit_size: number
+          created_at?: string
+        }
+        Update: never
         Relationships: []
       }
     }
