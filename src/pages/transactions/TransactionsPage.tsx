@@ -992,7 +992,7 @@ export function TransactionsPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {paymentBalances.map(b => (
+          {paymentBalances.filter(b => b.method.toLowerCase() !== 'inventario').map(b => (
             <div
               key={b.method}
               className="rounded-xl border border-[var(--color-border)] p-4"
