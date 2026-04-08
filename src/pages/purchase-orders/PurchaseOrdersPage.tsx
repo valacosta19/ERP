@@ -33,8 +33,9 @@ function formatCurrency(amount: number) {
   return `$${amount.toLocaleString('es-CO')}`
 }
 
-function calcPOTotal(items: PurchaseOrderItem[], shippingCost = 0) {
-  return items.reduce((acc, i) => acc + i.quantity * i.unit_cost, 0) + shippingCost
+function calcPOTotal(items: PurchaseOrderItem[], shippingCost = 0, discountAmount = 0) {
+  const subtotal = items.reduce((acc, i) => acc + i.quantity * i.unit_cost, 0)
+  return subtotal - discountAmount + shippingCost
 }
 
 interface LineItem {
@@ -264,7 +265,7 @@ export function PurchaseOrdersPage() {
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState('')
 
-  const [form, setForm] = useState({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '' })
+  const [form, setForm] = useState({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '', discount_pct: '', discount_amount: '' })
   const [lines, setLines] = useState<LineItem[]>([{ ...EMPTY_LINE }])
   const [formError, setFormError] = useState('')
   const [showHidden, setShowHidden] = useState(false)
@@ -340,7 +341,7 @@ export function PurchaseOrdersPage() {
       }
     }
     setDraftRestored(false)
-    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '' })
+    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '', discount_pct: '', discount_amount: '' })
     setLines(productIds.length > 0
       ? productIds.map(id => ({ product_id: id, quantity: '', unit_cost: '' }))
       : [{ ...EMPTY_LINE }]
@@ -353,7 +354,7 @@ export function PurchaseOrdersPage() {
   function discardDraft() {
     localStorage.removeItem(DRAFT_KEY)
     setDraftRestored(false)
-    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '' })
+    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '', discount_pct: '', discount_amount: '' })
     setLines([{ ...EMPTY_LINE }])
     setFormError('')
   }
@@ -361,6 +362,24 @@ export function PurchaseOrdersPage() {
   function saveDraft() {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({ form, lines }))
     setCreateOpen(false)
+  }
+
+  function handleDiscountPctChange(value: string) {
+    setForm(f => {
+      const subtotal = lines.reduce((acc, l) => acc + (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_cost) || 0), 0)
+      const pct = parseFloat(value)
+      const amount = !isNaN(pct) && subtotal > 0 ? ((subtotal * pct) / 100).toFixed(2) : f.discount_amount
+      return { ...f, discount_pct: value, discount_amount: amount }
+    })
+  }
+
+  function handleDiscountAmountChange(value: string) {
+    setForm(f => {
+      const subtotal = lines.reduce((acc, l) => acc + (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_cost) || 0), 0)
+      const amount = parseFloat(value)
+      const pct = !isNaN(amount) && subtotal > 0 ? ((amount / subtotal) * 100).toFixed(2) : f.discount_pct
+      return { ...f, discount_amount: value, discount_pct: pct }
+    })
   }
 
   async function handleCreateSubmit() {
@@ -380,6 +399,7 @@ export function PurchaseOrdersPage() {
       supplier_id: form.supplier_id || null,
       order_date: form.order_date,
       shipping_cost: parseFloat(form.shipping_cost) || 0,
+      discount_amount: parseFloat(form.discount_amount) || 0,
       items: validLines.map(l => ({
         product_id: l.product_id,
         quantity: parseFloat(l.quantity),
@@ -444,7 +464,7 @@ export function PurchaseOrdersPage() {
       const orig = selectedPO.items?.find(i => i.id === l.id)
       return sum + (orig ? orig.unit_cost * parseFloat(l.received) : 0)
     }, 0)
-    const totalAmount = itemsTotal + (selectedPO.shipping_cost ?? 0)
+    const totalAmount = itemsTotal + (selectedPO.shipping_cost ?? 0) - (selectedPO.discount_amount ?? 0)
 
     let paymentOption: POPaymentOption
     if (paymentMode === 'immediate') {
@@ -506,7 +526,7 @@ export function PurchaseOrdersPage() {
       className: 'text-right',
       render: (po: PurchaseOrder) => (
         <span className="font-semibold tabular-nums text-[var(--color-text)]">
-          {formatCurrency(calcPOTotal(po.items ?? [], po.shipping_cost))}
+          {formatCurrency(calcPOTotal(po.items ?? [], po.shipping_cost, po.discount_amount))}
         </span>
       ),
     },
@@ -821,16 +841,41 @@ export function PurchaseOrdersPage() {
               onChange={e => setForm(f => ({ ...f, order_date: e.target.value }))}
             />
           </div>
-          <Input
-            label="Costo de envío (opcional)"
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder="0"
-            value={form.shipping_cost}
-            onChange={e => setForm(f => ({ ...f, shipping_cost: e.target.value }))}
-            prefix="$"
-          />
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Costo de envío (opcional)"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0"
+              value={form.shipping_cost}
+              onChange={e => setForm(f => ({ ...f, shipping_cost: e.target.value }))}
+              prefix="$"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                label="Descuento %"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                placeholder="0"
+                value={form.discount_pct}
+                onChange={e => handleDiscountPctChange(e.target.value)}
+                prefix="%"
+              />
+              <Input
+                label="Descuento $"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0"
+                value={form.discount_amount}
+                onChange={e => handleDiscountAmountChange(e.target.value)}
+                prefix="$"
+              />
+            </div>
+          </div>
 
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mb-2">Ítems</p>
@@ -888,6 +933,38 @@ export function PurchaseOrdersPage() {
               + Agregar ítem
             </button>
           </div>
+
+          {(() => {
+            const subtotal = lines.reduce((acc, l) => acc + (parseFloat(l.quantity) || 0) * (parseFloat(l.unit_cost) || 0), 0)
+            const discount = parseFloat(form.discount_amount) || 0
+            const shipping = parseFloat(form.shipping_cost) || 0
+            const total = subtotal - discount + shipping
+            if (subtotal === 0) return null
+            return (
+              <div className="text-xs text-right space-y-0.5 text-[var(--color-muted)]">
+                <div className="flex justify-end gap-6">
+                  <span>Subtotal</span>
+                  <span>{formatCurrency(subtotal)}</span>
+                </div>
+                {discount > 0 && (
+                  <div className="flex justify-end gap-6 text-[var(--color-danger)]">
+                    <span>Descuento</span>
+                    <span>−{formatCurrency(discount)}</span>
+                  </div>
+                )}
+                {shipping > 0 && (
+                  <div className="flex justify-end gap-6">
+                    <span>Envío</span>
+                    <span>{formatCurrency(shipping)}</span>
+                  </div>
+                )}
+                <div className="flex justify-end gap-6 font-semibold text-[var(--color-text)] border-t border-[var(--color-border)] pt-0.5 mt-0.5">
+                  <span>Total</span>
+                  <span>{formatCurrency(total)}</span>
+                </div>
+              </div>
+            )
+          })()}
 
           {formError && <p className="text-xs text-[var(--color-danger)]">{formError}</p>}
 

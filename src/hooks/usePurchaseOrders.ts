@@ -33,6 +33,7 @@ interface CreatePOPayload {
   supplier_id: string | null
   order_date: string
   shipping_cost: number
+  discount_amount: number
   items: POItemInput[]
 }
 
@@ -44,7 +45,7 @@ export function useCreatePurchaseOrder() {
 
       const { data: po, error: poErr } = await supabase
         .from('purchase_orders')
-        .insert({ supplier_id: payload.supplier_id, order_date: payload.order_date, shipping_cost: payload.shipping_cost, created_by: user?.id ?? null } as POInsert)
+        .insert({ supplier_id: payload.supplier_id, order_date: payload.order_date, shipping_cost: payload.shipping_cost, discount_amount: payload.discount_amount, created_by: user?.id ?? null } as POInsert)
         .select('*')
         .single()
       if (poErr) throw new Error(poErr.message)

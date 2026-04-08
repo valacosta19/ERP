@@ -323,6 +323,7 @@ export interface Database {
           order_date: string
           status: 'draft' | 'received' | 'cancelled'
           shipping_cost: number
+          discount_amount: number
           created_by: string | null
           created_at: string
         }
@@ -332,6 +333,7 @@ export interface Database {
           order_date: string
           status?: 'draft' | 'received' | 'cancelled'
           shipping_cost?: number
+          discount_amount?: number
           created_by?: string | null
           created_at?: string
         }
@@ -341,6 +343,7 @@ export interface Database {
           order_date?: string
           status?: 'draft' | 'received' | 'cancelled'
           shipping_cost?: number
+          discount_amount?: number
         }
         Relationships: []
       }
