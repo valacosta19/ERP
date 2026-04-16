@@ -385,7 +385,14 @@ export function FondosPage() {
                     )}
                   </div>
                   <button
-                    onClick={() => deleteReserve.mutate(r.id)}
+                    onClick={() => {
+                      const bal = reserveBalances.get(r.id) ?? 0
+                      if (bal !== 0) {
+                        alert(`No podés eliminar "${r.name}" porque tiene saldo de ${fmtAmount(bal)}. Transferí el saldo a la cuenta principal primero.`)
+                        return
+                      }
+                      deleteReserve.mutate(r.id)
+                    }}
                     className="p-1.5 rounded-lg transition-colors hover:bg-[var(--color-danger-light)]"
                     style={{ color: 'var(--color-muted)' }}
                   >

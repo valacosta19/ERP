@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Layers, Pencil } from 'lucide-react'
+import { Archive, Layers, Pencil } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
 import { Table } from '@/components/ui/Table'
@@ -7,7 +7,7 @@ import { InlineEditCell } from '@/components/ui/InlineEditCell'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
-import { useProducts, useUpdateProduct } from '@/hooks/useProducts'
+import { useProducts, useUpdateProduct, useDeleteProduct } from '@/hooks/useProducts'
 import { LotDrawer } from './LotDrawer'
 import type { Product } from '@/types'
 
@@ -33,9 +33,11 @@ export function InventoryPage() {
   const [editForm, setEditForm] = useState<EditForm>({ name: '', sku: '', brand: '', unit: '', sale_price: '', min_stock: '', unit_size: '' })
   const [brandFilter, setBrandFilter] = useState<string>('')
   const [stockFilter, setStockFilter] = useState<'all' | 'with' | 'without'>('all')
+  const [archiveProductId, setArchiveProductId] = useState<string | null>(null)
 
   const { data: products = [], isLoading } = useProducts()
   const updateProduct = useUpdateProduct()
+  const deleteProduct = useDeleteProduct()
 
   const brands = Array.from(new Set(products.map(p => p.brand).filter(Boolean) as string[])).sort()
 
@@ -191,6 +193,13 @@ export function InventoryPage() {
           >
             <Layers size={14} />
           </button>
+          <button
+            onClick={() => setArchiveProductId(p.id)}
+            className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-bg)] transition-colors"
+            title="Archivar producto"
+          >
+            <Archive size={14} />
+          </button>
         </div>
       ),
     },
@@ -242,6 +251,26 @@ export function InventoryPage() {
         product={selectedProduct}
         onClose={() => setLotProductId(null)}
       />
+
+      <Modal open={!!archiveProductId} onClose={() => setArchiveProductId(null)} title="Archivar producto">
+        <div className="space-y-4">
+          <p className="text-[var(--color-text)]">¿Seguro que quieres archivar este producto? Ya no aparecerá en el inventario.</p>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={() => setArchiveProductId(null)}>Cancelar</Button>
+            <Button
+              variant="danger"
+              loading={deleteProduct.isPending}
+              onClick={async () => {
+                if (!archiveProductId) return
+                await deleteProduct.mutateAsync(archiveProductId)
+                setArchiveProductId(null)
+              }}
+            >
+              Archivar
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal open={!!editProduct} onClose={() => setEditProduct(null)} title="Editar producto">
         <div className="space-y-4">

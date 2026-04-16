@@ -64,11 +64,12 @@ function calcTotal(payments: PaymentRow[]) {
 
 const CURRENCY_SYMBOL: Record<Currency, string> = { ARS: '$', USD: 'U$D', EUR: '€' }
 
-function getTxDirection(tx: Transaction): 'entrada' | 'salida' {
+function getTxDirection(tx: Transaction): 'entrada' | 'salida' | 'transfer' {
   if (tx.is_seña) return tx.description?.trim().toLowerCase() === 'anticipo' ? 'entrada' : 'salida'
   const txType = tx.subcategory?.transaction_type
   if (txType === 'income') return 'entrada'
   if (txType === 'expense') return 'salida'
+  if (txType === 'transfer') return 'transfer'
   return (tx.payments?.[0]?.type as 'entrada' | 'salida') ?? 'entrada'
 }
 
@@ -222,7 +223,7 @@ export function TransactionsPage() {
       const cur = tx.currency
       if (!acc[cur]) acc[cur] = { entrada: 0, salida: 0 }
       if (dir === 'entrada') acc[cur].entrada += tx.amount
-      else acc[cur].salida += tx.amount
+      else if (dir === 'salida') acc[cur].salida += tx.amount
       return acc
     }, {} as Record<string, { entrada: number; salida: number }>)
 
@@ -861,27 +862,16 @@ export function TransactionsPage() {
       ),
     },
     {
-      key: 'entrada',
-      header: 'Entrada',
+      key: 'monto',
+      header: 'Monto',
       className: 'text-right',
       render: (tx: Transaction) => {
         const dir = getTxDirection(tx)
         const sym = CURRENCY_SYMBOL[tx.currency]
-        return dir === 'entrada'
-          ? <span className="font-semibold tabular-nums text-[var(--color-success)]" style={tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' } : undefined}>{sym}{tx.amount.toLocaleString('es-CO')}</span>
-          : <span style={{ color: 'var(--color-muted)', ...(tx.voided_at ? { opacity: 0.5 } : {}) }}>—</span>
-      },
-    },
-    {
-      key: 'salida',
-      header: 'Salida',
-      className: 'text-right',
-      render: (tx: Transaction) => {
-        const dir = getTxDirection(tx)
-        const sym = CURRENCY_SYMBOL[tx.currency]
-        return dir === 'salida'
-          ? <span className="font-semibold tabular-nums text-[var(--color-danger)]" style={tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' } : undefined}>{sym}{tx.amount.toLocaleString('es-CO')}</span>
-          : <span style={{ color: 'var(--color-muted)', ...(tx.voided_at ? { opacity: 0.5 } : {}) }}>—</span>
+        const voidedStyle = tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' as const } : undefined
+        if (dir === 'entrada') return <span className="font-semibold tabular-nums" style={{ color: 'var(--color-success)', ...voidedStyle }}>+{sym}{tx.amount.toLocaleString('es-CO')}</span>
+        if (dir === 'salida') return <span className="font-semibold tabular-nums" style={{ color: 'var(--color-danger)', ...voidedStyle }}>-{sym}{tx.amount.toLocaleString('es-CO')}</span>
+        return <span className="font-semibold tabular-nums" style={{ color: 'var(--color-muted)', ...voidedStyle }}>{sym}{tx.amount.toLocaleString('es-CO')}</span>
       },
     },
     {
@@ -1032,14 +1022,14 @@ export function TransactionsPage() {
                         Total {Object.keys(totals).length > 1 ? currency : ''}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className="font-semibold tabular-nums text-[var(--color-success)]">
-                          {CURRENCY_SYMBOL[currency as Currency] ?? ''}{entrada.toLocaleString('es-CO')}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <span className="font-semibold tabular-nums text-[var(--color-danger)]">
-                          {CURRENCY_SYMBOL[currency as Currency] ?? ''}{salida.toLocaleString('es-CO')}
-                        </span>
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="font-semibold tabular-nums" style={{ color: 'var(--color-success)' }}>
+                            +{CURRENCY_SYMBOL[currency as Currency] ?? ''}{entrada.toLocaleString('es-CO')}
+                          </span>
+                          <span className="font-semibold tabular-nums" style={{ color: 'var(--color-danger)' }}>
+                            -{CURRENCY_SYMBOL[currency as Currency] ?? ''}{salida.toLocaleString('es-CO')}
+                          </span>
+                        </div>
                       </td>
                       <td />
                     </tr>
