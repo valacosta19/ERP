@@ -274,13 +274,15 @@ export function TransactionsPage() {
 
   const isDraftExpense = draft ? typeFromParent(draft.category_parent_id) === 'expense' : false
 
+  const productLabel = (p: Product) => p.unit ? `${p.name} ${p.unit}` : p.name
+
   const draftSuggestions: Suggestion[] = isDraftProductCategory
     ? products
         .filter((p: Product) => (p.stock ?? 0) > 0)
-        .map((p: Product) => ({ id: p.id, name: p.name, priceCash: p.sale_price, priceTransfer: null, priceCard: null, productId: p.id }))
+        .map((p: Product) => ({ id: p.id, name: productLabel(p), priceCash: p.sale_price, priceTransfer: null, priceCard: null, productId: p.id }))
     : [
         ...catalogItems.map((ci: CatalogItem) => ({ id: ci.id, name: ci.name, priceCash: ci.price, priceTransfer: ci.price_transfer ?? null, priceCard: ci.price_card ?? null })),
-        ...(isDraftExpense ? products.map((p: Product) => ({ id: p.id, name: p.name, priceCash: 0, priceTransfer: null, priceCard: null, productId: p.id })) : []),
+        ...(isDraftExpense ? products.map((p: Product) => ({ id: p.id, name: productLabel(p), priceCash: 0, priceTransfer: null, priceCard: null, productId: p.id })) : []),
       ]
 
   function startNew() {
@@ -562,7 +564,7 @@ export function TransactionsPage() {
                   >
                     <option value="">— producto —</option>
                     {products.filter((p: Product) => (p.stock ?? 0) > 0).map((p: Product) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
+                      <option key={p.id} value={p.id}>{productLabel(p)}</option>
                     ))}
                   </select>
                   <input
