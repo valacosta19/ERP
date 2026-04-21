@@ -68,6 +68,7 @@ export interface Database {
           voided_at: string | null
           voided_by: string | null
           refunds_anticipo_id: string | null
+          product_id: string | null
         }
         Insert: {
           id?: string
@@ -84,6 +85,7 @@ export interface Database {
           voided_at?: string | null
           voided_by?: string | null
           refunds_anticipo_id?: string | null
+          product_id?: string | null
         }
         Update: {
           id?: string
@@ -98,6 +100,7 @@ export interface Database {
           voided_at?: string | null
           voided_by?: string | null
           refunds_anticipo_id?: string | null
+          product_id?: string | null
         }
         Relationships: []
       }

@@ -323,7 +323,7 @@ export function TransactionsPage() {
           })
         : [makeEmptyPayment()],
       professionals: tx.professionals?.map(h => ({ id: h.id, commission_rate: h.commission_rate })) ?? [],
-      product_id: null,
+      product_id: tx.product_id ?? null,
       product_quantity: 1,
       inventory_items: [],
     })
@@ -384,6 +384,7 @@ export function TransactionsPage() {
         ? [{ payment_method: 'Inventario', instrument: null, amount: total }]
         : draft.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
       professionals: draft.professionals,
+      product_id: draft.product_id,
     })
     const { data: { user } } = await supabase.auth.getUser()
     if (isInventoryCategory) {
@@ -397,7 +398,7 @@ export function TransactionsPage() {
         })
         if (fifoError) throw new Error(fifoError.message)
       }
-    } else if (draft.product_id && transactionType === 'expense') {
+    } else if (draft.product_id && (transactionType === 'expense' || isDraftProductCategory)) {
       const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
         p_product_id: draft.product_id,
         p_quantity: draft.product_quantity,
@@ -440,6 +441,7 @@ export function TransactionsPage() {
       transfer_direction: editTransactionType === 'transfer' ? editForm.transfer_direction : undefined,
       payments: editForm.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
       professionals: editForm.professionals,
+      product_id: editForm.product_id,
     })
     setModalOpen(false)
   }

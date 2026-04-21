@@ -64,6 +64,7 @@ interface TransactionPayload {
   transfer_direction?: 'entrada' | 'salida'
   payments: PaymentRow[]
   professionals: { id: string; commission_rate: number }[]
+  product_id?: string | null
 }
 
 export function useCreateTransaction() {
@@ -86,6 +87,7 @@ export function useCreateTransaction() {
           is_seña: payload.is_seña,
           seña_amount: payload.seña_amount,
           refunds_anticipo_id: payload.refunds_anticipo_id,
+          product_id: payload.product_id ?? null,
           created_by: user?.id ?? null,
         })
         .select('*')
