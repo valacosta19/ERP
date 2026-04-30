@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { useFinancialReport, useInventoryValuation, useProfitReport, useBalanceSheet } from '@/hooks/useReports'
 import { useCommissionsReport } from '@/hooks/useCommissionsReport'
+import { useStaffReceivables } from '@/hooks/useStaffReceivables'
+import { SettleCommissionModal } from '@/components/SettleCommissionModal'
 import { useFixedCosts } from '@/hooks/useFixedCosts'
 import { useProducts } from '@/hooks/useProducts'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
@@ -110,6 +112,7 @@ export function ReportsPage() {
   const [commTo, setCommTo] = useState('')
   const [commProfFilter, setCommProfFilter] = useState('')
   const [commViewMode, setCommViewMode] = useState<CommViewMode>('detalle')
+  const [settleTarget, setSettleTarget] = useState<{ id: string; name: string; gross: number } | null>(null)
   const [profitFrom, setProfitFrom] = useState('')
   const [profitTo, setProfitTo] = useState('')
   const [balanceDate, setBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -127,6 +130,18 @@ export function ReportsPage() {
   const financial = useFinancialReport({ from: from || undefined, to: to || undefined, currency: currency || undefined })
   const valuation = useInventoryValuation()
   const commissions = useCommissionsReport({ from: commFrom || undefined, to: commTo || undefined, usdRate: dolarBlue?.venta })
+  const { data: staffReceivables = [] } = useStaffReceivables()
+
+  const pendingByProfessional = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const r of staffReceivables) {
+      if (!r.hairdresser_id) continue
+      const remaining = r.total_amount - r.collected_amount
+      if (remaining <= 0) continue
+      map.set(r.hairdresser_id, (map.get(r.hairdresser_id) ?? 0) + remaining)
+    }
+    return map
+  }, [staffReceivables])
   const profit = useProfitReport({ from: profitFrom || undefined, to: profitTo || undefined, usdRate: dolarBlue?.venta })
   const balanceSheet = useBalanceSheet(balanceDate)
 
@@ -560,6 +575,50 @@ export function ReportsPage() {
               ))}
             </div>
 
+            {commissionsByProfessional.length > 0 && (
+              <section className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+                <div className="px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
+                  <h3 className="text-sm font-semibold text-[var(--color-text)]">Liquidación del período seleccionado</h3>
+                  <p className="text-xs text-[var(--color-muted)] mt-0.5">
+                    Bruta = comisión devengada en el filtro · Retiros = saldo pendiente del empleado a la fecha · Neto = bruta − retiros aplicados.
+                  </p>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--color-border)]">
+                      <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Profesional</th>
+                      <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Bruta</th>
+                      <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Retiros pendientes</th>
+                      <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Neto estimado</th>
+                      <th className="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {commissionsByProfessional.map(p => {
+                      const pending = pendingByProfessional.get(p.id) ?? 0
+                      const net = Math.max(0, p.total - pending)
+                      return (
+                        <tr key={p.id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
+                          <td className="px-4 py-3 text-[var(--color-text)]">{p.name}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{fmtAmount(p.total)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-[var(--color-danger)]">{pending > 0 ? `−${fmtAmount(pending)}` : '—'}</td>
+                          <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--color-success)]">{fmtAmount(net)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={() => setSettleTarget({ id: p.id, name: p.name, gross: p.total })}
+                              className="text-xs px-3 py-1.5 rounded-md bg-[var(--color-accent)] text-white hover:opacity-90 transition-opacity"
+                            >
+                              Liquidar
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </section>
+            )}
+
             {commViewMode === 'detalle' ? (
               <section>
                 <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg overflow-hidden">
@@ -971,6 +1030,18 @@ export function ReportsPage() {
           </>
         )}
       </div>
+
+      {settleTarget && (
+        <SettleCommissionModal
+          open={true}
+          onClose={() => setSettleTarget(null)}
+          hairdresserId={settleTarget.id}
+          hairdresserName={settleTarget.name}
+          periodStart={commFrom || new Date().toISOString().slice(0, 10)}
+          periodEnd={commTo || new Date().toISOString().slice(0, 10)}
+          grossAmount={settleTarget.gross}
+        />
+      )}
     </div>
   )
 }

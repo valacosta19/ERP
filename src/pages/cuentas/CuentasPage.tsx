@@ -271,6 +271,52 @@ function APTab() {
   )
 }
 
+function StaffWithdrawalsSummary({ receivables }: { receivables: Receivable[] }) {
+  const staffEntries = receivables.filter(r => r.hairdresser_id != null)
+  if (staffEntries.length === 0) return null
+
+  const byHairdresser = new Map<string, { name: string; pending: number; total: number; count: number }>()
+  for (const r of staffEntries) {
+    const pending = pendingAmount(r.total_amount, r.collected_amount)
+    const key = r.hairdresser_id as string
+    const existing = byHairdresser.get(key) ?? { name: r.debtor_name, pending: 0, total: 0, count: 0 }
+    existing.pending += pending
+    existing.total += r.total_amount
+    existing.count += 1
+    byHairdresser.set(key, existing)
+  }
+
+  const rows = Array.from(byHairdresser.values()).filter(e => e.pending > 0).sort((a, b) => b.pending - a.pending)
+  if (rows.length === 0) return null
+
+  return (
+    <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
+      <div className="px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">Retiros de staff</h3>
+        <p className="text-xs text-[var(--color-muted)] mt-0.5">Saldos pendientes a descontar de comisión o cobrar manualmente.</p>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-[var(--color-border)]">
+            <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Empleado</th>
+            <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Retiros</th>
+            <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Saldo pendiente</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.name} className="border-b border-[var(--color-border)] last:border-b-0">
+              <td className="px-3 py-2 text-[var(--color-text)]">{r.name}</td>
+              <td className="px-3 py-2 text-right tabular-nums text-[var(--color-muted)]">{r.count}</td>
+              <td className="px-3 py-2 text-right tabular-nums font-semibold text-[var(--color-text)]">{fmtCurrency(r.pending)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function ARTab() {
   const { data: receivables = [], isLoading } = useReceivables()
   const { data: paymentMethods = [] } = usePaymentMethods()
@@ -424,6 +470,8 @@ function ARTab() {
           Nueva cuenta por cobrar
         </Button>
       </div>
+
+      <StaffWithdrawalsSummary receivables={receivables} />
 
       {receivables.length === 0 ? (
         <p className="text-center text-[var(--color-muted)] py-12 text-sm">No hay cuentas por cobrar registradas</p>

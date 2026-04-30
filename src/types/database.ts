@@ -656,6 +656,10 @@ export interface Database {
           created_at: string
           created_by: string | null
           source_transaction_id: string | null
+          hairdresser_id: string | null
+          product_id: string | null
+          quantity: number | null
+          unit_cost_snapshot: number | null
         }
         Insert: {
           id?: string
@@ -668,6 +672,10 @@ export interface Database {
           created_at?: string
           created_by?: string | null
           source_transaction_id?: string | null
+          hairdresser_id?: string | null
+          product_id?: string | null
+          quantity?: number | null
+          unit_cost_snapshot?: number | null
         }
         Update: {
           id?: string
@@ -678,6 +686,68 @@ export interface Database {
           due_date?: string | null
           notes?: string | null
           source_transaction_id?: string | null
+          hairdresser_id?: string | null
+          product_id?: string | null
+          quantity?: number | null
+          unit_cost_snapshot?: number | null
+        }
+        Relationships: []
+      }
+      commission_payouts: {
+        Row: {
+          id: string
+          hairdresser_id: string
+          period_start: string
+          period_end: string
+          gross_amount: number
+          receivables_offset: number
+          net_amount: number
+          paid_via_transaction_id: string | null
+          notes: string | null
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          hairdresser_id: string
+          period_start: string
+          period_end: string
+          gross_amount: number
+          receivables_offset?: number
+          net_amount: number
+          paid_via_transaction_id?: string | null
+          notes?: string | null
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          hairdresser_id?: string
+          period_start?: string
+          period_end?: string
+          gross_amount?: number
+          receivables_offset?: number
+          net_amount?: number
+          paid_via_transaction_id?: string | null
+          notes?: string | null
+        }
+        Relationships: []
+      }
+      commission_payout_receivables: {
+        Row: {
+          payout_id: string
+          receivable_id: string
+          amount: number
+        }
+        Insert: {
+          payout_id: string
+          receivable_id: string
+          amount: number
+        }
+        Update: {
+          payout_id?: string
+          receivable_id?: string
+          amount?: number
         }
         Relationships: []
       }
@@ -799,6 +869,33 @@ export interface Database {
           growth_rate: number
           months_with_data: number
         }[]
+      }
+      create_staff_receivable: {
+        Args: {
+          p_hairdresser_id: string
+          p_product_id: string
+          p_quantity: number
+          p_value_amount: number
+          p_due_date: string | null
+          p_notes: string | null
+          p_created_by: string
+        }
+        Returns: string
+      }
+      settle_commission_payout: {
+        Args: {
+          p_hairdresser_id: string
+          p_period_start: string
+          p_period_end: string
+          p_gross_amount: number
+          p_receivable_ids: string[]
+          p_paid_via_transaction_id: string | null
+          p_payment_method: string
+          p_payment_date: string
+          p_notes: string | null
+          p_created_by: string
+        }
+        Returns: string
       }
     }
     Enums: Record<string, never>

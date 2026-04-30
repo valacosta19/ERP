@@ -23,7 +23,7 @@ npm run lint      # eslint on all .ts/.tsx
 - If a task is too large, propose how to split it first.
 - When a phase closes: `npm run build` passes, user validates manually, then write `PHASE_N_SUMMARY.md` and update `PROJECT_STATE.md`.
 
-**Current phase: 25** — See `PROJECT_STATE.md` for current scope.
+**Current phase: 26** — See `PROJECT_STATE.md` for current scope.
 
 ---
 
@@ -47,8 +47,18 @@ All routes in `src/App.tsx`. Protected routes nested inside `AuthGuard > AppShel
 
 ### Business logic
 - **FIFO**: Postgres RPC `consume_inventory_fifo` (SECURITY DEFINER). Call via `supabase.rpc(...)`. Never replicate in frontend.
-- **Stock**: computed in `useProducts` by summing `inventory_lots.remaining_quantity`. No `stock` column on `products`.
+- **Stock**: computed via `products_with_stock` view (sum of `inventory_lots.remaining_quantity`). No `stock` column on `products`. View must be recreated (DROP + CREATE) when adding columns — `CREATE OR REPLACE` doesn't reorder columns.
 - **sale_items** rows are immutable — no edit UI, no update policy.
+- **Reorder suggestion**: RPC `suggest_reorder_quantity(product_id, month, year)` — average of same-month historical sales × company growth rate, with fallback to previous month.
+- **Purchase orders**: support partial receiving (checklist per product) and proportional shipping cost distribution by item value. Shipping cost is editable inline while PO is in draft.
+- **Multicurrency**: transactions carry `currency` (ARS/USD/EUR). Reports convert USD→ARS using dólar blue (cached 30 min from `dolarapi.com`).
+- **Service costs**: `service_recipes` link `catalog_items` to `products` with `quantity_grams`. Material cost = Σ(quantity_grams × unit_cost / unit_size). Gross margin in Costos tab = price − materials − commission. Fixed costs deducted at period level in Utilidad tab, not per service.
+- **Fixed cost history**: `fixed_cost_rates (fixed_cost_id, monthly_amount, effective_from)` — each month's profit report uses the rate with the latest `effective_from ≤ month`. Editing a fixed cost inserts a new rate, never overwrites.
+- **Catalog prices**: each `catalog_items` row has `price` (cash), `price_transfer`, `price_card`. Transaction description combobox suggests prices per method.
+- **Accounts payable/receivable**: `supplier_debts` (linked to PO with `payment_option: immediate|deferred|none`) and `receivables` (standalone). Payments/collections may optionally link to a transaction.
+- **Cortesías (consumo absorbido por el salón)**: la categoría `'Consumos y cortesías'` (`deducts_inventory=true`) registra retiros que el salón absorbe como gasto. Genera `transactions` expense + consumo FIFO. Útil para regalos a clientes o beneficios al staff sin recupero.
+- **Retiros de staff a cuenta de comisión**: empleados pueden retirar producto cuyo costo se les descuenta al liquidar comisión. Se modela como `receivables` con `hairdresser_id + product_id`, disparando FIFO al crear vía RPC `create_staff_receivable` (registra `inventory_movements` con `reference_type='receivable'`, **no** crea `transactions`). La comisión bruta sigue siendo el devengado contable; al liquidar período, la RPC `settle_commission_payout` inserta `receivable_collections` por los retiros aplicados, registra una fila en `commission_payouts` (auditoría: gross/offset/net) y la UI crea un único `transactions` expense por el **neto** (cero impacto en caja/banco/utilidad hasta el pago).
+- **AI widget**: floating chat (bottom-right) fed by a cached business snapshot (5 min, 9 parallel queries). Model: Gemini 2.5 Flash via `VITE_GEMINI_API_KEY`. Files: `src/lib/gemini.ts`, `src/lib/buildSystemPrompt.ts`, `src/hooks/useBusinessSnapshot.ts`, `src/components/AIWidget/`.
 
 ---
 
@@ -60,10 +70,12 @@ npm run dev     # then verify in browser:
 ```
 
 - `/login` — auth works, redirects correctly
-- `/transactions` — list loads, create/edit modal works
+- `/transactions` — list loads, create/edit inline, balance cards by method+currency
 - `/suppliers` — CRUD works
-- `/purchase-orders` — create PO, receive it, stock increases on `/inventory`
-- `/inventory` — stock correct, lot drawer opens, sale decrements stock
+- `/purchase-orders` — create PO (with shipping + reorder suggestion), partial receive, stock increases on `/inventory`
+- `/inventory` — stock correct, lot drawer opens inline-editable, sale decrements stock
+- `/cuentas` — tabs "Por pagar" y "Por cobrar" (admin only)
+- `/reportes` — tabs Financiero, Comisiones (quincenal/detalle), Utilidad, Costos, Valoración
 
 For each phase, verify only the new screens/flows added in that phase.
 
@@ -137,6 +149,9 @@ Rules:
 - **Lock `unit_cost` when sold.** If a lot has `sale_items` rows referencing it, its `unit_cost` is read-only.
 - **Period locking.** A `locked_periods (year, month, locked_at, locked_by)` table prevents creating/editing/voiding transactions in closed months. Enforced at DB level (trigger or RPC check). Lock/unlock is admin-only UI in Settings.
 - **Expense category required.** `subcategory_id` is required when `type = 'expense'` in the transaction form (not yet implemented — deferred). Categories are two-level: fixed top-level (Ingresos, Costos, Gastos, Movimientos) + user-defined subcategories managed from Settings. Schema: `transaction_categories (id, name, parent_id nullable)`.
+- **Seña exclusion from reports.** Transactions with `is_seña = true` are pure advances and must be excluded from `service_income`, revenue, profit and cost reports. The seña enters the result only when the final service transaction references it via `seña_amount`.
+- **Fixed cost history is append-only.** Never overwrite `fixed_costs.monthly_amount` directly for historical integrity — insert a new row in `fixed_cost_rates` with `effective_from`. The column on `fixed_costs` is kept in sync only when the rate applies to today or earlier.
+- **Retiros de staff no son gastos.** Un retiro de producto a cuenta de comisión nunca debe registrarse como `transactions` expense; se modela como `receivables` con `hairdresser_id` y se compensa al pagar la comisión. Sólo cortesías puras (sin recupero) van como expense en categoría `'Consumos y cortesías'`. La comisión devengada se registra siempre en bruto; el pago efectivo es por el neto.
 
 ---
 

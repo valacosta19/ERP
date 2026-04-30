@@ -268,7 +268,26 @@ export interface Receivable {
   notes: string | null
   created_at: string
   created_by: string | null
+  source_transaction_id: string | null
+  hairdresser_id: string | null
+  product_id: string | null
+  quantity: number | null
+  unit_cost_snapshot: number | null
   collections?: ReceivableCollection[]
+}
+
+export interface CommissionPayout {
+  id: string
+  hairdresser_id: string
+  period_start: string
+  period_end: string
+  gross_amount: number
+  receivables_offset: number
+  net_amount: number
+  paid_via_transaction_id: string | null
+  notes: string | null
+  created_at: string
+  created_by: string | null
 }
 
 export interface ReceivableCollection {

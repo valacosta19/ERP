@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Archive, Layers, Pencil } from 'lucide-react'
+import { Archive, HandCoins, Layers, Pencil } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
 import { Table } from '@/components/ui/Table'
@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useProducts, useUpdateProduct, useDeleteProduct } from '@/hooks/useProducts'
 import { LotDrawer } from './LotDrawer'
+import { StaffWithdrawalModal } from '@/components/StaffWithdrawalModal'
 import type { Product } from '@/types'
 
 function stockVariant(product: Product): 'success' | 'warning' | 'danger' {
@@ -34,6 +35,7 @@ export function InventoryPage() {
   const [brandFilter, setBrandFilter] = useState<string>('')
   const [stockFilter, setStockFilter] = useState<'all' | 'with' | 'without'>('all')
   const [archiveProductId, setArchiveProductId] = useState<string | null>(null)
+  const [withdrawalOpen, setWithdrawalOpen] = useState(false)
 
   const { data: products = [], isLoading } = useProducts()
   const updateProduct = useUpdateProduct()
@@ -212,6 +214,12 @@ export function InventoryPage() {
       <TopBar
         title="Inventario"
         subtitle={`${filteredProducts.length} productos`}
+        actions={
+          <Button variant="secondary" onClick={() => setWithdrawalOpen(true)}>
+            <HandCoins size={14} />
+            Registrar retiro
+          </Button>
+        }
       />
 
       <div className="flex-1 min-h-0 flex flex-col p-6 gap-4">
@@ -250,6 +258,11 @@ export function InventoryPage() {
       <LotDrawer
         product={selectedProduct}
         onClose={() => setLotProductId(null)}
+      />
+
+      <StaffWithdrawalModal
+        open={withdrawalOpen}
+        onClose={() => setWithdrawalOpen(false)}
       />
 
       <Modal open={!!archiveProductId} onClose={() => setArchiveProductId(null)} title="Archivar producto">
