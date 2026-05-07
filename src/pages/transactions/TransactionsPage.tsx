@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react'
-import { Plus, X, Check, Link, Ban } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Plus, X, Link, Ban } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
@@ -17,52 +17,25 @@ import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useProducts } from '@/hooks/useProducts'
 import { supabase } from '@/lib/supabaseClient'
 import { ReconcileModal } from './ReconcileModal'
+import { QuickAddFAB } from '@/components/transactions/QuickAddFAB'
+import { TransactionDrawer } from '@/components/transactions/TransactionDrawer'
+import { TransactionQuickForm, type TransactionQuickFormHandle } from '@/components/transactions/TransactionQuickForm'
+import {
+  EMPTY_DRAFT,
+  makeEmptyPayment,
+  calcTotal,
+  CURRENCY_SYMBOL,
+  CURRENCY_OPTIONS,
+  INSTRUMENT_OPTIONS,
+  type TransactionDraft,
+} from '@/components/transactions/transactionDraft'
+import type { Suggestion } from '@/components/transactions/DescriptionCombobox'
 import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, CatalogItem, Product } from '@/types'
-import type { PaymentRow } from '@/hooks/useTransactions'
-
-const INSTRUMENT_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'Sin instrumento' },
-  { value: 'Transferencia', label: 'Transferencia' },
-  { value: 'Tarjeta', label: 'Tarjeta' },
-]
-
-function makeEmptyPayment(defaultMethod = 'Efectivo'): PaymentRow {
-  return { payment_method: defaultMethod, instrument: null, amount: 0 }
-}
-
-const CURRENCY_OPTIONS: { value: Currency; label: string }[] = [
-  { value: 'ARS', label: 'ARS' },
-  { value: 'USD', label: 'USD' },
-  { value: 'EUR', label: 'EUR' },
-]
 
 const CURRENCY_FILTER_OPTIONS = [
   { value: '', label: 'Todas las monedas' },
   ...CURRENCY_OPTIONS,
 ]
-
-const EMPTY_DRAFT = {
-  date: new Date().toISOString().slice(0, 10),
-  currency: 'ARS' as Currency,
-  category_parent_id: '',
-  subcategory_id: '',
-  catalog_item_id: null as string | null,
-  description: '',
-  seña_amount: '',
-  refunds_anticipo_id: null as string | null,
-  transfer_direction: 'entrada' as 'entrada' | 'salida',
-  payments: [makeEmptyPayment()] as PaymentRow[],
-  professionals: [] as { id: string; commission_rate: number }[],
-  product_id: null as string | null,
-  product_quantity: 1,
-  inventory_items: [] as Array<{ product_id: string; quantity: number }>,
-}
-
-function calcTotal(payments: PaymentRow[]) {
-  return payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
-}
-
-const CURRENCY_SYMBOL: Record<Currency, string> = { ARS: '$', USD: 'U$D', EUR: '€' }
 
 function getTxDirection(tx: Transaction): 'entrada' | 'salida' | 'transfer' {
   if (tx.is_seña) return tx.description?.trim().toLowerCase() === 'anticipo' ? 'entrada' : 'salida'
@@ -73,83 +46,6 @@ function getTxDirection(tx: Transaction): 'entrada' | 'salida' | 'transfer' {
   return (tx.payments?.[0]?.type as 'entrada' | 'salida') ?? 'entrada'
 }
 
-type Suggestion = {
-  id: string
-  name: string
-  priceCash: number
-  priceTransfer: number | null
-  priceCard: number | null
-  productId?: string
-}
-
-function DescriptionCombobox({
-  value,
-  onChange,
-  onSelect,
-  suggestions,
-}: {
-  value: string
-  onChange: (v: string) => void
-  onSelect: (s: Suggestion) => void
-  suggestions: Suggestion[]
-}) {
-  const [open, setOpen] = useState(false)
-  const filtered = suggestions.filter(s =>
-    value.length > 0 && s.name.toLowerCase().includes(value.toLowerCase())
-  )
-
-  return (
-    <div className="relative flex-1" style={{ minWidth: '160px' }}>
-      <input
-        value={value}
-        onChange={e => { onChange(e.target.value); setOpen(true) }}
-        onFocus={() => { if (value.length > 0) setOpen(true) }}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder="Descripción"
-        style={{
-          width: '100%',
-          background: 'transparent',
-          border: 'none',
-          borderBottom: '1.5px solid var(--color-border)',
-          padding: '3px 2px',
-          fontSize: '0.875rem',
-          color: 'var(--color-text)',
-          outline: 'none',
-          fontFamily: 'inherit',
-        }}
-      />
-      {open && filtered.length > 0 && (
-        <div
-          className="absolute left-0 top-full mt-1 rounded-lg border border-[var(--color-border)] shadow-lg overflow-hidden"
-          style={{ background: 'var(--color-surface)', zIndex: 50, minWidth: '200px' }}
-        >
-          {filtered.map(s => (
-            <div
-              key={s.id}
-              className="px-3 py-2 text-sm border-b border-[var(--color-border)] last:border-0 cursor-pointer hover:bg-[var(--color-bg)]"
-              style={{ color: 'var(--color-text)' }}
-              onMouseDown={() => { onSelect(s); setOpen(false) }}
-            >
-              {s.name}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-const INLINE_SELECT_STYLE: React.CSSProperties = {
-  background: 'transparent',
-  border: 'none',
-  borderBottom: '1.5px solid var(--color-border)',
-  padding: '3px 2px',
-  fontSize: '0.875rem',
-  color: 'var(--color-text)',
-  outline: 'none',
-  fontFamily: 'inherit',
-}
-
 export function TransactionsPage() {
   const [parentCategoryFilter, setParentCategoryFilter] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState<Currency | ''>('')
@@ -158,13 +54,18 @@ export function TransactionsPage() {
   const [to, setTo] = useState('')
   const [showVoided, setShowVoided] = useState(false)
 
-  const [draft, setDraft] = useState<typeof EMPTY_DRAFT | null>(null)
+  const [draft, setDraft] = useState<TransactionDraft | null>(null)
   const [draftSelectedSuggestion, setDraftSelectedSuggestion] = useState<Suggestion | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [reconcileOpen, setReconcileOpen] = useState(false)
   const [editing, setEditing] = useState<Transaction | null>(null)
-  const [editForm, setEditForm] = useState(EMPTY_DRAFT)
+  const [editForm, setEditForm] = useState<TransactionDraft>(EMPTY_DRAFT)
   const [formError, setFormError] = useState('')
+  const [formErrorField, setFormErrorField] = useState<'date' | 'amount' | 'inventory' | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [savedFlash, setSavedFlash] = useState(false)
+  const fabRef = useRef<HTMLButtonElement>(null)
+  const formHandleRef = useRef<TransactionQuickFormHandle>(null)
 
   const { data: txCategories = [] } = useTransactionCategories()
   const { data: professionals = [] } = useProfessionals()
@@ -292,10 +193,22 @@ export function TransactionsPage() {
     setDraft({ ...EMPTY_DRAFT, date: new Date().toISOString().slice(0, 10), category_parent_id: ingrenosParent?.id ?? '' })
   }
 
-  function cancelNew() {
+  function openDrawer() {
+    if (!draft) startNew()
+    setDrawerOpen(true)
+  }
+
+  function closeDrawer() {
+    setDrawerOpen(false)
     setDraft(null)
     setDraftSelectedSuggestion(null)
     setFormError('')
+    setFormErrorField(null)
+    setSavedFlash(false)
+  }
+
+  function cancelNew() {
+    closeDrawer()
   }
 
   function openEdit(tx: Transaction) {
@@ -348,19 +261,23 @@ export function TransactionsPage() {
       ? computeInventoryTotal(draft.inventory_items)
       : calcTotal(draft.payments)
     if (!draft.date) {
+      setFormErrorField('date')
       setFormError('La fecha es obligatoria.')
       return
     }
     if (isInventoryCategory && draft.inventory_items.filter(i => i.product_id).length === 0) {
-      setFormError('Agregá al menos un producto para descontar del inventario.')
+      setFormErrorField('inventory')
+      setFormError('Agregá al menos un producto.')
       return
     }
     if (!isInventoryCategory && total <= 0) {
-      setFormError('Fecha y al menos un pago con monto son obligatorios.')
+      setFormErrorField('amount')
+      setFormError('Ingresá un monto mayor a cero.')
       return
     }
     if (isDateLocked(draft.date)) {
-      setFormError('El período de esa fecha está cerrado. No se pueden crear transacciones en períodos cerrados.')
+      setFormErrorField('date')
+      setFormError('El período de esa fecha está cerrado.')
       return
     }
     const transactionType = typeFromParent(draft.category_parent_id)
@@ -408,8 +325,14 @@ export function TransactionsPage() {
       })
       if (fifoError) throw new Error(fifoError.message)
     }
-    setDraft(null)
     setFormError('')
+    setFormErrorField(null)
+    const ingrenosParent = parents.find(p => p.name === 'Ingresos')
+    setDraft({ ...EMPTY_DRAFT, date: new Date().toISOString().slice(0, 10), category_parent_id: ingrenosParent?.id ?? '' })
+    setDraftSelectedSuggestion(null)
+    setSavedFlash(true)
+    setTimeout(() => setSavedFlash(false), 4000)
+    setTimeout(() => formHandleRef.current?.focusFirstField(), 50)
   }
 
   async function handleUpdate() {
@@ -456,349 +379,6 @@ export function TransactionsPage() {
     await voidTx.mutateAsync(id)
   }
 
-  const newRow = draft ? (
-    <tr
-      className="animate-slide-in"
-      style={{
-        background: 'var(--color-accent-light)',
-        borderBottom: '2px solid var(--color-accent)',
-      }}
-    >
-      <td
-        colSpan={9}
-        style={{ borderLeft: '3px solid var(--color-accent)', padding: '12px 16px' }}
-      >
-        <div className="space-y-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <span
-              className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
-              style={{
-                color: 'var(--color-accent)',
-                background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
-              }}
-            >
-              Nueva
-            </span>
-            <input
-              type="date"
-              value={draft.date}
-              onChange={e => setDraft(d => d && { ...d, date: e.target.value })}
-              style={{ ...INLINE_SELECT_STYLE, width: '130px' }}
-            />
-            <select
-              value={draft.currency}
-              onChange={e => setDraft(d => d && { ...d, currency: e.target.value as Currency })}
-              style={INLINE_SELECT_STYLE}
-            >
-              {CURRENCY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <select
-              value={draft.category_parent_id}
-              onChange={e => setDraft(d => d && { ...d, category_parent_id: e.target.value, subcategory_id: '' })}
-              style={INLINE_SELECT_STYLE}
-            >
-              <option value="">Categoría</option>
-              {parents.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-            <select
-              value={draft.subcategory_id}
-              onChange={e => setDraft(d => d && { ...d, subcategory_id: e.target.value, product_id: null, product_quantity: 1, inventory_items: [] })}
-              style={INLINE_SELECT_STYLE}
-              disabled={!draft.category_parent_id}
-            >
-              <option value="">Subcategoría</option>
-              {subcatsForParent(draft.category_parent_id).map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-            {typeFromParent(draft.category_parent_id) === 'transfer' && (
-              <select
-                value={draft.transfer_direction}
-                onChange={e => setDraft(d => d && { ...d, transfer_direction: e.target.value as 'entrada' | 'salida' })}
-                style={INLINE_SELECT_STYLE}
-              >
-                <option value="entrada">Entrada</option>
-                <option value="salida">Salida</option>
-              </select>
-            )}
-            <DescriptionCombobox
-              value={draft.description}
-              onChange={v => { setDraftSelectedSuggestion(null); setDraft(d => d && { ...d, description: v, product_id: null, product_quantity: 1 }) }}
-              onSelect={handleSuggestionSelect}
-              suggestions={draftSuggestions}
-            />
-            {isDraftProductCategory && draft.product_id && (
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={draft.product_quantity}
-                onChange={e => setDraft(d => d && { ...d, product_quantity: Math.max(1, parseInt(e.target.value) || 1) })}
-                style={{ ...INLINE_SELECT_STYLE, width: '70px' }}
-                placeholder="Cant."
-              />
-            )}
-          </div>
-
-          {isDraftInventoryCategory && (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-medium text-[var(--color-muted)]">Productos a descontar</span>
-                <button
-                  type="button"
-                  onClick={() => setDraft(d => d && { ...d, inventory_items: [...d.inventory_items, { product_id: '', quantity: 1 }] })}
-                  className="text-xs text-[var(--color-accent)] hover:underline"
-                >
-                  + Agregar producto
-                </button>
-              </div>
-              {draft.inventory_items.length === 0 && (
-                <p className="text-xs text-[var(--color-muted)]">Agregá al menos un producto.</p>
-              )}
-              {draft.inventory_items.map((item, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <select
-                    value={item.product_id}
-                    onChange={e => handleInventoryProductChange(i, e.target.value)}
-                    style={INLINE_SELECT_STYLE}
-                  >
-                    <option value="">— producto —</option>
-                    {products.filter((p: Product) => (p.stock ?? 0) > 0).map((p: Product) => (
-                      <option key={p.id} value={p.id}>{productLabel(p)}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={item.quantity}
-                    onChange={e => handleInventoryQuantityChange(i, Math.max(1, parseInt(e.target.value) || 1))}
-                    style={{ ...INLINE_SELECT_STYLE, width: '65px' }}
-                    placeholder="Cant."
-                  />
-                  {item.product_id && fifoCostsRef.current[item.product_id] != null && (
-                    <span className="text-xs text-[var(--color-muted)]">
-                      costo: ${(fifoCostsRef.current[item.product_id] * item.quantity).toLocaleString('es-CO')}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setDraft(d => {
-                      if (!d) return d
-                      const items = d.inventory_items.filter((_, ii) => ii !== i)
-                      const total = items.reduce((sum, it) => sum + (fifoCostsRef.current[it.product_id] ?? 0) * it.quantity, 0)
-                      return { ...d, inventory_items: items, payments: [{ payment_method: 'Inventario', instrument: null, amount: total }] }
-                    })}
-                    className="text-[var(--color-muted)] hover:text-[var(--color-danger)] transition-colors"
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-              ))}
-              {draft.inventory_items.length > 0 && (
-                <p className="text-xs text-[var(--color-muted)]">
-                  Total costo: ${computeInventoryTotal(draft.inventory_items).toLocaleString('es-CO')}
-                </p>
-              )}
-            </div>
-          )}
-
-          {draftSelectedSuggestion && (draftSelectedSuggestion.priceCash > 0 || draftSelectedSuggestion.priceTransfer != null || draftSelectedSuggestion.priceCard != null) && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {draftSelectedSuggestion.priceCash > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceCash } : p) })}
-                  className="text-xs px-2 py-0.5 rounded-full border transition-colors text-[var(--color-muted)] hover:bg-[var(--color-accent)] hover:text-[#fff] hover:border-[var(--color-accent)]"
-                  style={{ borderColor: 'var(--color-border)' }}
-                >
-                  ${draftSelectedSuggestion.priceCash.toLocaleString('es-CO')}
-                </button>
-              )}
-              {draftSelectedSuggestion.priceTransfer != null && (
-                <button
-                  type="button"
-                  onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceTransfer! } : p) })}
-                  className="text-xs px-2 py-0.5 rounded-full border transition-colors text-[var(--color-muted)] hover:bg-[var(--color-accent)] hover:text-[#fff] hover:border-[var(--color-accent)]"
-                  style={{ borderColor: 'var(--color-border)' }}
-                >
-                  ${draftSelectedSuggestion.priceTransfer.toLocaleString('es-CO')}
-                </button>
-              )}
-              {draftSelectedSuggestion.priceCard != null && (
-                <button
-                  type="button"
-                  onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceCard! } : p) })}
-                  className="text-xs px-2 py-0.5 rounded-full border transition-colors text-[var(--color-muted)] hover:bg-[var(--color-accent)] hover:text-[#fff] hover:border-[var(--color-accent)]"
-                  style={{ borderColor: 'var(--color-border)' }}
-                >
-                  ${draftSelectedSuggestion.priceCard.toLocaleString('es-CO')}
-                </button>
-              )}
-            </div>
-          )}
-
-          {!isDraftInventoryCategory && <div className="space-y-1.5">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-medium text-[var(--color-muted)]">Métodos de pago</span>
-              <button
-                type="button"
-                onClick={() => setDraft(d => d && { ...d, payments: [...d.payments, makeEmptyPayment()] })}
-                className="text-xs text-[var(--color-accent)] hover:underline"
-              >
-                + Agregar fila
-              </button>
-            </div>
-            {draft.payments.map((p, i) => (
-              <div key={i} className="flex items-center gap-2 flex-wrap">
-                <select
-                  value={p.payment_method}
-                  onChange={e => setDraft(d => d && { ...d, payments: d.payments.map((pp, ii) => ii === i ? { ...pp, payment_method: e.target.value as PaymentMethod } : pp) })}
-                  style={INLINE_SELECT_STYLE}
-                >
-                  {paymentMethodOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <select
-                  value={p.instrument ?? ''}
-                  onChange={e => setDraft(d => d && { ...d, payments: d.payments.map((pp, ii) => ii === i ? { ...pp, instrument: (e.target.value as PaymentInstrument) || null } : pp) })}
-                  style={INLINE_SELECT_STYLE}
-                >
-                  {INSTRUMENT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={p.amount === 0 ? '' : String(p.amount)}
-                  onChange={e => setDraft(d => d && { ...d, payments: d.payments.map((pp, ii) => ii === i ? { ...pp, amount: parseFloat(e.target.value) || 0 } : pp) })}
-                  placeholder="$0"
-                  style={{ ...INLINE_SELECT_STYLE, width: '80px', textAlign: 'right' }}
-                />
-                {draft.payments.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setDraft(d => d && { ...d, payments: d.payments.filter((_, ii) => ii !== i) })}
-                    className="text-[var(--color-muted)] hover:text-[var(--color-danger)] transition-colors"
-                  >
-                    <X size={13} />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>}
-
-          {isDraftServiceCategory && (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-medium text-[var(--color-muted)]">Profesionales</span>
-                {activeProfessionals.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setDraft(d => d && { ...d, professionals: [...d.professionals, { id: activeProfessionals[0].id, commission_rate: 0 }] })}
-                    className="text-xs text-[var(--color-accent)] hover:underline"
-                  >
-                    + Agregar profesional
-                  </button>
-                )}
-              </div>
-              {draft.professionals.map((pa, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <select
-                    value={pa.id}
-                    onChange={e => setDraft(d => d && { ...d, professionals: d.professionals.map((p, ii) => ii === i ? { ...p, id: e.target.value } : p) })}
-                    style={INLINE_SELECT_STYLE}
-                  >
-                    {activeProfessionals.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-                  </select>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value={pa.commission_rate === 0 ? '' : String(pa.commission_rate)}
-                    onChange={e => setDraft(d => d && { ...d, professionals: d.professionals.map((p, ii) => ii === i ? { ...p, commission_rate: parseFloat(e.target.value) || 0 } : p) })}
-                    placeholder="0"
-                    style={{ ...INLINE_SELECT_STYLE, width: '52px', textAlign: 'right' }}
-                  />
-                  <span className="text-xs text-[var(--color-muted)]">%</span>
-                  <button
-                    type="button"
-                    onClick={() => setDraft(d => d && { ...d, professionals: d.professionals.filter((_, ii) => ii !== i) })}
-                    className="text-[var(--color-muted)] hover:text-[var(--color-danger)] transition-colors"
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="flex items-center gap-3 flex-wrap">
-            {isDraftServiceCategory && draft.description.trim().toLowerCase() !== 'anticipo' && draft.description.trim().toLowerCase() !== 'devolución de anticipo' && (
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={draft.seña_amount}
-                onChange={e => setDraft(d => d && { ...d, seña_amount: e.target.value })}
-                placeholder="Anticipo cobrado previamente"
-                style={{ ...INLINE_SELECT_STYLE, width: '210px' }}
-              />
-            )}
-            {draft.description.trim().toLowerCase() === 'devolución de anticipo' && (
-              <select
-                value={draft.refunds_anticipo_id ?? ''}
-                onChange={e => {
-                  const anticipo = unrefundedAnticipos.find(a => a.id === e.target.value)
-                  const parentId = anticipo?.subcategory_id
-                    ? txCategories.find(c => c.id === anticipo.subcategory_id)?.parent_id ?? ''
-                    : ''
-                  setDraft(d => d && {
-                    ...d,
-                    refunds_anticipo_id: e.target.value || null,
-                    subcategory_id: anticipo?.subcategory_id ?? d.subcategory_id,
-                    category_parent_id: parentId || d.category_parent_id,
-                  })
-                }}
-                style={INLINE_SELECT_STYLE}
-              >
-                <option value="">Anticipo a devolver...</option>
-                {unrefundedAnticipos.filter(a => a.date <= draft.date).map(a => (
-                  <option key={a.id} value={a.id}>
-                    {formatDate(a.date)} — ${a.amount.toLocaleString('es-CO')} {a.currency !== 'ARS' ? a.currency : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-            <span className="text-sm font-semibold text-[var(--color-text)] ml-auto tabular-nums">
-              Total: {CURRENCY_SYMBOL[draft.currency]}{calcTotal(draft.payments).toLocaleString('es-CO')}
-            </span>
-            {formError && (
-              <span className="text-xs text-[var(--color-danger)]">{formError}</span>
-            )}
-            <button
-              onClick={handleCreate}
-              disabled={createTx.isPending}
-              title="Guardar"
-              className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
-              style={{ background: 'var(--color-accent)', color: '#fff' }}
-            >
-              <Check size={13} />
-            </button>
-            <button
-              onClick={cancelNew}
-              title="Cancelar"
-              className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-            >
-              <X size={13} />
-            </button>
-          </div>
-        </div>
-      </td>
-    </tr>
-  ) : undefined
 
   const columns = [
     {
@@ -913,11 +493,11 @@ export function TransactionsPage() {
         subtitle={`${filteredTransactions.length} registros`}
         actions={
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setReconcileOpen(true)} disabled={!!draft}>
+            <Button variant="secondary" size="sm" onClick={() => setReconcileOpen(true)}>
               <Link size={14} />
               Reconciliar productos
             </Button>
-            <Button onClick={startNew} size="sm" disabled={!!draft}>
+            <Button onClick={openDrawer} size="sm">
               <Plus size={14} />
               Nueva transacción
             </Button>
@@ -1016,7 +596,6 @@ export function TransactionsPage() {
             keyField="id"
             loading={isLoading}
             emptyMessage="No hay transacciones para los filtros seleccionados"
-            prependRow={newRow}
             appendRow={
               Object.keys(totals).length > 0 ? (
                 <>
@@ -1261,6 +840,48 @@ export function TransactionsPage() {
       </Modal>
 
       <ReconcileModal open={reconcileOpen} onClose={() => setReconcileOpen(false)} />
+
+      <QuickAddFAB ref={fabRef} onClick={openDrawer} disabled={drawerOpen} />
+
+      <TransactionDrawer
+        open={drawerOpen}
+        onClose={cancelNew}
+        title="Nueva transacción"
+      >
+        {draft && (
+          <TransactionQuickForm
+            ref={formHandleRef}
+            draft={draft}
+            setDraft={setDraft}
+            parents={parents}
+            subcategories={subcategories}
+            txCategories={txCategories}
+            professionals={professionals}
+            products={products}
+            paymentMethodOptions={paymentMethodOptions}
+            unrefundedAnticipos={unrefundedAnticipos}
+            draftSuggestions={draftSuggestions}
+            draftSelectedSuggestion={draftSelectedSuggestion}
+            onSuggestionSelect={handleSuggestionSelect}
+            onDescriptionChange={v => { setDraftSelectedSuggestion(null); setDraft(d => d && { ...d, description: v, product_id: null, product_quantity: 1 }) }}
+            onInventoryProductChange={handleInventoryProductChange}
+            onInventoryQuantityChange={handleInventoryQuantityChange}
+            computeInventoryTotal={computeInventoryTotal}
+            getFifoCost={(id) => fifoCostsRef.current[id] ?? 0}
+            formError={formError}
+            formErrorField={formErrorField}
+            onSubmit={handleCreate}
+            onCancel={cancelNew}
+            submitting={createTx.isPending}
+            showSavedBanner={savedFlash}
+            productLabel={productLabel}
+            isInventoryCategory={isDraftInventoryCategory}
+            isServiceCategory={isDraftServiceCategory}
+            isProductCategory={isDraftProductCategory}
+            isTransfer={typeFromParent(draft.category_parent_id) === 'transfer'}
+          />
+        )}
+      </TransactionDrawer>
     </div>
   )
 }

@@ -66,5 +66,17 @@ p { margin: 0; }
   to   { opacity: 1; transform: translateX(0); }
 }
 
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+@keyframes backdropFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 .animate-fade-in { animation: fadeIn 0.3s ease forwards; }
 .animate-slide-in { animation: slideInLeft 0.25s ease forwards; }
+.animate-slide-in-right { animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-backdrop-fade { animation: backdropFade 0.2s ease forwards; }
