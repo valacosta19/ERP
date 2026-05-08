@@ -23,6 +23,42 @@ const ROW_HEIGHT = 45
 const HEADER_HEIGHT = 45
 const PAGINATION_HEIGHT = 52
 
+function pageRange(current: number, total: number, siblings = 2, boundaries = 1): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages = new Set<number>()
+  for (let i = 1; i <= boundaries; i++) pages.add(i)
+  for (let i = total - boundaries + 1; i <= total; i++) pages.add(i)
+  const start = Math.max(1, current - siblings)
+  const end = Math.min(total, current + siblings)
+  for (let i = start; i <= end; i++) pages.add(i)
+  const sorted = [...pages].sort((a, b) => a - b)
+  const result: (number | '…')[] = []
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0) {
+      const gap = sorted[i] - sorted[i - 1]
+      if (gap === 2) result.push(sorted[i - 1] + 1)
+      else if (gap > 2) result.push('…')
+    }
+    result.push(sorted[i])
+  }
+  return result
+}
+
+function PageNavButton({ onClick, disabled, title, children }: { onClick: () => void; disabled?: boolean; title: string; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className="data-table__pagination-btn text-xs tabular-nums px-2 py-1 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      style={{ minWidth: '32px' }}
+    >
+      {children}
+    </button>
+  )
+}
+
 export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow, pageSize }: TableProps<T>) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [autoPageSize, setAutoPageSize] = useState(pageSize ?? 25)
@@ -98,22 +134,34 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
       {totalPages > 1 && (
         <div className="data-table__pagination flex items-center justify-between px-4 py-3 border-t border-[var(--color-border)] mt-auto">
           <span className="data-table__pagination-info text-xs text-[var(--color-muted)]">{rangeStart}–{rangeEnd} de {data.length}</span>
-          <div className="data-table__pagination-nav flex items-center gap-3">
-            <span className="data-table__pagination-page text-xs text-[var(--color-muted)]">Página {safePage} de {totalPages}</span>
-            <button
-              onClick={() => setPage(p => p - 1)}
-              disabled={safePage === 1}
-              className="data-table__pagination-btn text-xs px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              ← Anterior
-            </button>
-            <button
-              onClick={() => setPage(p => p + 1)}
-              disabled={safePage === totalPages}
-              className="data-table__pagination-btn text-xs px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              Siguiente →
-            </button>
+          <div className="data-table__pagination-nav flex items-center gap-1.5">
+            <PageNavButton onClick={() => setPage(1)} disabled={safePage === 1} title="Primera página">«</PageNavButton>
+            <PageNavButton onClick={() => setPage(p => p - 1)} disabled={safePage === 1} title="Anterior">‹</PageNavButton>
+            {pageRange(safePage, totalPages).map((item, i) =>
+              item === '…' ? (
+                <span key={`e-${i}`} className="data-table__pagination-ellipsis px-1.5 text-xs text-[var(--color-muted)]">…</span>
+              ) : (
+                <button
+                  key={item}
+                  onClick={() => setPage(item)}
+                  aria-current={item === safePage ? 'page' : undefined}
+                  className={
+                    item === safePage
+                      ? 'data-table__pagination-num data-table__pagination-num--active text-xs tabular-nums px-2 py-1 rounded-lg border-0 transition-colors'
+                      : 'data-table__pagination-num text-xs tabular-nums px-2 py-1 rounded-lg border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors'
+                  }
+                  style={
+                    item === safePage
+                      ? { background: 'var(--color-accent)', color: '#fff', minWidth: '32px' }
+                      : { minWidth: '32px' }
+                  }
+                >
+                  {item}
+                </button>
+              )
+            )}
+            <PageNavButton onClick={() => setPage(p => p + 1)} disabled={safePage === totalPages} title="Siguiente">›</PageNavButton>
+            <PageNavButton onClick={() => setPage(totalPages)} disabled={safePage === totalPages} title="Última página">»</PageNavButton>
           </div>
         </div>
       )}
