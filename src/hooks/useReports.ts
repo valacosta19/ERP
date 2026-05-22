@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import type { Currency } from '@/types'
 
 export type BalanceSheet = {
@@ -67,19 +68,20 @@ export function useFinancialReport(filters: { from?: string; to?: string; curren
   return useQuery({
     queryKey: ['reports', 'financial', filters],
     queryFn: async () => {
-      let query = supabase
-        .from('transactions')
-        .select('amount, subcategory_id, transaction_categories!subcategory_id(id, name, parent_id, transaction_type)')
-        .is('voided_at', null)
+      const rows = await fetchAllRows<RawTx>((rangeFrom, rangeTo) => {
+        let query = supabase
+          .from('transactions')
+          .select('amount, subcategory_id, transaction_categories!subcategory_id(id, name, parent_id, transaction_type)')
+          .is('voided_at', null)
+          .order('id', { ascending: true })
 
-      if (filters.from) query = query.gte('date', filters.from)
-      if (filters.to) query = query.lte('date', filters.to)
-      if (filters.currency) query = query.eq('currency', filters.currency)
+        if (filters.from) query = query.gte('date', filters.from)
+        if (filters.to) query = query.lte('date', filters.to)
+        if (filters.currency) query = query.eq('currency', filters.currency)
 
-      const { data, error } = await query
-      if (error) throw new Error(error.message)
+        return query.range(rangeFrom, rangeTo)
+      })
 
-      const rows = (data as unknown as RawTx[]) ?? []
       const map = new Map<string, FinancialCategoryRow>()
 
       for (const row of rows) {
@@ -166,24 +168,27 @@ export function useBalanceSheet(asOfDate?: string) {
     queryFn: async () => {
       const dateFilter = asOfDate ?? new Date().toISOString().slice(0, 10)
 
-      const [paymentsRes, receivablesRes, lotsRes, debtsRes] = await Promise.all([
-        supabase
-          .from('transaction_payments')
-          .select('payment_method, amount, transactions!inner(date, voided_at, transaction_categories!subcategory_id(transaction_type))')
-          .is('transactions.voided_at', null)
-          .lte('transactions.date', dateFilter),
+      const [payments, receivablesRes, lotsRes, debtsRes] = await Promise.all([
+        fetchAllRows<RawPaymentWithTx>((rangeFrom, rangeTo) =>
+          supabase
+            .from('transaction_payments')
+            .select('payment_method, amount, transactions!inner(date, voided_at, transaction_categories!subcategory_id(transaction_type))')
+            .is('transactions.voided_at', null)
+            .lte('transactions.date', dateFilter)
+            .order('id', { ascending: true })
+            .range(rangeFrom, rangeTo),
+        ),
         supabase.from('receivables').select('total_amount, collected_amount'),
         supabase.from('inventory_lots').select('remaining_quantity, unit_cost').gt('remaining_quantity', 0),
         supabase.from('supplier_debts').select('total_amount, paid_amount'),
       ])
 
-      if (paymentsRes.error) throw new Error(paymentsRes.error.message)
       if (receivablesRes.error) throw new Error(receivablesRes.error.message)
       if (lotsRes.error) throw new Error(lotsRes.error.message)
       if (debtsRes.error) throw new Error(debtsRes.error.message)
 
       const cashMap = new Map<string, number>()
-      for (const p of (paymentsRes.data as unknown as RawPaymentWithTx[])) {
+      for (const p of payments) {
         const txType = p.transactions?.transaction_categories?.transaction_type
         if (!txType || txType === 'transfer') continue
         const sign = txType === 'income' ? 1 : -1
@@ -245,13 +250,24 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
       const toARS = (amount: number, currency: string) =>
         currency === 'USD' ? amount * usdRate : amount
 
-      const [saleItemsRes, txRes, catsRes] = await Promise.all([
-        supabase.from('sale_items').select('transaction_id, quantity, unit_cost, unit_sale_price, transactions(date)'),
-        supabase.from('transactions').select('id, date, amount, seña_amount, is_seña, currency, subcategory_id, transaction_categories!subcategory_id(name, transaction_type, parent_id)').is('voided_at', null),
+      const [allSaleItems, allTxs, catsRes] = await Promise.all([
+        fetchAllRows<RawSaleItem>((rangeFrom, rangeTo) =>
+          supabase
+            .from('sale_items')
+            .select('transaction_id, quantity, unit_cost, unit_sale_price, transactions(date)')
+            .order('id', { ascending: true })
+            .range(rangeFrom, rangeTo),
+        ),
+        fetchAllRows<RawTxProfit>((rangeFrom, rangeTo) =>
+          supabase
+            .from('transactions')
+            .select('id, date, amount, seña_amount, is_seña, currency, subcategory_id, transaction_categories!subcategory_id(name, transaction_type, parent_id)')
+            .is('voided_at', null)
+            .order('id', { ascending: true })
+            .range(rangeFrom, rangeTo),
+        ),
         supabase.from('transaction_categories').select('id, name'),
       ])
-      if (saleItemsRes.error) throw new Error(saleItemsRes.error.message)
-      if (txRes.error) throw new Error(txRes.error.message)
       if (catsRes.error) throw new Error(catsRes.error.message)
 
       const catNameById = new Map<string, string>()
@@ -259,7 +275,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
         catNameById.set(c.id, c.name)
       }
 
-      const saleItems = ((saleItemsRes.data as unknown as RawSaleItem[]) ?? []).filter(si => {
+      const saleItems = allSaleItems.filter(si => {
         const date = si.transactions?.date
         if (!date) return false
         if (filters.from && date < filters.from) return false
@@ -267,7 +283,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
         return true
       })
 
-      const txs = ((txRes.data as unknown as RawTxProfit[]) ?? []).filter(tx => {
+      const txs = allTxs.filter(tx => {
         if (filters.from && tx.date < filters.from) return false
         if (filters.to && tx.date > filters.to) return false
         return true

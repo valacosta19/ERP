@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, ProfessionalAssignment, TransactionCategory } from '@/types'
 
 interface TransactionFilters {
@@ -294,20 +295,20 @@ export function usePaymentMethodBalances(filters: { from?: string; to?: string; 
   return useQuery({
     queryKey: ['payment-method-balances', filters],
     queryFn: async () => {
-      let query = supabase
-        .from('transaction_payments')
-        .select('payment_method, amount, type, transactions!inner(date, currency, voided_at)')
-        .is('transactions.voided_at', null)
-
-      if (filters.from) query = query.gte('transactions.date', filters.from)
-      if (filters.to) query = query.lte('transactions.date', filters.to)
-      if (filters.currency) query = query.eq('transactions.currency', filters.currency)
-
-      const { data, error } = await query
-      if (error) throw new Error(error.message)
-
       type Row = { payment_method: PaymentMethod; amount: number; type: string; transactions: { currency: string; voided_at: string | null; date: string } }
-      const rows = data as unknown as Row[]
+      const rows = await fetchAllRows<Row>((rangeFrom, rangeTo) => {
+        let query = supabase
+          .from('transaction_payments')
+          .select('payment_method, amount, type, transactions!inner(date, currency, voided_at)')
+          .is('transactions.voided_at', null)
+          .order('id', { ascending: true })
+
+        if (filters.from) query = query.gte('transactions.date', filters.from)
+        if (filters.to) query = query.lte('transactions.date', filters.to)
+        if (filters.currency) query = query.eq('transactions.currency', filters.currency)
+
+        return query.range(rangeFrom, rangeTo)
+      })
 
       const methodKeySet = [...new Set(rows.map(r => r.payment_method.toLowerCase()))].sort()
       return methodKeySet.map(methodKey => {
