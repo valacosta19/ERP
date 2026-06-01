@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { X, Check, CalendarDays, ChevronDown } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { DescriptionCombobox, type Suggestion, type DescriptionComboboxHandle } from './DescriptionCombobox'
+import { ProductCombobox, type ProductComboboxHandle } from './ProductCombobox'
 import {
   type TransactionDraft,
   makeEmptyPayment,
@@ -33,6 +34,7 @@ type Props = {
   draftSelectedSuggestion: Suggestion | null
   onSuggestionSelect: (s: Suggestion) => void
   onDescriptionChange: (v: string) => void
+  onProductChange: (productId: string | null, product: Product | null) => void
   onInventoryProductChange: (index: number, productId: string) => void
   onInventoryQuantityChange: (index: number, quantity: number) => void
   computeInventoryTotal: (items: Array<{ product_id: string; quantity: number }>) => number
@@ -57,19 +59,23 @@ export const TransactionQuickForm = forwardRef<TransactionQuickFormHandle, Props
   const {
     draft, setDraft, parents, subcategories, txCategories, professionals, products,
     paymentMethodOptions, unrefundedAnticipos, draftSuggestions, draftSelectedSuggestion,
-    onSuggestionSelect, onDescriptionChange, onInventoryProductChange, onInventoryQuantityChange,
+    onSuggestionSelect, onDescriptionChange, onProductChange, onInventoryProductChange, onInventoryQuantityChange,
     computeInventoryTotal, getFifoCost, formError, formErrorField, onSubmit, onCancel, submitting, showSavedBanner,
     productLabel, isInventoryCategory, isServiceCategory, isProductCategory, isTransfer,
   } = props
 
   const comboRef = useRef<DescriptionComboboxHandle>(null)
+  const productComboRef = useRef<ProductComboboxHandle>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const todayISO = new Date().toISOString().slice(0, 10)
   const [dateExpanded, setDateExpanded] = useState(false)
 
   useImperativeHandle(ref, () => ({
-    focusFirstField: () => comboRef.current?.focus(),
+    focusFirstField: () => isProductCategory ? productComboRef.current?.focus() : comboRef.current?.focus(),
   }))
+
+  const selectedProduct = isProductCategory && draft.product_id ? products.find(p => p.id === draft.product_id) ?? null : null
+  const selectedProductNoStock = !!selectedProduct && (selectedProduct.stock ?? 0) <= 0
 
   useEffect(() => {
     const t = setTimeout(() => comboRef.current?.focus(), 80)
@@ -197,32 +203,6 @@ export const TransactionQuickForm = forwardRef<TransactionQuickFormHandle, Props
         {formErrorField === 'date' && <ErrorMessage>{formError}</ErrorMessage>}
       </FieldBlock>
 
-      <FieldBlock label="Descripción">
-        <DescriptionCombobox
-          ref={comboRef}
-          value={draft.description}
-          onChange={onDescriptionChange}
-          onSelect={onSuggestionSelect}
-          suggestions={draftSuggestions}
-          placeholder="Buscar servicio o describir transacción"
-          ariaLabel="Descripción"
-        />
-        {draftSelectedSuggestion && (draftSelectedSuggestion.priceCash > 0 || draftSelectedSuggestion.priceTransfer != null || draftSelectedSuggestion.priceCard != null) && (
-          <div className="flex items-center gap-1.5 flex-wrap" style={{ marginTop: '8px' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-muted)' }}>Precios:</span>
-            {draftSelectedSuggestion.priceCash > 0 && (
-              <PricePill amount={draftSelectedSuggestion.priceCash} label="Efectivo" onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceCash } : p) })} />
-            )}
-            {draftSelectedSuggestion.priceTransfer != null && (
-              <PricePill amount={draftSelectedSuggestion.priceTransfer} label="Transfer." onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceTransfer! } : p) })} />
-            )}
-            {draftSelectedSuggestion.priceCard != null && (
-              <PricePill amount={draftSelectedSuggestion.priceCard} label="Tarjeta" onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceCard! } : p) })} />
-            )}
-          </div>
-        )}
-      </FieldBlock>
-
       {draft.category_parent_id && (
         <FieldBlock label="Subcategoría">
           <select
@@ -235,6 +215,55 @@ export const TransactionQuickForm = forwardRef<TransactionQuickFormHandle, Props
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
+        </FieldBlock>
+      )}
+
+      {isProductCategory ? (
+        <FieldBlock label="Producto">
+          <ProductCombobox
+            ref={productComboRef}
+            value={draft.product_id}
+            onChange={onProductChange}
+            products={products}
+            productLabel={productLabel}
+            placeholder="Buscar producto"
+            ariaLabel="Producto"
+          />
+          {selectedProductNoStock && (
+            <div
+              role="status"
+              style={{ marginTop: '8px', fontSize: '0.8125rem', color: 'var(--color-warning)' }}
+            >
+              Este producto no tiene stock. Se registrará y quedará pendiente de descuento.
+            </div>
+          )}
+          {formErrorField === 'amount' && !draft.product_id && <ErrorMessage>{formError}</ErrorMessage>}
+        </FieldBlock>
+      ) : (
+        <FieldBlock label="Descripción">
+          <DescriptionCombobox
+            ref={comboRef}
+            value={draft.description}
+            onChange={onDescriptionChange}
+            onSelect={onSuggestionSelect}
+            suggestions={draftSuggestions}
+            placeholder="Buscar servicio o describir transacción"
+            ariaLabel="Descripción"
+          />
+          {draftSelectedSuggestion && (draftSelectedSuggestion.priceCash > 0 || draftSelectedSuggestion.priceTransfer != null || draftSelectedSuggestion.priceCard != null) && (
+            <div className="flex items-center gap-1.5 flex-wrap" style={{ marginTop: '8px' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-muted)' }}>Precios:</span>
+              {draftSelectedSuggestion.priceCash > 0 && (
+                <PricePill amount={draftSelectedSuggestion.priceCash} label="Efectivo" onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceCash } : p) })} />
+              )}
+              {draftSelectedSuggestion.priceTransfer != null && (
+                <PricePill amount={draftSelectedSuggestion.priceTransfer} label="Transfer." onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceTransfer! } : p) })} />
+              )}
+              {draftSelectedSuggestion.priceCard != null && (
+                <PricePill amount={draftSelectedSuggestion.priceCard} label="Tarjeta" onClick={() => setDraft(d => d && { ...d, payments: d.payments.map((p, i) => i === 0 ? { ...p, amount: draftSelectedSuggestion.priceCard! } : p) })} />
+              )}
+            </div>
+          )}
         </FieldBlock>
       )}
 
@@ -289,8 +318,8 @@ export const TransactionQuickForm = forwardRef<TransactionQuickFormHandle, Props
                   style={{ ...inputStyle, flex: 1, ...(formErrorField === 'inventory' ? errorInputStyle : {}) }}
                 >
                   <option value="">— producto —</option>
-                  {products.filter((p: Product) => (p.stock ?? 0) > 0).map((p: Product) => (
-                    <option key={p.id} value={p.id}>{productLabel(p)}</option>
+                  {products.map((p: Product) => (
+                    <option key={p.id} value={p.id}>{productLabel(p)}{(p.stock ?? 0) <= 0 ? ' (sin stock)' : ''}</option>
                   ))}
                 </select>
                 <input
@@ -305,6 +334,11 @@ export const TransactionQuickForm = forwardRef<TransactionQuickFormHandle, Props
                 {item.product_id && getFifoCost(item.product_id) > 0 && (
                   <span style={{ fontSize: '0.75rem', color: 'var(--color-muted)', whiteSpace: 'nowrap' }}>
                     ${(getFifoCost(item.product_id) * item.quantity).toLocaleString('es-CO')}
+                  </span>
+                )}
+                {item.product_id && (products.find(p => p.id === item.product_id)?.stock ?? 0) <= 0 && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', whiteSpace: 'nowrap' }}>
+                    sin stock
                   </span>
                 )}
                 <IconButton onClick={() => setDraft(d => {

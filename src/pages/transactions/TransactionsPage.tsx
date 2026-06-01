@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Plus, X, Link, Ban } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { TopBar } from '@/components/layout/TopBar'
@@ -20,6 +21,7 @@ import { ReconcileModal } from './ReconcileModal'
 import { QuickAddFAB } from '@/components/transactions/QuickAddFAB'
 import { TransactionDrawer } from '@/components/transactions/TransactionDrawer'
 import { TransactionQuickForm, type TransactionQuickFormHandle } from '@/components/transactions/TransactionQuickForm'
+import { ProductCombobox } from '@/components/transactions/ProductCombobox'
 import {
   EMPTY_DRAFT,
   makeEmptyPayment,
@@ -47,12 +49,14 @@ function getTxDirection(tx: Transaction): 'entrada' | 'salida' | 'transfer' {
 }
 
 export function TransactionsPage() {
+  const qc = useQueryClient()
   const [parentCategoryFilter, setParentCategoryFilter] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState<Currency | ''>('')
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [showVoided, setShowVoided] = useState(false)
+  const [pendingOnly, setPendingOnly] = useState(false)
 
   const [draft, setDraft] = useState<TransactionDraft | null>(null)
   const [draftSelectedSuggestion, setDraftSelectedSuggestion] = useState<Suggestion | null>(null)
@@ -111,6 +115,7 @@ export function TransactionsPage() {
     from: from || undefined,
     to: to || undefined,
     showVoided,
+    pendingOnly,
   })
 
   const filteredTransactions = paymentMethodFilter
@@ -133,8 +138,11 @@ export function TransactionsPage() {
   )
 
   const isDraftServiceCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'servicio'
-  const isEditServiceCategory = subcategories.find(c => c.id === editForm.subcategory_id)?.name.toLowerCase() === 'servicio'
+  const editSubcategory = subcategories.find(c => c.id === editForm.subcategory_id)
+  const isEditServiceCategory = editSubcategory?.name.toLowerCase() === 'servicio'
+  const isEditInventoryCategory = !!editSubcategory?.deducts_inventory || editSubcategory?.name.toLowerCase() === 'producto'
   const isDraftProductCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'producto'
+
   const isDraftInventoryCategory = !!(draft && subcategories.find(c => c.id === draft.subcategory_id)?.deducts_inventory)
 
   const fifoCostsRef = useRef<Record<string, number>>({})
@@ -177,14 +185,20 @@ export function TransactionsPage() {
 
   const productLabel = (p: Product) => p.unit ? `${p.name} ${p.unit}` : p.name
 
-  const draftSuggestions: Suggestion[] = isDraftProductCategory
-    ? products
-        .filter((p: Product) => (p.stock ?? 0) > 0)
-        .map((p: Product) => ({ id: p.id, name: productLabel(p), priceCash: p.sale_price, priceTransfer: null, priceCard: null, productId: p.id }))
-    : [
-        ...catalogItems.map((ci: CatalogItem) => ({ id: ci.id, name: ci.name, priceCash: ci.price, priceTransfer: ci.price_transfer ?? null, priceCard: ci.price_card ?? null })),
-        ...(isDraftExpense ? products.map((p: Product) => ({ id: p.id, name: productLabel(p), priceCash: 0, priceTransfer: null, priceCard: null, productId: p.id })) : []),
-      ]
+  const draftSuggestions: Suggestion[] = [
+    ...catalogItems.map((ci: CatalogItem) => ({ id: ci.id, name: ci.name, priceCash: ci.price, priceTransfer: ci.price_transfer ?? null, priceCard: ci.price_card ?? null })),
+    ...(isDraftExpense ? products.map((p: Product) => ({ id: p.id, name: productLabel(p), priceCash: 0, priceTransfer: null, priceCard: null, productId: p.id })) : []),
+  ]
+
+  function handleDraftProductChange(productId: string | null, product: Product | null) {
+    setDraft(d => d && {
+      ...d,
+      product_id: productId,
+      description: product ? productLabel(product) : '',
+      catalog_item_id: null,
+      product_quantity: productId ? d.product_quantity : 1,
+    })
+  }
 
   function startNew() {
     setFormError('')
@@ -270,6 +284,11 @@ export function TransactionsPage() {
       setFormError('Agregá al menos un producto.')
       return
     }
+    if (isDraftProductCategory && !draft.product_id) {
+      setFormErrorField('amount')
+      setFormError('Seleccioná el producto del listado para poder descontar el inventario.')
+      return
+    }
     if (!isInventoryCategory && total <= 0) {
       setFormErrorField('amount')
       setFormError('Ingresá un monto mayor a cero.')
@@ -285,6 +304,18 @@ export function TransactionsPage() {
     const isAnticipo = draftDesc === 'anticipo'
     const isDevolución = draftDesc === 'devolución de anticipo'
     const draftSubcatName = subcategories.find(c => c.id === draft.subcategory_id)?.name ?? null
+
+    const singleProductFlow = !isInventoryCategory && !!draft.product_id && (transactionType === 'expense' || isDraftProductCategory)
+    const singleProduct = singleProductFlow ? products.find(p => p.id === draft.product_id) : null
+    let inventoryPending = false
+    if (singleProductFlow) {
+      inventoryPending = (singleProduct?.stock ?? 0) < draft.product_quantity
+    } else if (isInventoryCategory) {
+      inventoryPending = draft.inventory_items
+        .filter(i => i.product_id)
+        .some(i => (products.find(p => p.id === i.product_id)?.stock ?? 0) < i.quantity)
+    }
+
     const tx = await createTx.mutateAsync({
       date: draft.date,
       transaction_type: transactionType,
@@ -302,10 +333,12 @@ export function TransactionsPage() {
         : draft.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
       professionals: draft.professionals,
       product_id: draft.product_id,
+      inventory_pending: inventoryPending,
     })
     const { data: { user } } = await supabase.auth.getUser()
     if (isInventoryCategory) {
       for (const item of draft.inventory_items.filter(i => i.product_id)) {
+        if ((products.find(p => p.id === item.product_id)?.stock ?? 0) < item.quantity) continue
         const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
           p_product_id: item.product_id,
           p_quantity: item.quantity,
@@ -315,7 +348,7 @@ export function TransactionsPage() {
         })
         if (fifoError) throw new Error(fifoError.message)
       }
-    } else if (draft.product_id && (transactionType === 'expense' || isDraftProductCategory)) {
+    } else if (singleProductFlow && !inventoryPending && draft.product_id) {
       const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
         p_product_id: draft.product_id,
         p_quantity: draft.product_quantity,
@@ -325,6 +358,7 @@ export function TransactionsPage() {
       })
       if (fifoError) throw new Error(fifoError.message)
     }
+    qc.invalidateQueries({ queryKey: ['products'] })
     setFormError('')
     setFormErrorField(null)
     const ingrenosParent = parents.find(p => p.name === 'Ingresos')
@@ -349,6 +383,32 @@ export function TransactionsPage() {
     const editDesc = editForm.description.trim().toLowerCase()
     const isEditAnticipo = editDesc === 'anticipo'
     const isEditDevolución = editDesc === 'devolución de anticipo'
+    const editSubcat = subcategories.find(c => c.id === editForm.subcategory_id)
+    const editSubcatTriggersInventory = !!(editSubcat?.deducts_inventory) || editSubcat?.name.toLowerCase() === 'producto'
+    const { data: { user } } = await supabase.auth.getUser()
+
+    let runFifo = false
+    let inventoryPending = editing!.inventory_pending ?? false
+    if (editSubcatTriggersInventory && editForm.product_id) {
+      const { data: existingMovement } = await supabase
+        .from('inventory_movements')
+        .select('id')
+        .eq('reference_id', editing!.id)
+        .eq('reference_type', 'transaction')
+        .limit(1)
+        .maybeSingle()
+      if (existingMovement) {
+        inventoryPending = false
+      } else if ((products.find(p => p.id === editForm.product_id)?.stock ?? 0) >= 1) {
+        runFifo = true
+        inventoryPending = false
+      } else {
+        inventoryPending = true
+      }
+    } else {
+      inventoryPending = false
+    }
+
     await updateTx.mutateAsync({
       id: editing!.id,
       date: editForm.date,
@@ -365,7 +425,21 @@ export function TransactionsPage() {
       payments: editForm.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
       professionals: editForm.professionals,
       product_id: editForm.product_id,
+      inventory_pending: inventoryPending,
     })
+
+    if (runFifo && editForm.product_id) {
+      const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
+        p_product_id: editForm.product_id,
+        p_quantity: 1,
+        p_transaction_id: editing!.id,
+        p_unit_sale_price: total,
+        p_created_by: user!.id,
+      })
+      if (fifoError) throw new Error(fifoError.message)
+    }
+
+    qc.invalidateQueries({ queryKey: ['products'] })
     setModalOpen(false)
   }
 
@@ -396,6 +470,7 @@ export function TransactionsPage() {
           <div className="flex items-center gap-1.5">
             <span className="text-[var(--color-text)]">{tx.description || '—'}</span>
             {tx.voided_at && <Badge variant="danger">Anulada</Badge>}
+            {tx.inventory_pending && !tx.voided_at && <Badge variant="warning">Sin descontar</Badge>}
             {tx.is_seña && !tx.voided_at && tx.description?.trim().toLowerCase() === 'anticipo' && refundedAntipoIds.has(tx.id) && <Badge variant="warning">Devuelta</Badge>}
           </div>
           {tx.professionals && tx.professionals.length > 0 && (
@@ -554,11 +629,20 @@ export function TransactionsPage() {
             />
             Mostrar anuladas
           </label>
-          {(from || to || parentCategoryFilter || paymentMethodFilter) && (
+          <label className="flex items-center gap-1.5 cursor-pointer text-sm" style={{ color: 'var(--color-muted)' }}>
+            <input
+              type="checkbox"
+              checked={pendingOnly}
+              onChange={e => setPendingOnly(e.target.checked)}
+              style={{ accentColor: 'var(--color-accent)' }}
+            />
+            Solo pendientes de descuento
+          </label>
+          {(from || to || parentCategoryFilter || paymentMethodFilter || pendingOnly) && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => { setParentCategoryFilter(''); setFrom(''); setTo(''); setPaymentMethodFilter('') }}
+              onClick={() => { setParentCategoryFilter(''); setFrom(''); setTo(''); setPaymentMethodFilter(''); setPendingOnly(false) }}
             >
               Limpiar filtros
             </Button>
@@ -678,12 +762,31 @@ export function TransactionsPage() {
             />
           )}
 
-          <Input
-            label="Descripción"
-            value={editForm.description}
-            onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
-            placeholder="Opcional"
-          />
+          {isEditInventoryCategory ? (
+            <div>
+              <label className="block text-sm font-medium text-[var(--color-text)] mb-1">Producto</label>
+              <ProductCombobox
+                value={editForm.product_id}
+                onChange={(productId, product) => setEditForm(f => ({ ...f, product_id: productId, description: product ? productLabel(product) : '' }))}
+                products={products}
+                productLabel={productLabel}
+                placeholder="Buscar producto"
+                ariaLabel="Producto"
+              />
+              {editForm.product_id && (products.find(p => p.id === editForm.product_id)?.stock ?? 0) <= 0 && (
+                <p style={{ marginTop: '6px', fontSize: '0.8125rem', color: 'var(--color-warning)' }}>
+                  Este producto no tiene stock. Se guardará pendiente de descuento.
+                </p>
+              )}
+            </div>
+          ) : (
+            <Input
+              label="Descripción"
+              value={editForm.description}
+              onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+              placeholder="Opcional"
+            />
+          )}
 
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -740,6 +843,8 @@ export function TransactionsPage() {
               Total: {CURRENCY_SYMBOL[editForm.currency]}{calcTotal(editForm.payments).toLocaleString('es-CO')}
             </div>
           </div>
+
+
 
           {isEditServiceCategory && (
             <div>
@@ -864,6 +969,7 @@ export function TransactionsPage() {
             draftSelectedSuggestion={draftSelectedSuggestion}
             onSuggestionSelect={handleSuggestionSelect}
             onDescriptionChange={v => { setDraftSelectedSuggestion(null); setDraft(d => d && { ...d, description: v, product_id: null, product_quantity: 1 }) }}
+            onProductChange={handleDraftProductChange}
             onInventoryProductChange={handleInventoryProductChange}
             onInventoryQuantityChange={handleInventoryQuantityChange}
             computeInventoryTotal={computeInventoryTotal}

@@ -9,6 +9,7 @@ interface TransactionFilters {
   from?: string
   to?: string
   showVoided?: boolean
+  pendingOnly?: boolean
 }
 
 export function useTransactions(filters: TransactionFilters = {}) {
@@ -22,6 +23,7 @@ export function useTransactions(filters: TransactionFilters = {}) {
         .order('created_at', { ascending: false })
 
       if (!filters.showVoided) query = query.is('voided_at', null)
+      if (filters.pendingOnly) query = query.eq('inventory_pending', true)
       if (filters.subcategoryIds && filters.subcategoryIds.length > 0) query = query.in('subcategory_id', filters.subcategoryIds)
       if (filters.currency) query = query.eq('currency', filters.currency)
       if (filters.from) query = query.gte('date', filters.from)
@@ -66,6 +68,7 @@ interface TransactionPayload {
   payments: PaymentRow[]
   professionals: { id: string; commission_rate: number }[]
   product_id?: string | null
+  inventory_pending?: boolean
 }
 
 export function useCreateTransaction() {
@@ -89,6 +92,7 @@ export function useCreateTransaction() {
           seña_amount: payload.seña_amount,
           refunds_anticipo_id: payload.refunds_anticipo_id,
           product_id: payload.product_id ?? null,
+          inventory_pending: payload.inventory_pending ?? false,
           created_by: user?.id ?? null,
         })
         .select('*')
@@ -179,6 +183,7 @@ export function useCreateTransaction() {
       qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
       qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
       qc.invalidateQueries({ queryKey: ['transaction-recipe-costs'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
     },
   })
 }

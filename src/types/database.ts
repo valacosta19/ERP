@@ -69,6 +69,7 @@ export interface Database {
           voided_by: string | null
           refunds_anticipo_id: string | null
           product_id: string | null
+          inventory_pending: boolean
         }
         Insert: {
           id?: string
@@ -86,6 +87,7 @@ export interface Database {
           voided_by?: string | null
           refunds_anticipo_id?: string | null
           product_id?: string | null
+          inventory_pending?: boolean
         }
         Update: {
           id?: string
@@ -101,6 +103,7 @@ export interface Database {
           voided_by?: string | null
           refunds_anticipo_id?: string | null
           product_id?: string | null
+          inventory_pending?: boolean
         }
         Relationships: []
       }

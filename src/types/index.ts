@@ -63,6 +63,7 @@ export interface Transaction {
   voided_by: string | null
   refunds_anticipo_id: string | null
   product_id: string | null
+  inventory_pending?: boolean
   subcategory?: TransactionCategory
   payments?: TransactionPayment[]
   professionals?: ProfessionalAssignment[]
