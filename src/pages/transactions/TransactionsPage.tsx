@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Plus, X, Link, Ban } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
+import { currentMonthRange } from '@/lib/dateRange'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -53,8 +54,8 @@ export function TransactionsPage() {
   const [parentCategoryFilter, setParentCategoryFilter] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState<Currency | ''>('')
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  const [from, setFrom] = useState(() => currentMonthRange().from)
+  const [to, setTo] = useState(() => currentMonthRange().to)
   const [showVoided, setShowVoided] = useState(false)
   const [pendingOnly, setPendingOnly] = useState(false)
 

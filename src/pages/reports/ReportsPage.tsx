@@ -20,6 +20,7 @@ import type { FinancialCategoryRow, InventoryValuationRow, ProfitMonthRow } from
 import type { CommissionDetailRow } from '@/hooks/useCommissionsReport'
 import type { Currency, ServiceRecipe, ServiceCostRow } from '@/types'
 import { formatDate } from '@/lib/formatDate'
+import { currentMonthRange } from '@/lib/dateRange'
 
 type Tab = 'financiero' | 'comisiones' | 'utilidad' | 'costos' | 'balance'
 type CommViewMode = 'detalle' | 'quincenal'
@@ -105,16 +106,16 @@ export function ReportsPage() {
   function setActiveTab(tab: Tab) {
     setSearchParams(prev => { prev.set('tab', tab); return prev })
   }
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  const [from, setFrom] = useState(() => currentMonthRange().from)
+  const [to, setTo] = useState(() => currentMonthRange().to)
   const [currency, setCurrency] = useState<Currency | ''>('')
-  const [commFrom, setCommFrom] = useState('')
-  const [commTo, setCommTo] = useState('')
+  const [commFrom, setCommFrom] = useState(() => currentMonthRange().from)
+  const [commTo, setCommTo] = useState(() => currentMonthRange().to)
   const [commProfFilter, setCommProfFilter] = useState('')
   const [commViewMode, setCommViewMode] = useState<CommViewMode>('detalle')
   const [settleTarget, setSettleTarget] = useState<{ id: string; name: string; gross: number } | null>(null)
-  const [profitFrom, setProfitFrom] = useState('')
-  const [profitTo, setProfitTo] = useState('')
+  const [profitFrom, setProfitFrom] = useState(() => currentMonthRange().from)
+  const [profitTo, setProfitTo] = useState(() => currentMonthRange().to)
   const [balanceDate, setBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
 
   const { data: dolarBlue } = useQuery<{ venta: number; fechaActualizacion: string }>({
