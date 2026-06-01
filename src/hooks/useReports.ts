@@ -223,7 +223,7 @@ type RawSaleItem = {
   quantity: number
   unit_cost: number
   unit_sale_price: number
-  transactions: { date: string } | null
+  transactions: { date: string; transaction_categories: { transaction_type: string | null } | null } | null
 }
 
 type RawTxProfit = {
@@ -254,7 +254,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
         fetchAllRows<RawSaleItem>((rangeFrom, rangeTo) =>
           supabase
             .from('sale_items')
-            .select('transaction_id, quantity, unit_cost, unit_sale_price, transactions(date)')
+            .select('transaction_id, quantity, unit_cost, unit_sale_price, transactions(date, transaction_categories!subcategory_id(transaction_type))')
             .order('id', { ascending: true })
             .range(rangeFrom, rangeTo),
         ),
@@ -304,6 +304,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
       }
 
       for (const si of saleItems) {
+        if (si.transactions?.transaction_categories?.transaction_type !== 'income') continue
         const month = si.transactions!.date.slice(0, 7)
         const row = ensure(month)
         const rev = Number(si.unit_sale_price) * Number(si.quantity)
@@ -324,7 +325,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
           const cat = tx.transaction_categories?.name?.toLowerCase()
           if (cat === 'servicio') {
             byMonth.get(month)!.service_income += amountARS
-          } else if (cat === 'produto' && !saleItemTxIds.has(tx.id)) {
+          } else if (cat === 'producto' && !saleItemTxIds.has(tx.id)) {
             byMonth.get(month)!.product_revenue += amountARS
           }
         } else if (tx.transaction_categories?.transaction_type === 'expense') {
