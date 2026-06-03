@@ -169,6 +169,53 @@ function BusinessNameCard({ name, onSave }: { name: string; onSave: (v: string) 
   )
 }
 
+function CommissionRatesEditor({ rates, onChange }: { rates: number[]; onChange: (rates: number[]) => void }) {
+  const [draft, setDraft] = useState('')
+
+  function addRate() {
+    const v = parseFloat(draft)
+    if (!v || v <= 0 || v > 100 || rates.includes(v)) { setDraft(''); return }
+    onChange([...rates, v].sort((a, b) => a - b))
+    setDraft('')
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className="text-xs text-[var(--color-muted)]">Comisiones</span>
+      {rates.map(r => (
+        <span
+          key={r}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"
+          style={{ background: 'var(--color-accent-light)', color: 'var(--color-accent)' }}
+        >
+          {r}%
+          <button
+            onClick={() => onChange(rates.filter(x => x !== r))}
+            className="hover:text-[var(--color-danger)]"
+            title="Quitar"
+          >
+            <X size={11} />
+          </button>
+        </span>
+      ))}
+      <span className="relative inline-flex items-center">
+        <input
+          type="number"
+          min="1"
+          max="100"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') addRate() }}
+          onBlur={addRate}
+          placeholder="+"
+          className="w-14 text-right pr-5 pl-2 py-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+        />
+        <span className="absolute right-2 text-xs text-[var(--color-muted)] pointer-events-none">%</span>
+      </span>
+    </div>
+  )
+}
+
 const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 function PeriodLockList({
@@ -809,24 +856,10 @@ export function SettingsPage() {
                     />
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
-                      Comisión
-                      <span className="relative inline-flex items-center">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          defaultValue={hd.default_commission_rate || ''}
-                          onBlur={e => {
-                            const v = parseFloat(e.target.value) || 0
-                            if (v !== hd.default_commission_rate) void updateHd.mutateAsync({ id: hd.id, default_commission_rate: v })
-                          }}
-                          placeholder="0"
-                          className="w-16 text-right pr-5 pl-2 py-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
-                        />
-                        <span className="absolute right-2 text-xs text-[var(--color-muted)] pointer-events-none">%</span>
-                      </span>
-                    </label>
+                    <CommissionRatesEditor
+                      rates={hd.commission_rates ?? []}
+                      onChange={rates => void updateHd.mutateAsync({ id: hd.id, commission_rates: rates })}
+                    />
                     <button
                       onClick={() => handleHdToggleActive(hd)}
                       className="px-2 py-1 rounded-lg text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"

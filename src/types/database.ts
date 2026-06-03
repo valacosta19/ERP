@@ -201,21 +201,21 @@ export interface Database {
           id: string
           name: string
           active: boolean
-          default_commission_rate: number
+          commission_rates: number[]
           created_at: string
         }
         Insert: {
           id?: string
           name: string
           active?: boolean
-          default_commission_rate?: number
+          commission_rates?: number[]
           created_at?: string
         }
         Update: {
           id?: string
           name?: string
           active?: boolean
-          default_commission_rate?: number
+          commission_rates?: number[]
         }
         Relationships: []
       }

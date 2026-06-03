@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Pencil, Check } from 'lucide-react'
+import { Pencil, Check, X } from 'lucide-react'
 import type { Currency, Professional } from '@/types'
 import type { CartLine, FunnelType } from './funnelTypes'
 import { lineGross } from './funnelTypes'
@@ -37,15 +37,15 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
   const [editing, setEditing] = useState<string | null>(null)
   const activeProfs = professionals.filter(p => p.active)
 
-  function toggleProf(line: CartLine, prof: Professional) {
+  function removeProf(line: CartLine, id: string) {
+    onLineProfessionals(line.key, line.professionals.filter(p => p.id !== id))
+  }
+  function assignRate(line: CartLine, prof: Professional, rate: number) {
     const exists = line.professionals.some(p => p.id === prof.id)
     const next = exists
-      ? line.professionals.filter(p => p.id !== prof.id)
-      : [...line.professionals, { id: prof.id, commission_rate: prof.default_commission_rate }]
+      ? line.professionals.map(p => p.id === prof.id ? { ...p, commission_rate: rate } : p)
+      : [...line.professionals, { id: prof.id, commission_rate: rate }]
     onLineProfessionals(line.key, next)
-  }
-  function setRate(line: CartLine, id: string, rate: number) {
-    onLineProfessionals(line.key, line.professionals.map(p => p.id === id ? { ...p, commission_rate: rate } : p))
   }
 
   return (
@@ -95,10 +95,11 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
 
             {line.kind === 'service' && activeProfs.length > 0 && (
               <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px dashed var(--color-border)' }}>
-                <SectionLabel>Profesionales — tocá para asignar</SectionLabel>
+                <SectionLabel>Profesionales — tocá la comisión que aplica</SectionLabel>
                 <div className="flex flex-wrap gap-2" style={{ marginTop: '10px' }}>
                   {activeProfs.map(prof => {
                     const assigned = line.professionals.find(p => p.id === prof.id)
+                    const rates = prof.commission_rates ?? []
                     return (
                       <div
                         key={prof.id}
@@ -111,10 +112,12 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
                       >
                         <button
                           type="button"
-                          onClick={() => toggleProf(line, prof)}
+                          onClick={() => assigned ? removeProf(line, prof.id) : rates.length === 0 ? assignRate(line, prof, 0) : undefined}
+                          title={assigned ? 'Quitar' : undefined}
                           style={{
-                            display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 14px', border: 'none',
-                            background: 'transparent', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600,
+                            display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 12px', border: 'none',
+                            background: 'transparent', cursor: assigned || rates.length === 0 ? 'pointer' : 'default',
+                            fontSize: '0.875rem', fontWeight: 600,
                             color: assigned ? 'var(--color-accent)' : 'var(--color-text)',
                           }}
                         >
@@ -128,15 +131,37 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
                             {prof.name.slice(0, 1).toUpperCase()}
                           </span>
                           {prof.name}
+                          {assigned && <X size={13} />}
                         </button>
-                        {assigned && (
+                        {rates.length > 0 ? (
+                          <span className="flex items-center" style={{ borderLeft: assigned ? '1.5px solid var(--color-accent)' : '1.5px solid var(--color-border)' }}>
+                            {rates.map(r => {
+                              const isActive = assigned?.commission_rate === r
+                              return (
+                                <button
+                                  key={r}
+                                  type="button"
+                                  onClick={() => assignRate(line, prof, r)}
+                                  style={{
+                                    padding: '8px 11px', border: 'none', cursor: 'pointer',
+                                    fontSize: '0.8125rem', fontWeight: 700,
+                                    background: isActive ? 'var(--color-accent)' : 'transparent',
+                                    color: isActive ? '#fff' : assigned ? 'var(--color-accent)' : 'var(--color-muted)',
+                                  }}
+                                >
+                                  {r}%
+                                </button>
+                              )
+                            })}
+                          </span>
+                        ) : assigned && (
                           <span className="flex items-center" style={{ borderLeft: '1.5px solid var(--color-accent)', paddingRight: '8px' }}>
                             <input
                               type="number"
                               min="0"
                               max="100"
                               value={assigned.commission_rate === 0 ? '' : String(assigned.commission_rate)}
-                              onChange={e => setRate(line, prof.id, parseFloat(e.target.value) || 0)}
+                              onChange={e => assignRate(line, prof, parseFloat(e.target.value) || 0)}
                               placeholder="0"
                               style={{ width: '44px', border: 'none', background: 'transparent', textAlign: 'right', fontSize: '0.875rem', fontWeight: 700, color: 'var(--color-accent)', outline: 'none', padding: '8px 2px 8px 8px' }}
                             />

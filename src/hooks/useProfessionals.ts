@@ -35,7 +35,7 @@ export function useCreateProfessional() {
 export function useUpdateProfessional() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, ...payload }: { id: string; name?: string; active?: boolean; default_commission_rate?: number }) => {
+    mutationFn: async ({ id, ...payload }: { id: string; name?: string; active?: boolean; commission_rates?: number[] }) => {
       const { data, error } = await supabase
         .from('hairdressers')
         .update(payload)
