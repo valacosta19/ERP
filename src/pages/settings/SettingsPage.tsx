@@ -808,7 +808,25 @@ export function SettingsPage() {
                       className="text-sm text-[var(--color-text)]"
                     />
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+                      Comisión
+                      <span className="relative inline-flex items-center">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          defaultValue={hd.default_commission_rate || ''}
+                          onBlur={e => {
+                            const v = parseFloat(e.target.value) || 0
+                            if (v !== hd.default_commission_rate) void updateHd.mutateAsync({ id: hd.id, default_commission_rate: v })
+                          }}
+                          placeholder="0"
+                          className="w-16 text-right pr-5 pl-2 py-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                        />
+                        <span className="absolute right-2 text-xs text-[var(--color-muted)] pointer-events-none">%</span>
+                      </span>
+                    </label>
                     <button
                       onClick={() => handleHdToggleActive(hd)}
                       className="px-2 py-1 rounded-lg text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"

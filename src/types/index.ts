@@ -30,6 +30,7 @@ export interface Professional {
   id: string
   name: string
   active: boolean
+  default_commission_rate: number
   created_at: string
 }
 

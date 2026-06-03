@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Plus, X, Link, Ban } from 'lucide-react'
+import { X, Link, Ban, Zap } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { currentMonthRange } from '@/lib/dateRange'
 import { TopBar } from '@/components/layout/TopBar'
@@ -10,18 +11,14 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Table } from '@/components/ui/Table'
 import { Modal } from '@/components/ui/Modal'
-import { useTransactions, useCreateTransaction, useUpdateTransaction, useVoidTransaction, usePaymentMethodBalances, useUnrefundedAnticipos } from '@/hooks/useTransactions'
+import { useTransactions, useUpdateTransaction, useVoidTransaction, usePaymentMethodBalances, useUnrefundedAnticipos } from '@/hooks/useTransactions'
 import { useLockedPeriods } from '@/hooks/useLockedPeriods'
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { useProfessionals } from '@/hooks/useProfessionals'
-import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useProducts } from '@/hooks/useProducts'
 import { supabase } from '@/lib/supabaseClient'
 import { ReconcileModal } from './ReconcileModal'
-import { QuickAddFAB } from '@/components/transactions/QuickAddFAB'
-import { TransactionDrawer } from '@/components/transactions/TransactionDrawer'
-import { TransactionQuickForm, type TransactionQuickFormHandle } from '@/components/transactions/TransactionQuickForm'
 import { ProductCombobox } from '@/components/transactions/ProductCombobox'
 import {
   EMPTY_DRAFT,
@@ -32,8 +29,7 @@ import {
   INSTRUMENT_OPTIONS,
   type TransactionDraft,
 } from '@/components/transactions/transactionDraft'
-import type { Suggestion } from '@/components/transactions/DescriptionCombobox'
-import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, CatalogItem, Product } from '@/types'
+import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, Product } from '@/types'
 
 const CURRENCY_FILTER_OPTIONS = [
   { value: '', label: 'Todas las monedas' },
@@ -51,6 +47,7 @@ function getTxDirection(tx: Transaction): 'entrada' | 'salida' | 'transfer' {
 
 export function TransactionsPage() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [parentCategoryFilter, setParentCategoryFilter] = useState('')
   const [currencyFilter, setCurrencyFilter] = useState<Currency | ''>('')
   const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
@@ -59,25 +56,16 @@ export function TransactionsPage() {
   const [showVoided, setShowVoided] = useState(false)
   const [pendingOnly, setPendingOnly] = useState(false)
 
-  const [draft, setDraft] = useState<TransactionDraft | null>(null)
-  const [draftSelectedSuggestion, setDraftSelectedSuggestion] = useState<Suggestion | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [reconcileOpen, setReconcileOpen] = useState(false)
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [editForm, setEditForm] = useState<TransactionDraft>(EMPTY_DRAFT)
   const [formError, setFormError] = useState('')
-  const [formErrorField, setFormErrorField] = useState<'date' | 'amount' | 'inventory' | null>(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [savedFlash, setSavedFlash] = useState(false)
-  const fabRef = useRef<HTMLButtonElement>(null)
-  const formHandleRef = useRef<TransactionQuickFormHandle>(null)
 
   const { data: txCategories = [] } = useTransactionCategories()
   const { data: professionals = [] } = useProfessionals()
-  const { data: catalogItems = [] } = useCatalogItems()
   const { data: products = [] } = useProducts()
   const { data: unrefundedAnticipos = [] } = useUnrefundedAnticipos()
-  const createTx = useCreateTransaction()
   const updateTx = useUpdateTransaction()
   const voidTx = useVoidTransaction()
   const { data: lockedPeriods = [] } = useLockedPeriods()
@@ -138,93 +126,11 @@ export function TransactionsPage() {
     transactions.filter(t => t.refunds_anticipo_id !== null).map(t => t.refunds_anticipo_id as string)
   )
 
-  const isDraftServiceCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'servicio'
   const editSubcategory = subcategories.find(c => c.id === editForm.subcategory_id)
   const isEditServiceCategory = editSubcategory?.name.toLowerCase() === 'servicio'
   const isEditInventoryCategory = !!editSubcategory?.deducts_inventory || editSubcategory?.name.toLowerCase() === 'producto'
-  const isDraftProductCategory = subcategories.find(c => c.id === draft?.subcategory_id)?.name.toLowerCase() === 'producto'
-
-  const isDraftInventoryCategory = !!(draft && subcategories.find(c => c.id === draft.subcategory_id)?.deducts_inventory)
-
-  const fifoCostsRef = useRef<Record<string, number>>({})
-
-  function computeInventoryTotal(items: Array<{ product_id: string; quantity: number }>) {
-    return items.reduce((sum, item) => sum + (fifoCostsRef.current[item.product_id] ?? 0) * item.quantity, 0)
-  }
-
-  async function handleInventoryProductChange(index: number, productId: string) {
-    const updated = (draft?.inventory_items ?? []).map((item, i) => i === index ? { ...item, product_id: productId } : item)
-    if (productId && !(productId in fifoCostsRef.current)) {
-      const { data } = await supabase
-        .from('inventory_lots')
-        .select('unit_cost')
-        .eq('product_id', productId)
-        .gt('remaining_quantity', 0)
-        .order('received_date', { ascending: true })
-        .limit(1)
-        .single()
-      fifoCostsRef.current[productId] = data?.unit_cost ?? 0
-    }
-    setDraft(d => {
-      if (!d) return d
-      const items = updated
-      const total = items.reduce((sum, item) => sum + (fifoCostsRef.current[item.product_id] ?? 0) * item.quantity, 0)
-      return { ...d, inventory_items: items, payments: [{ payment_method: 'Inventario', instrument: null, amount: total }] }
-    })
-  }
-
-  function handleInventoryQuantityChange(index: number, quantity: number) {
-    setDraft(d => {
-      if (!d) return d
-      const items = d.inventory_items.map((item, i) => i === index ? { ...item, quantity } : item)
-      const total = items.reduce((sum, item) => sum + (fifoCostsRef.current[item.product_id] ?? 0) * item.quantity, 0)
-      return { ...d, inventory_items: items, payments: [{ payment_method: 'Inventario', instrument: null, amount: total }] }
-    })
-  }
-
-  const isDraftExpense = draft ? typeFromParent(draft.category_parent_id) === 'expense' : false
 
   const productLabel = (p: Product) => p.unit ? `${p.name} ${p.unit}` : p.name
-
-  const draftSuggestions: Suggestion[] = [
-    ...catalogItems.map((ci: CatalogItem) => ({ id: ci.id, name: ci.name, priceCash: ci.price, priceTransfer: ci.price_transfer ?? null, priceCard: ci.price_card ?? null })),
-    ...(isDraftExpense ? products.map((p: Product) => ({ id: p.id, name: productLabel(p), priceCash: 0, priceTransfer: null, priceCard: null, productId: p.id })) : []),
-  ]
-
-  function handleDraftProductChange(productId: string | null, product: Product | null) {
-    setDraft(d => d && {
-      ...d,
-      product_id: productId,
-      description: product ? productLabel(product) : '',
-      catalog_item_id: null,
-      product_quantity: productId ? d.product_quantity : 1,
-    })
-  }
-
-  function startNew() {
-    setFormError('')
-    setDraftSelectedSuggestion(null)
-    const ingrenosParent = parents.find(p => p.name === 'Ingresos')
-    setDraft({ ...EMPTY_DRAFT, date: new Date().toISOString().slice(0, 10), category_parent_id: ingrenosParent?.id ?? '' })
-  }
-
-  function openDrawer() {
-    if (!draft) startNew()
-    setDrawerOpen(true)
-  }
-
-  function closeDrawer() {
-    setDrawerOpen(false)
-    setDraft(null)
-    setDraftSelectedSuggestion(null)
-    setFormError('')
-    setFormErrorField(null)
-    setSavedFlash(false)
-  }
-
-  function cancelNew() {
-    closeDrawer()
-  }
 
   function openEdit(tx: Transaction) {
     setEditing(tx)
@@ -257,117 +163,6 @@ export function TransactionsPage() {
     })
     setFormError('')
     setModalOpen(true)
-  }
-
-  function handleSuggestionSelect(s: Suggestion) {
-    setDraftSelectedSuggestion(s)
-    setDraft(d => d && {
-      ...d,
-      description: s.name,
-      product_id: s.productId ?? null,
-      catalog_item_id: s.productId ? null : s.id,
-    })
-  }
-
-  async function handleCreate() {
-    if (!draft) return
-    const isInventoryCategory = !!subcategories.find(c => c.id === draft.subcategory_id)?.deducts_inventory
-    const total = isInventoryCategory
-      ? computeInventoryTotal(draft.inventory_items)
-      : calcTotal(draft.payments)
-    if (!draft.date) {
-      setFormErrorField('date')
-      setFormError('La fecha es obligatoria.')
-      return
-    }
-    if (isInventoryCategory && draft.inventory_items.filter(i => i.product_id).length === 0) {
-      setFormErrorField('inventory')
-      setFormError('Agregá al menos un producto.')
-      return
-    }
-    if (isDraftProductCategory && !draft.product_id) {
-      setFormErrorField('amount')
-      setFormError('Seleccioná el producto del listado para poder descontar el inventario.')
-      return
-    }
-    if (!isInventoryCategory && total <= 0) {
-      setFormErrorField('amount')
-      setFormError('Ingresá un monto mayor a cero.')
-      return
-    }
-    if (isDateLocked(draft.date)) {
-      setFormErrorField('date')
-      setFormError('El período de esa fecha está cerrado.')
-      return
-    }
-    const transactionType = typeFromParent(draft.category_parent_id)
-    const draftDesc = draft.description.trim().toLowerCase()
-    const isAnticipo = draftDesc === 'anticipo'
-    const isDevolución = draftDesc === 'devolución de anticipo'
-    const draftSubcatName = subcategories.find(c => c.id === draft.subcategory_id)?.name ?? null
-
-    const singleProductFlow = !isInventoryCategory && !!draft.product_id && (transactionType === 'expense' || isDraftProductCategory)
-    const singleProduct = singleProductFlow ? products.find(p => p.id === draft.product_id) : null
-    let inventoryPending = false
-    if (singleProductFlow) {
-      inventoryPending = (singleProduct?.stock ?? 0) < draft.product_quantity
-    } else if (isInventoryCategory) {
-      inventoryPending = draft.inventory_items
-        .filter(i => i.product_id)
-        .some(i => (products.find(p => p.id === i.product_id)?.stock ?? 0) < i.quantity)
-    }
-
-    const tx = await createTx.mutateAsync({
-      date: draft.date,
-      transaction_type: transactionType,
-      currency: draft.currency,
-      subcategory_id: draft.subcategory_id || null,
-      subcategory_name: draftSubcatName,
-      catalog_item_id: draft.catalog_item_id ?? null,
-      description: draft.description || null,
-      is_seña: isAnticipo || isDevolución,
-      seña_amount: !isAnticipo && !isDevolución && isDraftServiceCategory && draft.seña_amount ? parseFloat(draft.seña_amount) : null,
-      refunds_anticipo_id: isDevolución ? draft.refunds_anticipo_id : null,
-      transfer_direction: transactionType === 'transfer' ? draft.transfer_direction : undefined,
-      payments: isInventoryCategory
-        ? [{ payment_method: 'Inventario', instrument: null, amount: total }]
-        : draft.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
-      professionals: draft.professionals,
-      product_id: draft.product_id,
-      inventory_pending: inventoryPending,
-    })
-    const { data: { user } } = await supabase.auth.getUser()
-    if (isInventoryCategory) {
-      for (const item of draft.inventory_items.filter(i => i.product_id)) {
-        if ((products.find(p => p.id === item.product_id)?.stock ?? 0) < item.quantity) continue
-        const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
-          p_product_id: item.product_id,
-          p_quantity: item.quantity,
-          p_transaction_id: tx.id,
-          p_unit_sale_price: 0,
-          p_created_by: user!.id,
-        })
-        if (fifoError) throw new Error(fifoError.message)
-      }
-    } else if (singleProductFlow && !inventoryPending && draft.product_id) {
-      const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
-        p_product_id: draft.product_id,
-        p_quantity: draft.product_quantity,
-        p_transaction_id: tx.id,
-        p_unit_sale_price: total,
-        p_created_by: user!.id,
-      })
-      if (fifoError) throw new Error(fifoError.message)
-    }
-    qc.invalidateQueries({ queryKey: ['products'] })
-    setFormError('')
-    setFormErrorField(null)
-    const ingrenosParent = parents.find(p => p.name === 'Ingresos')
-    setDraft({ ...EMPTY_DRAFT, date: new Date().toISOString().slice(0, 10), category_parent_id: ingrenosParent?.id ?? '' })
-    setDraftSelectedSuggestion(null)
-    setSavedFlash(true)
-    setTimeout(() => setSavedFlash(false), 4000)
-    setTimeout(() => formHandleRef.current?.focusFirstField(), 50)
   }
 
   async function handleUpdate() {
@@ -573,8 +368,8 @@ export function TransactionsPage() {
               <Link size={14} />
               Reconciliar productos
             </Button>
-            <Button onClick={openDrawer} size="sm">
-              <Plus size={14} />
+            <Button onClick={() => navigate('/transactions/cargar')} size="sm">
+              <Zap size={14} />
               Nueva transacción
             </Button>
           </div>
@@ -946,49 +741,6 @@ export function TransactionsPage() {
       </Modal>
 
       <ReconcileModal open={reconcileOpen} onClose={() => setReconcileOpen(false)} />
-
-      <QuickAddFAB ref={fabRef} onClick={openDrawer} disabled={drawerOpen} />
-
-      <TransactionDrawer
-        open={drawerOpen}
-        onClose={cancelNew}
-        title="Nueva transacción"
-      >
-        {draft && (
-          <TransactionQuickForm
-            ref={formHandleRef}
-            draft={draft}
-            setDraft={setDraft}
-            parents={parents}
-            subcategories={subcategories}
-            txCategories={txCategories}
-            professionals={professionals}
-            products={products}
-            paymentMethodOptions={paymentMethodOptions}
-            unrefundedAnticipos={unrefundedAnticipos}
-            draftSuggestions={draftSuggestions}
-            draftSelectedSuggestion={draftSelectedSuggestion}
-            onSuggestionSelect={handleSuggestionSelect}
-            onDescriptionChange={v => { setDraftSelectedSuggestion(null); setDraft(d => d && { ...d, description: v, product_id: null, product_quantity: 1 }) }}
-            onProductChange={handleDraftProductChange}
-            onInventoryProductChange={handleInventoryProductChange}
-            onInventoryQuantityChange={handleInventoryQuantityChange}
-            computeInventoryTotal={computeInventoryTotal}
-            getFifoCost={(id) => fifoCostsRef.current[id] ?? 0}
-            formError={formError}
-            formErrorField={formErrorField}
-            onSubmit={handleCreate}
-            onCancel={cancelNew}
-            submitting={createTx.isPending}
-            showSavedBanner={savedFlash}
-            productLabel={productLabel}
-            isInventoryCategory={isDraftInventoryCategory}
-            isServiceCategory={isDraftServiceCategory}
-            isProductCategory={isDraftProductCategory}
-            isTransfer={typeFromParent(draft.category_parent_id) === 'transfer'}
-          />
-        )}
-      </TransactionDrawer>
     </div>
   )
 }
