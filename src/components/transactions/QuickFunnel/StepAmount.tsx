@@ -19,6 +19,7 @@ type SimpleProps = {
   mode: 'simple'
   type: Exclude<FunnelType, 'income'>
   currency: Currency
+  onCurrency: (c: Currency) => void
   manualAmount: number
   onAmount: (v: number) => void
   simpleMethod: string
@@ -181,10 +182,31 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
   )
 }
 
-function SimpleAmount({ type, currency, manualAmount, onAmount, simpleMethod, onMethod, paymentMethods, transferDirection, onDirection }: SimpleProps) {
+function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simpleMethod, onMethod, paymentMethods, transferDirection, onDirection }: SimpleProps) {
   return (
     <div style={{ maxWidth: '520px' }}>
       <StepHeading kicker="Paso 3 — Monto" title="¿Cuánto?" />
+
+      <div style={{ marginBottom: '14px' }}>
+        <SectionLabel>Moneda</SectionLabel>
+        <div className="flex gap-2" style={{ marginTop: '8px' }}>
+          {(['ARS', 'USD', 'EUR'] as Currency[]).map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => onCurrency(c)}
+              style={{
+                padding: '9px 18px', borderRadius: '999px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600,
+                border: currency === c ? '2px solid var(--color-accent)' : '1.5px solid var(--color-border)',
+                background: currency === c ? 'var(--color-accent-light)' : 'var(--color-surface)',
+                color: 'var(--color-text)',
+              }}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div style={{ position: 'relative', marginBottom: '22px' }}>
         <span style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', fontSize: '1.6rem', fontWeight: 600, color: 'var(--color-muted)' }}>

@@ -303,6 +303,7 @@ export function QuickFunnelPage() {
                 mode="simple"
                 type={state.type}
                 currency={state.currency}
+                onCurrency={c => setState(s => ({ ...s, currency: c }))}
                 manualAmount={state.manualAmount}
                 onAmount={v => setState(s => ({ ...s, manualAmount: v }))}
                 simpleMethod={state.simpleMethod}
