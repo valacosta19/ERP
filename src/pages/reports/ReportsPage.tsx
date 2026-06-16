@@ -649,7 +649,7 @@ export function ReportsPage() {
                               </td>
                             </tr>
                             {group.rows.map(row => (
-                              <tr key={row.transaction_id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
+                              <tr key={`${row.transaction_id}-${row.professional_id}`} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
                                 <td className="px-4 py-3 text-[var(--color-text)]">{row.professional_name}</td>
                                 <td className="px-4 py-3 text-[var(--color-muted)]">{formatDate(row.date)}</td>
                                 <td className="px-4 py-3 text-right tabular-nums">{fmtAmount(row.total_amount)}</td>
