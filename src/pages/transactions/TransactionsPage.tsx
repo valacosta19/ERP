@@ -69,7 +69,7 @@ export function TransactionsPage() {
   const updateTx = useUpdateTransaction()
   const voidTx = useVoidTransaction()
   const { data: lockedPeriods = [] } = useLockedPeriods()
-  const { data: paymentBalances = [] } = usePaymentMethodBalances({ from: from || undefined, to: to || undefined, currency: currencyFilter || undefined })
+  const { data: paymentBalances = [] } = usePaymentMethodBalances({ currency: currencyFilter || undefined })
   const { data: paymentMethodsData = [] } = usePaymentMethods()
   const paymentMethodOptions = paymentMethodsData
     .filter(pm => pm.active)
