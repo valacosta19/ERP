@@ -166,6 +166,12 @@ export interface PaymentMethodConfig {
   created_at: string
 }
 
+export interface AnticipoPreset {
+  id: string
+  amount: number
+  created_at: string
+}
+
 export interface CatalogItem {
   id: string
   name: string

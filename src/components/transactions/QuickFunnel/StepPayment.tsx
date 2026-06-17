@@ -4,8 +4,6 @@ import type { FunnelPaymentRow } from './funnelTypes'
 import { StepHeading, SectionLabel } from './funnelAtoms'
 import { money, funnelInput } from './funnelFormat'
 
-type Anticipo = { id: string; date: string; amount: number; currency: string }
-
 type Props = {
   currency: Currency
   netToPay: number
@@ -17,12 +15,13 @@ type Props = {
   cashMethod: string | null
   anticipoAmount: number
   onAnticipo: (v: number) => void
-  unrefundedAnticipos: Anticipo[]
+  anticipoPresets: number[]
+  anticipoBalance: number
 }
 
 export function StepPayment({
   currency, netToPay, totalToCharge, paymentsTotal, payments, onPayments,
-  paymentMethods, cashMethod, anticipoAmount, onAnticipo, unrefundedAnticipos,
+  paymentMethods, cashMethod, anticipoAmount, onAnticipo, anticipoPresets, anticipoBalance,
 }: Props) {
   const remaining = totalToCharge - paymentsTotal
   const isCash = (m: string) => cashMethod != null && m === cashMethod
@@ -45,35 +44,49 @@ export function StepPayment({
     <div style={{ maxWidth: '560px' }}>
       <StepHeading kicker="Paso 5 — Pago" title="Cobrar" />
 
-      {unrefundedAnticipos.length > 0 && (
-        <div style={{ marginBottom: '22px' }}>
+      <div style={{ marginBottom: '22px' }}>
+        <div className="flex items-center justify-between">
           <SectionLabel>Imputar anticipo previo</SectionLabel>
-          <div className="flex flex-wrap gap-2" style={{ marginTop: '8px' }}>
-            <button
-              type="button"
-              onClick={() => onAnticipo(0)}
-              style={chip(anticipoAmount === 0)}
-            >
-              Ninguno
-            </button>
-            {unrefundedAnticipos.map(a => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => onAnticipo(Math.min(a.amount, netToPay))}
-                style={chip(anticipoAmount > 0 && anticipoAmount === Math.min(a.amount, netToPay))}
-              >
-                {money(a.amount, currency)} <span style={{ opacity: 0.6, fontWeight: 500 }}>· {a.date}</span>
-              </button>
-            ))}
-          </div>
-          {anticipoAmount > 0 && (
-            <div style={{ marginTop: '8px', fontSize: '0.8125rem', color: 'var(--color-success)', fontWeight: 600 }}>
-              Anticipo {money(anticipoAmount, currency)} imputado · queda por cobrar {money(totalToCharge, currency)}
-            </div>
-          )}
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-muted)', fontWeight: 600 }}>
+            Saldo disponible {money(anticipoBalance, currency)}
+          </span>
         </div>
-      )}
+        <div className="flex flex-wrap gap-2" style={{ marginTop: '8px' }}>
+          <button
+            type="button"
+            onClick={() => onAnticipo(0)}
+            style={chip(anticipoAmount === 0)}
+          >
+            Ninguno
+          </button>
+          {currency === 'ARS' && anticipoPresets.map(p => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => onAnticipo(Math.min(p, netToPay))}
+              style={chip(anticipoAmount > 0 && anticipoAmount === Math.min(p, netToPay))}
+            >
+              {money(p, currency)}
+            </button>
+          ))}
+        </div>
+        <div style={{ position: 'relative', width: '180px', marginTop: '8px' }}>
+          <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted)' }}>$</span>
+          <input
+            type="number" min="0"
+            value={anticipoAmount === 0 ? '' : String(anticipoAmount)}
+            onChange={e => onAnticipo(Math.min(Math.max(0, parseFloat(e.target.value) || 0), netToPay))}
+            placeholder="Otro monto"
+            style={{ ...funnelInput, padding: '9px 12px 9px 24px', textAlign: 'right' }}
+            className="tabular-nums"
+          />
+        </div>
+        {anticipoAmount > anticipoBalance && (
+          <div style={{ marginTop: '6px', fontSize: '0.8125rem', color: 'var(--color-warning)', fontWeight: 600 }}>
+            El anticipo imputado supera el saldo disponible ({money(anticipoBalance, currency)})
+          </div>
+        )}
+      </div>
 
       {totalToCharge <= 0 ? (
         <div
@@ -161,18 +174,6 @@ export function StepPayment({
               <Plus size={14} /> Dividir pago
             </button>
           )}
-
-          <div
-            className="flex items-center justify-between"
-            style={{ marginTop: '18px', padding: '12px 16px', borderRadius: '12px', background: Math.abs(remaining) < 1 ? 'var(--color-success-light)' : 'var(--color-warning-light)' }}
-          >
-            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-muted)' }}>
-              {Math.abs(remaining) < 1 ? 'Pago completo' : remaining > 0 ? 'Falta cobrar' : 'Excede'}
-            </span>
-            <span style={{ fontWeight: 700, color: Math.abs(remaining) < 1 ? 'var(--color-success)' : 'var(--color-warning)' }} className="tabular-nums">
-              {money(Math.abs(remaining), currency)}
-            </span>
-          </div>
         </>
       )}
     </div>

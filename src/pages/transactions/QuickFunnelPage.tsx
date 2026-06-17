@@ -7,7 +7,8 @@ import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useProducts } from '@/hooks/useProducts'
 import { useProfessionals } from '@/hooks/useProfessionals'
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
-import { useUnrefundedAnticipos } from '@/hooks/useTransactions'
+import { useAnticipoPresets } from '@/hooks/useAnticipoPresets'
+import { useAnticipoBalance } from '@/hooks/useAnticipoBalance'
 import type { CatalogItem, Product } from '@/types'
 import {
   type FunnelState,
@@ -61,7 +62,8 @@ export function QuickFunnelPage() {
   const { data: products = [] } = useProducts()
   const { data: professionals = [] } = useProfessionals()
   const { data: paymentMethodsData = [] } = usePaymentMethods()
-  const { data: unrefundedAnticipos = [] } = useUnrefundedAnticipos()
+  const { data: anticipoPresets = [] } = useAnticipoPresets()
+  const { data: anticipoBalance } = useAnticipoBalance()
   const { submitTicket } = useFunnelSubmit()
   const { pending, syncing, enqueue, flush } = useFunnelQueue(submitTicket)
 
@@ -343,9 +345,8 @@ export function QuickFunnelPage() {
                 cashMethod={cashMethod}
                 anticipoAmount={state.anticipoAmount}
                 onAnticipo={v => setState(s => ({ ...s, anticipoAmount: v }))}
-                unrefundedAnticipos={unrefundedAnticipos
-                  .filter(a => a.currency === state.currency && a.date <= state.date)
-                  .map(a => ({ id: a.id, date: a.date, amount: a.amount, currency: a.currency }))}
+                anticipoPresets={anticipoPresets.map(p => p.amount)}
+                anticipoBalance={anticipoBalance?.[state.currency] ?? 0}
               />
             )}
 

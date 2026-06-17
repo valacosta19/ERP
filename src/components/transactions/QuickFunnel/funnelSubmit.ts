@@ -79,6 +79,7 @@ export function useFunnelSubmit() {
     }
 
     qc.invalidateQueries({ queryKey: ['products'] })
+    qc.invalidateQueries({ queryKey: ['anticipo-balance'] })
   }
 
   return { submitTicket, isPending: createTx.isPending }

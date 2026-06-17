@@ -468,6 +468,23 @@ export interface Database {
         Update: never
         Relationships: []
       }
+      anticipo_presets: {
+        Row: {
+          id: string
+          amount: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          amount: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          amount?: number
+        }
+        Relationships: []
+      }
       payment_methods: {
         Row: {
           id: string

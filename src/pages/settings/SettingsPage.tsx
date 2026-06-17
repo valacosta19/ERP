@@ -9,6 +9,7 @@ import { useTransactionCategories, useCreateTransactionCategory, useUpdateTransa
 import { useProfessionals, useCreateProfessional, useUpdateProfessional, useDeleteProfessional } from '@/hooks/useProfessionals'
 import { useCatalogItems, useCreateCatalogItem, useUpdateCatalogItem, useDeleteCatalogItem, useUpdateCatalogItemHours } from '@/hooks/useCatalogItems'
 import { usePaymentMethods, useCreatePaymentMethod, useUpdatePaymentMethod, useDeletePaymentMethod } from '@/hooks/usePaymentMethods'
+import { useAnticipoPresets, useCreateAnticipoPreset, useDeleteAnticipoPreset } from '@/hooks/useAnticipoPresets'
 import { useAuth, useUpdateProfile, useUsers, useInviteUser, useUpdateUserRole } from '@/hooks/useAuth'
 import { useFixedCosts, useCreateFixedCost, useUpdateFixedCost, useDeleteFixedCost, useAllFixedCostRates, useAddFixedCostRate } from '@/hooks/useFixedCosts'
 import { useServiceRecipes, useUpsertServiceRecipes } from '@/hooks/useServiceRecipes'
@@ -333,6 +334,13 @@ export function SettingsPage() {
   const updatePm = useUpdatePaymentMethod()
   const deletePm = useDeletePaymentMethod()
 
+  const [addingPreset, setAddingPreset] = useState(false)
+  const [presetDraft, setPresetDraft] = useState('')
+  const presetInputRef = useRef<HTMLInputElement>(null)
+  const { data: anticipoPresets = [] } = useAnticipoPresets()
+  const createPreset = useCreateAnticipoPreset()
+  const deletePreset = useDeleteAnticipoPreset()
+
   const { data: catalogItems = [] } = useCatalogItems()
   const createCatalogItem = useCreateCatalogItem()
   const updateCatalogItem = useUpdateCatalogItem()
@@ -488,6 +496,35 @@ export function SettingsPage() {
   async function handlePmDelete(id: string) {
     if (!confirm('¿Eliminar este método de pago?')) return
     await deletePm.mutateAsync(id)
+  }
+
+  function startAddPreset() {
+    setAddingPreset(true)
+    setPresetDraft('')
+    setTimeout(() => presetInputRef.current?.focus(), 0)
+  }
+
+  async function savePreset() {
+    const amount = parseFloat(presetDraft)
+    if (!Number.isFinite(amount) || amount <= 0) return
+    await createPreset.mutateAsync(amount)
+    setAddingPreset(false)
+    setPresetDraft('')
+  }
+
+  function cancelPreset() {
+    setAddingPreset(false)
+    setPresetDraft('')
+  }
+
+  function handlePresetKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); savePreset() }
+    if (e.key === 'Escape') cancelPreset()
+  }
+
+  async function handlePresetDelete(id: string) {
+    if (!confirm('¿Eliminar este monto de anticipo?')) return
+    await deletePreset.mutateAsync(id)
   }
 
   function startAddCatalogItem(categoryId: string) {
@@ -998,6 +1035,79 @@ export function SettingsPage() {
                 </button>
                 <button
                   onClick={cancelPm}
+                  className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-[var(--color-text)]">Montos de anticipo</h2>
+            <button
+              onClick={startAddPreset}
+              disabled={addingPreset}
+              className="flex items-center gap-1 text-xs text-[var(--color-accent)] hover:underline disabled:opacity-40"
+            >
+              <Plus size={12} /> Nuevo
+            </button>
+          </div>
+          <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+            {anticipoPresets.length === 0 && !addingPreset && (
+              <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin montos de anticipo</p>
+            )}
+            {anticipoPresets.map(preset => (
+              <div key={preset.id} className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-[var(--color-text)] tabular-nums">
+                  ${preset.amount.toLocaleString('es-AR')}
+                </span>
+                <button
+                  onClick={() => handlePresetDelete(preset.id)}
+                  className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+            {addingPreset && (
+              <div
+                className="flex items-center gap-2 px-4 py-2.5 animate-slide-in"
+                style={{
+                  background: 'var(--color-accent-light)',
+                  borderLeft: '3px solid var(--color-accent)',
+                }}
+              >
+                <span
+                  className="shrink-0 text-[10px] font-semibold tracking-widest uppercase px-1.5 py-0.5 rounded"
+                  style={{
+                    color: 'var(--color-accent)',
+                    background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+                  }}
+                >
+                  Nuevo
+                </span>
+                <DraftInput
+                  inputRef={presetInputRef}
+                  value={presetDraft}
+                  onChange={setPresetDraft}
+                  onKeyDown={handlePresetKeyDown}
+                  placeholder="Monto en pesos"
+                  type="number"
+                  autoFocus
+                />
+                <button
+                  onClick={savePreset}
+                  disabled={createPreset.isPending || !presetDraft.trim()}
+                  className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors disabled:opacity-40"
+                  style={{ background: 'var(--color-accent)', color: '#fff' }}
+                >
+                  <Check size={13} />
+                </button>
+                <button
+                  onClick={cancelPreset}
                   className="flex items-center justify-center w-7 h-7 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
                 >
                   <X size={13} />
