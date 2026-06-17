@@ -344,7 +344,13 @@ export function QuickFunnelPage() {
                 paymentMethods={paymentMethods}
                 cashMethod={cashMethod}
                 anticipoAmount={state.anticipoAmount}
-                onAnticipo={v => setState(s => ({ ...s, anticipoAmount: v }))}
+                onAnticipo={v => setState(s => {
+                  const next = { ...s, anticipoAmount: v }
+                  if (s.payments.length === 1) {
+                    next.payments = [{ ...s.payments[0], amount: Math.max(0, chargeTotal(next)), received: null }]
+                  }
+                  return next
+                })}
                 anticipoPresets={anticipoPresets.map(p => p.amount)}
                 anticipoBalance={anticipoBalance?.[state.currency] ?? 0}
               />
