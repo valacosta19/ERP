@@ -22,6 +22,7 @@ npm run lint      # eslint on all .ts/.tsx
 - Work only within the current phase's scope. Document out-of-scope items — do not implement them.
 - If a task is too large, propose how to split it first.
 - When a phase closes: `npm run build` passes, user validates manually, then write `PHASE_N_SUMMARY.md` and update `PROJECT_STATE.md`.
+- After every commit: review whether `PROJECT_STATE.md` needs to reflect the new changes (new migrations, behavioral changes, new components, fixed bugs). If yes, update it before considering the task done.
 
 **Current phase: 26** — See `PROJECT_STATE.md` for current scope.
 

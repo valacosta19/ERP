@@ -42,6 +42,25 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 
 ---
 
+## Standalone fix (post Phase 26)
+
+### Fix: sugerencia de reposición — crash y fallback débil
+
+**Problema resuelto:** Al seleccionar un producto con historial previo en el formulario de nuevo pedido, aparecía "Sin historial de ventas" aunque el producto sí tenía datos. El crash ocurría en `suggest_reorder_quantity` porque la rama de crecimiento consultaba `transactions.type = 'income'` — columna eliminada en la migración 039. El mensaje era engañoso: el producto tenía historial pero el cálculo explotaba.
+
+**Migración:**
+- **`058_reorder_suggestion_outflows.sql`**: Reescritura completa de `suggest_reorder_quantity` (SECURITY DEFINER). Tres cambios:
+  1. **Base de demanda**: cambia de `sale_items` a `inventory_movements WHERE movement_type = 'out'` — captura ventas retail + consumos/cortesías + retiros de staff (el consumo real en un salón).
+  2. **Fix de la query de ingresos**: reemplaza `transactions WHERE type = 'income'` por `JOIN transaction_categories WHERE transaction_type = 'income'` + `voided_at IS NULL` + `is_seña = false`. Esto corrige el crash.
+  3. **Nuevo Tier 2 run-rate**: cuando no hay historial del mismo mes en años anteriores, en lugar de mirar solo el mes anterior, promedia los últimos 3 meses completos de salidas de stock y aplica un factor de crecimiento de corto plazo (ingresos últimos 3m vs 3m previos, acotado a [-30%, +50%]).
+
+**UI — `PurchaseOrdersPage.tsx` (`SuggestionHint`):**
+- Sin datos → "Sin historial de consumo para este producto"
+- Fallback (Tier 2, `months_with_data === -1`) → "Consumo reciente: ~N un/mes" (+ crecimiento si distinto de 0)
+- Estacional (Tier 1) → sin cambio en lógica, mismo label
+
+---
+
 ## Current phase (anterior)
 **Phase 25** — ✅ Completa
 
@@ -437,7 +456,7 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 | 13 | ✅ Fix import parseNum, multicurrency (ARS/USD/EUR), fix edición de payments, cards de balance agrupadas por método+moneda |
 | 14 | ✅ Comisiones con % libre por profesional, rango precio compra en inventario, modal edición de productos, fix auto-mapeo import |
 | 15 | ✅ Panel "Productos para reponer" en Pedidos de Compra: chips con skip_restock, pre-carga en modal, product selector ordenado por urgencia |
-| 16 | ✅ Sugerencia de cantidad a pedir: RPC `suggest_reorder_quantity`, hook `useReorderSuggestion`, componente `SuggestionHint` por línea en modal de nuevo pedido |
+| 16 | ✅ Sugerencia de cantidad a pedir: RPC `suggest_reorder_quantity`, hook `useReorderSuggestion`, componente `SuggestionHint` por línea en modal de nuevo pedido. Fix post-26: crash por columna eliminada + nuevo Tier 2 (promedio 3 meses, base `inventory_movements`) — ver sección "Standalone fix (post Phase 26)". |
 | 17 | ✅ Costo de envío en pedidos de compra: campo en modal, distribución proporcional por valor al recibir (migration 021), marca del producto en tabla expandida |
 | 18 | ✅ Recepción parcial de pedidos: checklist por producto con cantidad editable, distribución de envío recalculada sobre ítems reales (migration 022) |
 | 19 | ✅ Tab "Utilidad" en Reportes: utilidad bruta productos (FIFO), utilidad servicios, total negocio — por mes con filtros de fecha. ReconcileModal para backfill de categorías en transacciones importadas (sin tocar inventario). |
