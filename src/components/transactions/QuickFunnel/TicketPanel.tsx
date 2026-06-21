@@ -1,4 +1,4 @@
-import { Minus, Plus, Trash2 } from 'lucide-react'
+import { CalendarDays, Minus, Plus, Trash2 } from 'lucide-react'
 import {
   type FunnelState,
   FUNNEL_TYPE_META,
@@ -9,14 +9,16 @@ import {
   chargeTotal,
 } from './funnelTypes'
 import { money } from './funnelFormat'
+import { Input } from '@/components/ui/Input'
 
 type Props = {
   state: FunnelState
   onQty: (key: string, qty: number) => void
   onRemove: (key: string) => void
+  onDate: (date: string) => void
 }
 
-export function TicketPanel({ state, onQty, onRemove }: Props) {
+export function TicketPanel({ state, onQty, onRemove, onDate }: Props) {
   const isIncome = state.type === 'income'
   const cur = state.currency
   const discount = discountValueFor(state)
@@ -32,8 +34,17 @@ export function TicketPanel({ state, onQty, onRemove }: Props) {
         padding: '22px 20px', height: '100%',
       }}
     >
-      <div style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--color-muted)', marginBottom: '14px' }}>
-        Ticket {state.type ? `· ${FUNNEL_TYPE_META[state.type].label}` : ''}
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--color-muted)', marginBottom: '10px' }}>
+          Ticket {state.type ? `· ${FUNNEL_TYPE_META[state.type].label}` : ''}
+        </div>
+        <Input
+          type="date"
+          label="Fecha"
+          value={state.date}
+          onChange={e => onDate(e.target.value)}
+          prefix={<CalendarDays size={14} />}
+        />
       </div>
 
       <div className="flex-1 overflow-y-auto" style={{ marginBottom: '14px' }}>

@@ -397,7 +397,7 @@ export function QuickFunnelPage() {
           )}
         </div>
 
-        {showTicketPanel && <TicketPanel state={state} onQty={setLineQty} onRemove={removeLine} />}
+        {showTicketPanel && <TicketPanel state={state} onQty={setLineQty} onRemove={removeLine} onDate={d => setState(s => ({ ...s, date: d }))} />}
       </div>
     </div>
   )

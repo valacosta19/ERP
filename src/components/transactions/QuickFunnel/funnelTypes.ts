@@ -53,7 +53,7 @@ export function makeEmptyFunnelState(): FunnelState {
   return {
     step: 'type',
     type: null,
-    date: new Date().toISOString().slice(0, 10),
+    date: new Date().toLocaleDateString('en-CA'),
     currency: 'ARS',
     lines: [],
     concept: '',
