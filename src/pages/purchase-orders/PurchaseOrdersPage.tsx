@@ -211,7 +211,7 @@ function SuggestionHint({
     <p className="text-xs text-[var(--color-muted)] pl-1">Calculando sugerencia…</p>
   )
   if (!data || (data.months_with_data === 0 && data.avg_same_month === 0)) return (
-    <p className="text-xs text-[var(--color-muted)] pl-1">Sin historial de ventas para este producto</p>
+    <p className="text-xs text-[var(--color-muted)] pl-1">Sin historial de consumo para este producto</p>
   )
 
   const isFallback = data.months_with_data === -1
@@ -224,7 +224,7 @@ function SuggestionHint({
     <div className="flex items-center gap-2 pl-1">
       <span className="text-xs text-[var(--color-muted)]">
         {isFallback
-          ? `Mes anterior: ${data.avg_same_month} un`
+          ? `Consumo reciente: ~${data.avg_same_month} un/mes${data.growth_rate !== 0 ? ` · Crecimiento empresa: ${growthLabel}` : ''}`
           : `Histórico: ~${data.avg_same_month} un/mes · Crecimiento empresa: ${growthLabel}`}
       </span>
       <button
