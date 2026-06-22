@@ -17,6 +17,8 @@ function genId(): string {
   return `q-${Date.now()}-${counter}`
 }
 
+let flushing = false
+
 export function readQueue(): QueuedTicket[] {
   try {
     const raw = localStorage.getItem(KEY)
@@ -63,7 +65,10 @@ export function retryTicket(id: string): void {
 }
 
 export async function flushQueue(submit: (payload: TicketPayload) => Promise<void>): Promise<number> {
+  if (flushing) return 0
+  flushing = true
   let synced = 0
+  try {
   for (const item of readQueue()) {
     if (item.status === 'stuck') continue
     try {
@@ -79,6 +84,9 @@ export async function flushQueue(submit: (payload: TicketPayload) => Promise<voi
         markStuck(item.id, (e as Error).message)
       }
     }
+  }
+  } finally {
+    flushing = false
   }
   return synced
 }

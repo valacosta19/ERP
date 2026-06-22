@@ -36,45 +36,6 @@ export function useStaffReceivableBalance(hairdresserId: string | null | undefin
   })
 }
 
-interface CreateStaffWithdrawalPayload {
-  hairdresser_id: string
-  product_id: string
-  quantity: number
-  value_amount: number
-  due_date: string | null
-  notes?: string | null
-}
-
-export function useCreateStaffWithdrawal() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async (payload: CreateStaffWithdrawalPayload) => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('No hay usuario autenticado')
-
-      const { data, error } = await supabase.rpc('create_staff_receivable', {
-        p_hairdresser_id: payload.hairdresser_id,
-        p_product_id: payload.product_id,
-        p_quantity: payload.quantity,
-        p_value_amount: payload.value_amount,
-        p_due_date: payload.due_date,
-        p_notes: payload.notes ?? null,
-        p_created_by: user.id,
-      })
-      if (error) throw new Error(error.message)
-      return data as string
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['staff-receivables'] })
-      qc.invalidateQueries({ queryKey: ['staff-receivable-balance'] })
-      qc.invalidateQueries({ queryKey: ['receivables'] })
-      qc.invalidateQueries({ queryKey: ['products'] })
-      qc.invalidateQueries({ queryKey: ['inventory-lots'] })
-      qc.invalidateQueries({ queryKey: ['inventory-movements'] })
-    },
-  })
-}
-
 interface SettleCommissionPayoutPayload {
   hairdresser_id: string
   period_start: string

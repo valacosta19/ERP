@@ -263,6 +263,7 @@ export function InventoryPage() {
       <StaffWithdrawalModal
         open={withdrawalOpen}
         onClose={() => setWithdrawalOpen(false)}
+        mode="withdrawal"
       />
 
       <Modal open={!!archiveProductId} onClose={() => setArchiveProductId(null)} title="Archivar producto">

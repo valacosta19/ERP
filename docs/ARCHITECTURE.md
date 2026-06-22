@@ -77,8 +77,12 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 
 **Invariantes (NO romper):**
 - **El RPC `create_funnel_unit` es idempotente.** Cada ticket lleva un `idempotency_key` (UUID generado en el cliente). Si la red falla y se reintenta, el RPC detecta la clave duplicada y devuelve el resultado anterior sin reinsertar. No usar `useCreateTransaction` para el funnel.
-- **Cola offline en localStorage.** Si el submit falla (sin red), el ticket se encola via `offlineQueue.ts`. Al recuperar conexión, `useFunnelQueue.flush()` lo reintenta. No persistir el payload en el estado React — es efímero; la fuente de verdad offline es localStorage.
+- **Cola offline en localStorage.** Si el submit falla (sin red), el ticket se encola via `offlineQueue.ts`. Al recuperar conexión, el flush se dispara desde `AppShell` (on-mount + evento `online` + intervalo 20s) — funciona en cualquier página. La fuente de verdad offline es localStorage.
+- **Flush global en `AppShell`.** `AppShell.tsx` monta el driver de cola para que los tickets encolados desde Inventario o Carga Rápida drenen automáticamente al recuperar conexión, sin necesidad de estar en QuickFunnelPage.
+- **`funnelSubmit.ts` es un dispatcher multi-kind.** `submitTicket` rutea por `unit.kind`: `service/product/tip/simple` → `create_funnel_unit`; `staff_advance` → `create_staff_advance`; `staff_withdrawal` → `create_staff_receivable`. Todos son idempotentes por `client_uuid`.
+- **`flushQueue` tiene mutex de módulo.** Previene ejecuciones concurrentes desde múltiples instancias de `useFunnelQueue` (AppShell + QuickFunnelPage).
 - **`buildTicket.ts` es la única función** que convierte el estado del funnel en un `TicketPayload`. No construir el payload directamente en componentes.
+- **`StepDetailSimple` exige producto cuando `deducts_inventory`.** Si la subcategoría seleccionada tiene `deducts_inventory = true`, el picker de producto es obligatorio y `canAdvance('detail')` retorna false hasta que se seleccione uno.
 
 ---
 
@@ -152,22 +156,26 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 **Archivos:**
 - `src/pages/reports/ReportsPage.tsx` → tab "Comisiones" y tab "Sueldos"
 - `src/hooks/useCommissionsReport.ts`
-- `src/hooks/useStaffReceivables.ts` — `useStaffReceivables`, `useStaffReceivableBalance`, `useCreateStaffWithdrawal`, `useSettleCommissionPayout`
+- `src/hooks/useStaffReceivables.ts` — `useStaffReceivables`, `useStaffReceivableBalance`, `useSettleCommissionPayout`
 - `src/hooks/useProfessionals.ts`
 - `src/components/SettleCommissionModal.tsx`
-- `src/components/StaffWithdrawalModal.tsx`
+- `src/components/StaffWithdrawalModal.tsx` — modal unificado con prop `mode: 'withdrawal' | 'advance'`. Submitea via pipeline offline (no llama RPCs directamente).
 
 **Datos:**
 - Tablas: `hairdressers`, `transaction_hairdressers`, `receivables` (con `hairdresser_id + product_id`), `receivable_collections`, `commission_payouts`, `transactions`
-- RPC: `create_staff_receivable(hairdresser_id, product_id, quantity, unit_cost)` — registra retiro de producto, inserta `inventory_movements`, NO crea `transactions`
-- RPC: `settle_commission_payout(hairdresser_id, period_start, period_end)` — inserta `receivable_collections` por retiros, registra en `commission_payouts`, devuelve el monto neto
+- RPC: `create_staff_receivable(p_client_uuid, hairdresser_id, product_id, quantity, value_amount, ...)` — idempotente por `client_uuid`. Registra retiro de producto, inserta `inventory_movements`, NO crea `transactions`.
+- RPC: `create_staff_advance(p_client_uuid, hairdresser_id, amount, currency, payment_method, ...)` — idempotente por `client_uuid`. Crea una `transactions` (Movimiento/transfer, salida de caja) + un `receivable` contra el empleado. No toca inventario.
+- RPC: `settle_commission_payout(hairdresser_id, period_start, period_end)` — inserta `receivable_collections` por retiros/adelantos, registra en `commission_payouts`, devuelve el monto neto.
 
 **Invariantes (NO romper):**
-- **Los retiros de staff NO son gastos en `transactions`.** Un retiro de producto a cuenta de comisión se modela como `receivables` con `hairdresser_id`. Solo la liquidación neta final crea una fila en `transactions` expense (por el neto, no el bruto).
+- **Los retiros de staff NO son gastos en `transactions`.** Un retiro de producto se modela como `receivables` con `hairdresser_id`. Solo la liquidación neta final crea una fila en `transactions` expense.
+- **Los adelantos de sueldo son Movimientos (transfer), no gastos.** Salen de caja pero no impactan el P&L. Se modelan como `receivables` con `hairdresser_id` y `source_transaction_id`. Se compensan al liquidar.
 - **`create_staff_receivable` descuenta inventario** via `inventory_movements` con `reference_type = 'receivable'`. No crea `transactions`.
-- **La comisión devengada es siempre en bruto.** El cálculo de descuento por retiros ocurre al liquidar (RPC `settle_commission_payout`).
+- **Ambos RPCs son idempotentes** — el short-circuit por `receivables.client_uuid` evita doble-consumo de FIFO o doble-transacción en reintentos offline.
+- **La liquidación (`settle_commission_payout`) compensa CUALQUIER receivable** del hairdresser con saldo positivo, sin distinguir si es retiro de producto o adelanto de dinero.
+- **La comisión devengada es siempre en bruto.** El cálculo de descuento por retiros/adelantos ocurre al liquidar.
 - **`settle_commission_payout` devuelve el neto.** La UI crea un único `transactions` expense por ese neto. No crear transactions por el bruto.
-- **Tasa de comisión por profesional.** Almacenada en `transaction_hairdressers.commission_rate` (libre por transacción, no fija). Hay un default en `hairdressers.default_commission_rate` (migración `055`).
+- **Tasa de comisión por profesional.** Almacenada en `transaction_hairdressers.commission_rate` (libre por transacción). Default array en `hairdressers.commission_rates` (migración `056`).
 
 ---
 

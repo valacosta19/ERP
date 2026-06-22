@@ -41,6 +41,8 @@ export type FunnelState = {
   tipAmount: number
   payments: FunnelPaymentRow[]
   anticipoAmount: number
+  simpleProductId: string | null
+  simpleProductQty: number
 }
 
 export const FUNNEL_TYPE_META: Record<FunnelType, { label: string; parentName: string }> = {
@@ -68,6 +70,8 @@ export function makeEmptyFunnelState(): FunnelState {
     tipAmount: 0,
     payments: [],
     anticipoAmount: 0,
+    simpleProductId: null,
+    simpleProductQty: 1,
   }
 }
 

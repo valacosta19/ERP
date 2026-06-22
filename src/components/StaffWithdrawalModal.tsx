@@ -5,41 +5,59 @@ import { Select } from '@/components/ui/Select'
 import { Button } from '@/components/ui/Button'
 import { useProducts } from '@/hooks/useProducts'
 import { useProfessionals } from '@/hooks/useProfessionals'
-import { useCreateStaffWithdrawal } from '@/hooks/useStaffReceivables'
+import { usePaymentMethods } from '@/hooks/usePaymentMethods'
+import { useTransactionCategories } from '@/hooks/useTransactionCategories'
+import { useFunnelSubmit } from '@/components/transactions/QuickFunnel/funnelSubmit'
+import { enqueueTicket } from '@/components/transactions/QuickFunnel/offlineQueue'
+import type { Currency } from '@/types'
+import type { TicketPayload } from '@/components/transactions/QuickFunnel/funnelSubmit'
 
 interface Props {
   open: boolean
   onClose: () => void
+  mode: 'withdrawal' | 'advance'
   initialProductId?: string | null
 }
 
 type Preset = 'cost' | 'sale' | 'manual'
 
-export function StaffWithdrawalModal({ open, onClose, initialProductId }: Props) {
+export function StaffWithdrawalModal({ open, onClose, mode, initialProductId }: Props) {
   const { data: products = [] } = useProducts()
   const { data: professionals = [] } = useProfessionals()
-  const createWithdrawal = useCreateStaffWithdrawal()
+  const { data: paymentMethodsData = [] } = usePaymentMethods()
+  const { data: categories = [] } = useTransactionCategories()
+  const { submitTicket } = useFunnelSubmit()
 
   const [hairdresserId, setHairdresserId] = useState('')
-  const [productId, setProductId] = useState('')
-  const [quantity, setQuantity] = useState('1')
-  const [preset, setPreset] = useState<Preset>('cost')
-  const [valueAmount, setValueAmount] = useState('')
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const [productId, setProductId] = useState('')
+  const [quantity, setQuantity] = useState('1')
+  const [preset, setPreset] = useState<Preset>('cost')
+  const [manualValue, setManualValue] = useState('')
+
+  const [advanceAmount, setAdvanceAmount] = useState('')
+  const [advanceCurrency, setAdvanceCurrency] = useState<Currency>('ARS')
+  const [paymentMethod, setPaymentMethod] = useState('')
 
   useEffect(() => {
     if (!open) return
     setHairdresserId('')
-    setProductId(initialProductId ?? '')
-    setQuantity('1')
-    setPreset('cost')
-    setValueAmount('')
     setDate(new Date().toISOString().slice(0, 10))
     setNotes('')
     setError(null)
-  }, [open, initialProductId])
+    setLoading(false)
+    setProductId(initialProductId ?? '')
+    setQuantity('1')
+    setPreset('cost')
+    setManualValue('')
+    setAdvanceAmount('')
+    setAdvanceCurrency('ARS')
+    setPaymentMethod(paymentMethodsData.find(m => m.active)?.name ?? '')
+  }, [open, initialProductId, paymentMethodsData])
 
   const product = useMemo(() => products.find(p => p.id === productId) ?? null, [products, productId])
 
@@ -48,8 +66,8 @@ export function StaffWithdrawalModal({ open, onClose, initialProductId }: Props)
     const qty = Number(quantity) || 0
     if (preset === 'cost') return Math.round((product.min_cost ?? 0) * qty * 100) / 100
     if (preset === 'sale') return Math.round(product.sale_price * qty * 100) / 100
-    return Number(valueAmount) || 0
-  }, [product, preset, quantity, valueAmount])
+    return Number(manualValue) || 0
+  }, [product, preset, quantity, manualValue])
 
   const productOptions = useMemo(
     () => products
@@ -63,35 +81,118 @@ export function StaffWithdrawalModal({ open, onClose, initialProductId }: Props)
     [professionals],
   )
 
+  const activePaymentMethods = useMemo(
+    () => paymentMethodsData.filter(m => m.active).map(m => ({ value: m.name, label: m.name })),
+    [paymentMethodsData],
+  )
+
+  const advanceSubcategoryId = useMemo(
+    () => categories.find(c => c.name === 'Adelantos de personal')?.id ?? null,
+    [categories],
+  )
+
   async function handleSubmit() {
     setError(null)
-    const qty = Number(quantity)
-    if (!hairdresserId) return setError('Seleccioná un empleado.')
-    if (!productId) return setError('Seleccioná un producto.')
-    if (!qty || qty <= 0) return setError('La cantidad debe ser mayor que cero.')
-    if (product && (product.stock ?? 0) < qty) return setError('Stock insuficiente para esa cantidad.')
-    if (presetValue < 0) return setError('El valor no puede ser negativo.')
 
+    if (!hairdresserId) return setError('Seleccioná un empleado.')
+
+    let payload: TicketPayload
+
+    if (mode === 'withdrawal') {
+      const qty = Number(quantity)
+      if (!productId) return setError('Seleccioná un producto.')
+      if (!qty || qty <= 0) return setError('La cantidad debe ser mayor que cero.')
+      if (product && (product.stock ?? 0) < qty) return setError('Stock insuficiente para esa cantidad.')
+      if (presetValue < 0) return setError('El valor no puede ser negativo.')
+
+      payload = {
+        date,
+        currency: 'ARS',
+        units: [{
+          client_uuid: crypto.randomUUID(),
+          kind: 'staff_withdrawal',
+          transaction_type: 'transfer',
+          description: null,
+          catalog_item_id: null,
+          product_id: productId,
+          product_qty: 0,
+          unit_sale_price: 0,
+          subcategory_id: null,
+          subcategory_name: null,
+          professionals: [],
+          sena_amount: null,
+          payments: [],
+          hairdresser_id: hairdresserId,
+          staff_quantity: qty,
+          value_amount: presetValue,
+          due_date: date,
+          notes: notes.trim() || null,
+        }],
+      }
+    } else {
+      const amt = Number(advanceAmount)
+      if (!amt || amt <= 0) return setError('El monto debe ser mayor que cero.')
+      if (!paymentMethod) return setError('Seleccioná un método de pago.')
+      if (!advanceSubcategoryId) return setError('Falta la categoría "Adelantos de personal". Contactá al administrador.')
+
+      payload = {
+        date,
+        currency: advanceCurrency,
+        units: [{
+          client_uuid: crypto.randomUUID(),
+          kind: 'staff_advance',
+          transaction_type: 'transfer',
+          description: null,
+          catalog_item_id: null,
+          product_id: null,
+          product_qty: 0,
+          unit_sale_price: 0,
+          subcategory_id: advanceSubcategoryId,
+          subcategory_name: null,
+          professionals: [],
+          sena_amount: null,
+          transfer_direction: 'salida',
+          payments: [{ payment_method: paymentMethod, instrument: null, amount: amt }],
+          hairdresser_id: hairdresserId,
+          value_amount: amt,
+          notes: notes.trim() || null,
+        }],
+      }
+    }
+
+    setLoading(true)
     try {
-      await createWithdrawal.mutateAsync({
-        hairdresser_id: hairdresserId,
-        product_id: productId,
-        quantity: qty,
-        value_amount: presetValue,
-        due_date: date,
-        notes: notes.trim() || null,
-      })
+      if (!navigator.onLine) {
+        enqueueTicket(payload)
+        onClose()
+        return
+      }
+      await submitTicket(payload)
       onClose()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al registrar el retiro')
+      const msg = (e as Error).message || ''
+      const networkish = !navigator.onLine || /fetch|network|failed to fetch|load failed|timeout/i.test(msg)
+      if (networkish) {
+        enqueueTicket(payload)
+        onClose()
+      } else {
+        setError(msg || 'Error al registrar')
+      }
+    } finally {
+      setLoading(false)
     }
   }
 
+  const title = mode === 'withdrawal' ? 'Registrar retiro de producto' : 'Registrar adelanto de sueldo'
+  const submitLabel = mode === 'withdrawal' ? 'Registrar retiro' : 'Registrar adelanto'
+
   return (
-    <Modal open={open} onClose={onClose} title="Registrar retiro de producto" size="lg">
+    <Modal open={open} onClose={onClose} title={title} size="lg">
       <div className="space-y-4">
         <p className="text-sm text-[var(--color-muted)]">
-          El producto se descuenta del inventario y queda como deuda del empleado. No genera movimiento de caja ni banco.
+          {mode === 'withdrawal'
+            ? 'El producto se descuenta del inventario y queda como deuda del empleado. No genera movimiento de caja ni banco.'
+            : 'Sale de caja como movimiento (no es gasto) y queda como deuda del empleado. Se descuenta al liquidar la comisión.'}
         </p>
 
         <div className="grid grid-cols-2 gap-3">
@@ -110,63 +211,88 @@ export function StaffWithdrawalModal({ open, onClose, initialProductId }: Props)
           />
         </div>
 
-        <Select
-          label="Producto"
-          value={productId}
-          onChange={e => setProductId(e.target.value)}
-          options={productOptions}
-          placeholder="Seleccionar..."
-        />
+        {mode === 'withdrawal' && (
+          <>
+            <Select
+              label="Producto"
+              value={productId}
+              onChange={e => setProductId(e.target.value)}
+              options={productOptions}
+              placeholder="Seleccionar..."
+            />
 
-        <div className="grid grid-cols-2 gap-3">
-          <Input
-            label={`Cantidad${product?.unit ? ` (${product.unit})` : ''}`}
-            type="number"
-            value={quantity}
-            onChange={e => setQuantity(e.target.value)}
-            min="0.01"
-            step="0.01"
-          />
-          <div>
-            <label className="text-sm font-medium text-[var(--color-text)] block mb-1.5">Valor a descontar</label>
-            <div className="flex gap-1 mb-2">
-              <button
-                type="button"
-                onClick={() => setPreset('cost')}
-                className={`text-xs px-2 py-1 rounded-md border ${preset === 'cost' ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-muted)]'}`}
-              >
-                Costo
-              </button>
-              <button
-                type="button"
-                onClick={() => setPreset('sale')}
-                className={`text-xs px-2 py-1 rounded-md border ${preset === 'sale' ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-muted)]'}`}
-              >
-                Precio venta
-              </button>
-              <button
-                type="button"
-                onClick={() => setPreset('manual')}
-                className={`text-xs px-2 py-1 rounded-md border ${preset === 'manual' ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-muted)]'}`}
-              >
-                Manual
-              </button>
-            </div>
-            {preset === 'manual' ? (
+            <div className="grid grid-cols-2 gap-3">
               <Input
+                label={`Cantidad${product?.unit ? ` (${product.unit})` : ''}`}
                 type="number"
-                value={valueAmount}
-                onChange={e => setValueAmount(e.target.value)}
-                prefix="$"
-                placeholder="0"
+                value={quantity}
+                onChange={e => setQuantity(e.target.value)}
+                min="0.01"
+                step="0.01"
               />
-            ) : (
-              <div className="h-9 px-3 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] flex items-center text-sm tabular-nums text-[var(--color-text)]">
-                ${presetValue.toLocaleString('es-CO')}
+              <div>
+                <label className="text-sm font-medium text-[var(--color-text)] block mb-1.5">Valor a descontar</label>
+                <div className="flex gap-1 mb-2">
+                  {(['cost', 'sale', 'manual'] as Preset[]).map(p => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPreset(p)}
+                      className={`text-xs px-2 py-1 rounded-md border ${preset === p ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-muted)]'}`}
+                    >
+                      {p === 'cost' ? 'Costo' : p === 'sale' ? 'Precio venta' : 'Manual'}
+                    </button>
+                  ))}
+                </div>
+                {preset === 'manual' ? (
+                  <Input
+                    type="number"
+                    value={manualValue}
+                    onChange={e => setManualValue(e.target.value)}
+                    prefix="$"
+                    placeholder="0"
+                  />
+                ) : (
+                  <div className="h-9 px-3 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] flex items-center text-sm tabular-nums text-[var(--color-text)]">
+                    ${presetValue.toLocaleString('es-CO')}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+          </>
+        )}
+
+        {mode === 'advance' && (
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Monto"
+              type="number"
+              value={advanceAmount}
+              onChange={e => setAdvanceAmount(e.target.value)}
+              min="0.01"
+              step="0.01"
+              prefix="$"
+              placeholder="0"
+            />
+            <Select
+              label="Moneda"
+              value={advanceCurrency}
+              onChange={e => setAdvanceCurrency(e.target.value as Currency)}
+              options={[
+                { value: 'ARS', label: 'ARS' },
+                { value: 'USD', label: 'USD' },
+                { value: 'EUR', label: 'EUR' },
+              ]}
+            />
+            <Select
+              label="Método de pago"
+              value={paymentMethod}
+              onChange={e => setPaymentMethod(e.target.value)}
+              options={activePaymentMethods}
+              placeholder="Seleccionar..."
+            />
           </div>
-        </div>
+        )}
 
         <Input
           label="Notas"
@@ -179,8 +305,8 @@ export function StaffWithdrawalModal({ open, onClose, initialProductId }: Props)
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button onClick={handleSubmit} loading={createWithdrawal.isPending}>
-            Registrar retiro
+          <Button onClick={handleSubmit} loading={loading}>
+            {submitLabel}
           </Button>
         </div>
       </div>

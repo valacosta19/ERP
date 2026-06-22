@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, ArrowLeft, ArrowRight, Check, CloudOff, List, Loader2, RefreshCw, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, CloudOff, HandCoins, List, Loader2, RefreshCw, Users, X } from 'lucide-react'
+import { StaffWithdrawalModal } from '@/components/StaffWithdrawalModal'
 import { TopBar } from '@/components/layout/TopBar'
 import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
@@ -56,6 +57,7 @@ export function QuickFunnelPage() {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [closed, setClosed] = useState<{ summary: string; queued: boolean } | null>(null)
+  const [staffModal, setStaffModal] = useState<'withdrawal' | 'advance' | null>(null)
 
   const { data: categories = [] } = useTransactionCategories()
   const { data: catalogItems = [] } = useCatalogItems()
@@ -88,7 +90,7 @@ export function QuickFunnelPage() {
   }
 
   function pickType(t: FunnelType) {
-    setState(s => ({ ...makeEmptyFunnelState(), type: t, date: s.date, step: 'detail' }))
+    setState(s => ({ ...makeEmptyFunnelState(), type: t, date: s.date, step: 'detail', simpleProductId: null, simpleProductQty: 1 }))
     setError('')
   }
 
@@ -125,8 +127,12 @@ export function QuickFunnelPage() {
   function canAdvance(step: FunnelStep): boolean {
     switch (step) {
       case 'type': return state.type !== null
-      case 'detail':
-        return state.type === 'income' ? state.lines.length > 0 : !!state.subcategoryId
+      case 'detail': {
+        if (state.type === 'income') return state.lines.length > 0
+        if (!state.subcategoryId) return false
+        if (selectedSimpleSubcat?.deducts_inventory) return !!state.simpleProductId
+        return true
+      }
       case 'amount':
         return state.type === 'income'
           ? state.lines.every(l => l.unitPrice > 0)
@@ -167,7 +173,12 @@ export function QuickFunnelPage() {
   }
 
   function advanceHint(step: FunnelStep): string {
-    if (step === 'detail') return state.type === 'income' ? 'Agregá al menos un ítem al ticket.' : 'Elegí una categoría.'
+    if (step === 'detail') {
+      if (state.type === 'income') return 'Agregá al menos un ítem al ticket.'
+      if (!state.subcategoryId) return 'Elegí una categoría.'
+      if (selectedSimpleSubcat?.deducts_inventory && !state.simpleProductId) return 'Esta categoría descuenta inventario — seleccioná el producto.'
+      return 'Elegí una categoría.'
+    }
     if (step === 'amount') return state.type === 'income' ? 'Cada ítem necesita un precio mayor a cero.' : 'Ingresá un monto mayor a cero.'
     if (step === 'payment') return 'El pago debe cubrir el total a cobrar.'
     return 'Completá este paso para continuar.'
@@ -228,6 +239,11 @@ export function QuickFunnelPage() {
         return parent?.name === FUNNEL_TYPE_META[state.type as FunnelType].parentName
       })
     : []
+
+  const selectedSimpleSubcat = useMemo(
+    () => activeSubcats.find(c => c.id === state.subcategoryId) ?? null,
+    [activeSubcats, state.subcategoryId],
+  )
 
   const incomeSubcats = categories.filter(c => {
     const parent = categories.find(p => p.id === c.parent_id)
@@ -323,7 +339,32 @@ export function QuickFunnelPage() {
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 min-h-0 flex flex-col">
           <div className="flex-1 min-h-0 overflow-y-auto p-7">
-            {state.step === 'type' && <StepType value={state.type} onPick={pickType} />}
+            {state.step === 'type' && (
+              <>
+                <StepType value={state.type} onPick={pickType} />
+                <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid var(--color-border)' }}>
+                  <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-muted)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Personal
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setStaffModal('advance')}
+                      style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '10px', border: '1.5px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600 }}
+                    >
+                      <HandCoins size={16} /> Adelanto de sueldo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStaffModal('withdrawal')}
+                      style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '10px', border: '1.5px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600 }}
+                    >
+                      <Users size={16} /> Retiro de producto
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
 
             {state.step === 'detail' && state.type === 'income' && (
               <StepDetailIncome
@@ -343,8 +384,13 @@ export function QuickFunnelPage() {
                 subcategories={activeSubcats}
                 subcategoryId={state.subcategoryId}
                 concept={state.concept}
+                products={products}
+                selectedProductId={state.simpleProductId}
+                selectedProductQty={state.simpleProductQty}
                 onSubcategory={id => setState(s => ({ ...s, subcategoryId: id }))}
                 onConcept={v => setState(s => ({ ...s, concept: v }))}
+                onProduct={pid => setState(s => ({ ...s, simpleProductId: pid }))}
+                onProductQty={qty => setState(s => ({ ...s, simpleProductQty: qty }))}
               />
             )}
 
@@ -457,6 +503,14 @@ export function QuickFunnelPage() {
 
         {showTicketPanel && <TicketPanel state={state} onQty={setLineQty} onRemove={removeLine} onDate={d => setState(s => ({ ...s, date: d }))} />}
       </div>
+
+      {staffModal && (
+        <StaffWithdrawalModal
+          open
+          onClose={() => setStaffModal(null)}
+          mode={staffModal}
+        />
+      )}
     </div>
   )
 }

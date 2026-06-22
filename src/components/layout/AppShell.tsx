@@ -1,11 +1,27 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Menu, Scissors } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { AIWidget } from '@/components/AIWidget/AIWidget'
+import { useFunnelSubmit } from '@/components/transactions/QuickFunnel/funnelSubmit'
+import { flushQueue } from '@/components/transactions/QuickFunnel/offlineQueue'
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { submitTicket } = useFunnelSubmit()
+  const submitRef = useRef(submitTicket)
+  submitRef.current = submitTicket
+
+  useEffect(() => {
+    const doFlush = () => void flushQueue(submitRef.current).catch(() => {})
+    doFlush()
+    window.addEventListener('online', doFlush)
+    const id = setInterval(doFlush, 20_000)
+    return () => {
+      window.removeEventListener('online', doFlush)
+      clearInterval(id)
+    }
+  }, [])
 
   return (
     <div className="flex h-screen overflow-hidden">

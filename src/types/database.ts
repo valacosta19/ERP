@@ -686,6 +686,7 @@ export interface Database {
           product_id: string | null
           quantity: number | null
           unit_cost_snapshot: number | null
+          client_uuid: string | null
         }
         Insert: {
           id?: string
@@ -702,6 +703,7 @@ export interface Database {
           product_id?: string | null
           quantity?: number | null
           unit_cost_snapshot?: number | null
+          client_uuid?: string | null
         }
         Update: {
           id?: string
@@ -716,6 +718,7 @@ export interface Database {
           product_id?: string | null
           quantity?: number | null
           unit_cost_snapshot?: number | null
+          client_uuid?: string | null
         }
         Relationships: []
       }
@@ -919,13 +922,28 @@ export interface Database {
       }
       create_staff_receivable: {
         Args: {
+          p_client_uuid: string | null
           p_hairdresser_id: string
           p_product_id: string
           p_quantity: number
           p_value_amount: number
           p_due_date: string | null
           p_notes: string | null
-          p_created_by: string
+          p_created_by: string | null
+        }
+        Returns: string
+      }
+      create_staff_advance: {
+        Args: {
+          p_client_uuid: string | null
+          p_hairdresser_id: string
+          p_amount: number
+          p_currency: string
+          p_payment_method: string
+          p_date: string
+          p_subcategory_id: string | null
+          p_notes: string | null
+          p_created_by: string | null
         }
         Returns: string
       }
