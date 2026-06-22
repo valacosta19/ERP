@@ -8,6 +8,7 @@ export type QueuedTicket = {
   createdAt: string
   attempts: number
   lastError: string | null
+  status: 'pending' | 'stuck'
 }
 
 let counter = 0
@@ -36,12 +37,12 @@ function writeQueue(items: QueuedTicket[]): void {
 }
 
 export function enqueueTicket(payload: TicketPayload): QueuedTicket {
-  const item: QueuedTicket = { id: genId(), payload, createdAt: new Date().toISOString(), attempts: 0, lastError: null }
+  const item: QueuedTicket = { id: genId(), payload, createdAt: new Date().toISOString(), attempts: 0, lastError: null, status: 'pending' }
   writeQueue([...readQueue(), item])
   return item
 }
 
-function removeFromQueue(id: string): void {
+export function removeFromQueue(id: string): void {
   writeQueue(readQueue().filter(i => i.id !== id))
 }
 
@@ -49,21 +50,34 @@ function markFailure(id: string, message: string): void {
   writeQueue(readQueue().map(i => (i.id === id ? { ...i, attempts: i.attempts + 1, lastError: message } : i)))
 }
 
-/**
- * Attempts to submit every queued ticket in order. Stops on the first failure
- * (likely still offline) so order is preserved and a flaky connection doesn't
- * hammer the API. Returns how many were synced.
- */
+function markStuck(id: string, message: string): void {
+  writeQueue(readQueue().map(i => (i.id === id ? { ...i, attempts: i.attempts + 1, lastError: message, status: 'stuck' as const } : i)))
+}
+
+export function discardTicket(id: string): void {
+  removeFromQueue(id)
+}
+
+export function retryTicket(id: string): void {
+  writeQueue(readQueue().map(i => (i.id === id ? { ...i, attempts: 0, status: 'pending' as const, lastError: null } : i)))
+}
+
 export async function flushQueue(submit: (payload: TicketPayload) => Promise<void>): Promise<number> {
   let synced = 0
   for (const item of readQueue()) {
+    if (item.status === 'stuck') continue
     try {
       await submit(item.payload)
       removeFromQueue(item.id)
       synced += 1
     } catch (e) {
-      markFailure(item.id, (e as Error).message)
-      break
+      const isNetworkError = !navigator.onLine || /fetch|network|failed to fetch|load failed|timeout/i.test((e as Error).message)
+      if (isNetworkError) {
+        markFailure(item.id, (e as Error).message)
+        break
+      } else {
+        markStuck(item.id, (e as Error).message)
+      }
     }
   }
   return synced

@@ -70,6 +70,7 @@ export interface Database {
           refunds_anticipo_id: string | null
           product_id: string | null
           inventory_pending: boolean
+          client_uuid: string | null
         }
         Insert: {
           id?: string
@@ -88,6 +89,7 @@ export interface Database {
           refunds_anticipo_id?: string | null
           product_id?: string | null
           inventory_pending?: boolean
+          client_uuid?: string | null
         }
         Update: {
           id?: string
@@ -104,6 +106,7 @@ export interface Database {
           refunds_anticipo_id?: string | null
           product_id?: string | null
           inventory_pending?: boolean
+          client_uuid?: string | null
         }
         Relationships: []
       }
@@ -852,6 +855,27 @@ export interface Database {
       }
     }
     Functions: {
+      create_funnel_unit: {
+        Args: {
+          p_client_uuid: string
+          p_date: string
+          p_transaction_type: string
+          p_currency: string
+          p_subcategory_id?: string | null
+          p_subcategory_name?: string | null
+          p_catalog_item_id?: string | null
+          p_description?: string | null
+          p_transfer_direction?: string | null
+          p_payments: Json
+          p_professionals: Json
+          p_product_id?: string | null
+          p_product_qty?: number
+          p_unit_sale_price?: number
+          p_sena_amount?: number | null
+          p_created_by?: string | null
+        }
+        Returns: Json
+      }
       consume_inventory_fifo: {
         Args: {
           p_product_id: string

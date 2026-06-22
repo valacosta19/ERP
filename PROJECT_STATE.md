@@ -10,6 +10,45 @@ ERP for a hair salon. Replaces an Excel-based system. Core problem: Excel always
 ---
 
 ## Current phase
+**Phase 27** — ✅ Completa
+
+### Cambios implementados en Phase 27
+
+#### Feature: Soporte offline confiable para Carga Rápida + tab Sueldos en Reportes
+
+---
+
+##### Offline: Carga Rápida sin duplicados
+
+**Problema resuelto:** `funnelSubmit.ts` creaba cada venta en múltiples pasos no atómicos (transacción → pagos → profesionales → snapshot costos → FIFO). Si la sincronización se interrumpía a mitad, el reintento duplicaba ventas y descontaba inventario de más. Además, un ticket con fallo permanente bloqueaba el resto de la cola indefinidamente.
+
+**Migraciones:**
+- **`059_funnel_idempotency.sql`**: columna `client_uuid uuid` en `transactions` con índice único parcial (`WHERE client_uuid IS NOT NULL`). Nueva RPC `create_funnel_unit` (SECURITY DEFINER): alta atómica de una unidad de venta (transacción + pagos + profesionales + snapshot de costos de receta + FIFO) con guard de idempotencia al inicio.
+- **`060_funnel_idempotency_race_fix.sql`**: `CREATE OR REPLACE` de `create_funnel_unit` agregando `EXCEPTION WHEN unique_violation` para manejar la condición de carrera cuando dos requests con el mismo `client_uuid` llegan simultáneamente. Devuelve el `transaction_id` existente sin error.
+
+**Tipos (`database.ts`):**
+- `client_uuid: string | null` en `transactions` Row/Insert/Update.
+- Firma de `create_funnel_unit` en `Functions`.
+
+**Frontend:**
+- **`funnelSubmit.ts`**: reemplaza el create multi-paso por una sola `supabase.rpc('create_funnel_unit', {...})` por unidad. Propaga `sena_amount` correctamente (base de cálculo de comisiones).
+- **`buildTicket.ts`**: genera `client_uuid: crypto.randomUUID()` por cada unidad al armar el ticket. Se persiste en la cola para reutilizarse en cada reintento.
+- **`funnelTypes.ts` / `funnelSubmit.ts`**: `client_uuid: string` en `TicketUnit`.
+- **`offlineQueue.ts`**: campo `status: 'pending' | 'stuck'` en `QueuedTicket`. `flushQueue` diferencia errores de red (break, seguimos offline) de errores permanentes (marca `stuck`, continúa con el siguiente). Exporta `discardTicket` y `retryTicket`.
+- **`useFunnelQueue.ts`**: expone `stuckTickets: QueuedTicket[]`, `discard(id)`, `retry(id)`.
+- **`QuickFunnelPage.tsx`**: sistema de dos badges — badge normal para pendientes y badge rojo para tickets stuck. Panel collapsible con fecha/error/botones Reintentar y Descartar por cada ticket stuck.
+
+---
+
+##### Feature: Tab "Sueldos" en Reportes
+
+- Nuevo tab en `ReportsPage` que filtra transacciones de la subcategoría `'Sueldos y cargas'` por mes.
+- Selector de mes, cards de totales por moneda y tabla de transacciones (fecha, descripción, método de pago, moneda, monto).
+- No requiere migración — consume `useTransactions` con `subcategoryIds` filter.
+
+---
+
+## Current phase (anterior)
 **Phase 26** — ✅ Completa
 
 ### Cambios implementados en Phase 26

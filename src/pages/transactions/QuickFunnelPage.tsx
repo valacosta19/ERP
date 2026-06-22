@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, Check, CloudOff, List, Loader2, RefreshCw, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Check, CloudOff, List, Loader2, RefreshCw, X } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
@@ -65,7 +65,8 @@ export function QuickFunnelPage() {
   const { data: anticipoPresets = [] } = useAnticipoPresets()
   const { data: anticipoBalance } = useAnticipoBalance()
   const { submitTicket } = useFunnelSubmit()
-  const { pending, syncing, enqueue, flush } = useFunnelQueue(submitTicket)
+  const { pending, stuckTickets, syncing, enqueue, flush, discard, retry } = useFunnelQueue(submitTicket)
+  const [showStuckPanel, setShowStuckPanel] = useState(false)
 
   const paymentMethods = useMemo(() => paymentMethodsData.filter(m => m.active).map(m => m.name), [paymentMethodsData])
   const cashMethod = useMemo(() => paymentMethods.find(m => m.toLowerCase().includes('efectivo')) ?? null, [paymentMethods])
@@ -233,7 +234,7 @@ export function QuickFunnelPage() {
         subtitle="Registro veloz de caja"
         actions={
           <div className="flex items-center gap-3">
-            {pending > 0 && (
+            {pending - stuckTickets.length > 0 && (
               <button
                 onClick={() => { void flush() }}
                 className="flex items-center gap-1.5"
@@ -244,7 +245,21 @@ export function QuickFunnelPage() {
                 }}
               >
                 {syncing ? <RefreshCw size={13} className="animate-spin" /> : <CloudOff size={13} />}
-                {pending} sin sincronizar
+                {pending - stuckTickets.length} sin sincronizar
+              </button>
+            )}
+            {stuckTickets.length > 0 && (
+              <button
+                onClick={() => setShowStuckPanel(v => !v)}
+                className="flex items-center gap-1.5"
+                title="Tickets con error permanente"
+                style={{
+                  fontSize: '0.8125rem', fontWeight: 600, padding: '6px 12px', borderRadius: '999px',
+                  border: '1px solid var(--color-danger)', background: 'var(--color-danger-light)', color: 'var(--color-danger)', cursor: 'pointer',
+                }}
+              >
+                <AlertCircle size={13} />
+                {stuckTickets.length} con error
               </button>
             )}
             <button
@@ -257,6 +272,37 @@ export function QuickFunnelPage() {
           </div>
         }
       />
+
+      {showStuckPanel && stuckTickets.length > 0 && (
+        <div style={{ background: 'var(--color-danger-light)', borderBottom: '1px solid var(--color-danger)', padding: '12px 24px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {stuckTickets.map(ticket => (
+            <div key={ticket.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-danger)' }}>
+                  {new Date(ticket.createdAt).toLocaleString('es-AR')}
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-danger)', opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {ticket.lastError ? ticket.lastError.slice(0, 80) : ''}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                <button
+                  onClick={() => { retry(ticket.id); void flush() }}
+                  style={{ fontSize: '0.8125rem', fontWeight: 600, padding: '5px 12px', borderRadius: '8px', border: '1px solid var(--color-danger)', background: 'transparent', color: 'var(--color-danger)', cursor: 'pointer' }}
+                >
+                  Reintentar
+                </button>
+                <button
+                  onClick={() => discard(ticket.id)}
+                  style={{ fontSize: '0.8125rem', fontWeight: 600, padding: '5px 12px', borderRadius: '8px', border: '1px solid var(--color-danger)', background: 'transparent', color: 'var(--color-danger)', cursor: 'pointer' }}
+                >
+                  Descartar
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {state.step !== 'done' && (
         <div className="flex items-center justify-between px-6 py-3" style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>

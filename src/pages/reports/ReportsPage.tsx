@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { useFinancialReport, useInventoryValuation, useProfitReport, useBalanceSheet } from '@/hooks/useReports'
 import { useCommissionsReport } from '@/hooks/useCommissionsReport'
+import { useTransactions } from '@/hooks/useTransactions'
+import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { useStaffReceivables } from '@/hooks/useStaffReceivables'
 import { SettleCommissionModal } from '@/components/SettleCommissionModal'
 import { useFixedCosts } from '@/hooks/useFixedCosts'
@@ -18,11 +20,11 @@ import { supabase } from '@/lib/supabaseClient'
 import type { FinancialCategoryRow, InventoryValuationRow, ProfitMonthRow } from '@/hooks/useReports'
 
 import type { CommissionDetailRow } from '@/hooks/useCommissionsReport'
-import type { Currency, ServiceRecipe, ServiceCostRow } from '@/types'
+import type { Currency, ServiceRecipe, ServiceCostRow, Transaction } from '@/types'
 import { formatDate } from '@/lib/formatDate'
 import { currentMonthRange } from '@/lib/dateRange'
 
-type Tab = 'financiero' | 'comisiones' | 'utilidad' | 'costos' | 'balance'
+type Tab = 'financiero' | 'comisiones' | 'utilidad' | 'costos' | 'balance' | 'sueldos'
 type CommViewMode = 'detalle' | 'quincenal'
 
 const MONTH_NAMES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
@@ -99,6 +101,26 @@ const valuationColumns = [
   },
 ]
 
+const sueldoColumns = [
+  { key: 'date', header: 'Fecha', render: (tx: Transaction) => formatDate(tx.date) },
+  { key: 'description', header: 'Descripción', render: (tx: Transaction) => tx.description ?? '—' },
+  {
+    key: 'payments',
+    header: 'Método de pago',
+    render: (tx: Transaction) =>
+      (tx.payments ?? []).length > 0 ? (tx.payments ?? []).map(p => p.payment_method).join(', ') : '—',
+  },
+  { key: 'currency', header: 'Moneda', render: (tx: Transaction) => tx.currency },
+  {
+    key: 'amount',
+    header: 'Monto',
+    className: 'text-right',
+    render: (tx: Transaction) => (
+      <span className="tabular-nums text-[var(--color-danger)]">{fmtAmount(tx.amount, tx.currency)}</span>
+    ),
+  },
+]
+
 
 export function ReportsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -117,6 +139,12 @@ export function ReportsPage() {
   const [profitFrom, setProfitFrom] = useState(() => currentMonthRange().from)
   const [profitTo, setProfitTo] = useState(() => currentMonthRange().to)
   const [balanceDate, setBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [sueldoMonth, setSueldoMonth] = useState(() => currentMonthRange().from.slice(0, 7))
+  const sueldoFrom = `${sueldoMonth}-01`
+  const sueldoTo = (() => {
+    const [y, m] = sueldoMonth.split('-').map(Number)
+    return `${sueldoMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+  })()
 
   const { data: dolarBlue } = useQuery<{ venta: number; fechaActualizacion: string }>({
     queryKey: ['dolar-blue'],
@@ -145,6 +173,18 @@ export function ReportsPage() {
   }, [staffReceivables])
   const profit = useProfitReport({ from: profitFrom || undefined, to: profitTo || undefined, usdRate: dolarBlue?.venta })
   const balanceSheet = useBalanceSheet(balanceDate)
+  const { data: allCategories = [] } = useTransactionCategories()
+  const sueldoCatId = useMemo(() => {
+    const cat = allCategories.find(
+      c => c.name === 'Sueldos y cargas' && c.parent_id === '00000000-0000-0000-0000-000000000003'
+    )
+    return cat?.id ?? null
+  }, [allCategories])
+  const sueldoTxs = useTransactions({
+    subcategoryIds: sueldoCatId ? [sueldoCatId] : [],
+    from: sueldoFrom,
+    to: sueldoTo,
+  })
 
   const { summary } = financial.data ?? { summary: { total_income: 0, total_expense: 0, balance: 0 } }
   const totalInventoryValue = valuation.data?.reduce((s, r) => s + r.total_value, 0) ?? 0
@@ -451,6 +491,16 @@ export function ReportsPage() {
             }`}
           >
             Balance
+          </button>
+          <button
+            onClick={() => setActiveTab('sueldos')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'sueldos'
+                ? 'border-[var(--color-accent)] text-[var(--color-accent)]'
+                : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]'
+            }`}
+          >
+            Sueldos
           </button>
         </div>
 
@@ -1030,6 +1080,57 @@ export function ReportsPage() {
             )}
           </>
         )}
+
+        {activeTab === 'sueldos' && (() => {
+          const rows = sueldoTxs.data ?? []
+          const totalesPorMoneda = rows.reduce<Record<string, number>>((acc, tx) => {
+            acc[tx.currency] = (acc[tx.currency] ?? 0) + tx.amount
+            return acc
+          }, {})
+          return (
+            <>
+              <div className="flex flex-wrap gap-3 items-end">
+                <Input
+                  label="Mes"
+                  type="month"
+                  value={sueldoMonth}
+                  onChange={e => setSueldoMonth(e.target.value)}
+                  className="w-44"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-4">
+                {Object.entries(totalesPorMoneda).length === 0 ? (
+                  <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4 min-w-[180px]">
+                    <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Total pagado</p>
+                    <p className="text-2xl font-semibold text-[var(--color-danger)] mt-1">{fmtAmount(0)}</p>
+                  </div>
+                ) : (
+                  Object.entries(totalesPorMoneda).map(([cur, total]) => (
+                    <div key={cur} className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-4 min-w-[180px]">
+                      <p className="text-xs text-[var(--color-muted)] uppercase tracking-wider">Total pagado · {cur}</p>
+                      <p className="text-2xl font-semibold text-[var(--color-danger)] mt-1">{fmtAmount(total, cur)}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <section>
+                <h2 className="text-base font-semibold text-[var(--color-text)] mb-3">Movimientos</h2>
+                <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+                  <Table
+                    columns={sueldoColumns}
+                    data={rows}
+                    keyField="id"
+                    loading={sueldoTxs.isLoading}
+                    emptyMessage={sueldoCatId === null ? 'No se encontró la categoría "Sueldos y cargas".' : 'No hay pagos de sueldo en el período.'}
+                    pageSize={500}
+                  />
+                </div>
+              </section>
+            </>
+          )
+        })()}
       </div>
 
       {settleTarget && (

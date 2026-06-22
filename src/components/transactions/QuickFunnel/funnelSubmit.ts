@@ -1,9 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
-import { useCreateTransaction } from '@/hooks/useTransactions'
 import type { Currency } from '@/types'
 
 export type TicketUnit = {
+  client_uuid: string
   kind: 'service' | 'product' | 'tip' | 'simple'
   transaction_type: 'income' | 'expense' | 'transfer'
   description: string | null
@@ -27,60 +27,42 @@ export type TicketPayload = {
 
 export function useFunnelSubmit() {
   const qc = useQueryClient()
-  const createTx = useCreateTransaction()
 
   async function submitTicket(payload: TicketPayload): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser()
 
     for (const unit of payload.units) {
-      let inventoryPending = false
-      let runFifo = false
-
-      if (unit.product_id) {
-        const { data: prod, error: stockError } = await supabase
-          .from('products_with_stock')
-          .select('stock')
-          .eq('id', unit.product_id)
-          .single()
-        if (stockError) throw new Error(stockError.message)
-        const stock = (prod as { stock: number } | null)?.stock ?? 0
-        if (stock >= unit.product_qty) runFifo = true
-        else inventoryPending = true
-      }
-
-      const tx = await createTx.mutateAsync({
-        date: payload.date,
-        transaction_type: unit.transaction_type,
-        currency: payload.currency,
-        subcategory_id: unit.subcategory_id,
-        subcategory_name: unit.subcategory_name,
-        catalog_item_id: unit.catalog_item_id,
-        description: unit.description,
-        is_seña: false,
-        seña_amount: unit.sena_amount,
-        refunds_anticipo_id: null,
-        transfer_direction: unit.transfer_direction,
-        payments: unit.payments,
-        professionals: unit.professionals,
-        product_id: unit.product_id,
-        inventory_pending: inventoryPending,
+      const { error } = await supabase.rpc('create_funnel_unit', {
+        p_client_uuid: unit.client_uuid,
+        p_date: payload.date,
+        p_transaction_type: unit.transaction_type,
+        p_currency: payload.currency,
+        p_subcategory_id: unit.subcategory_id,
+        p_subcategory_name: unit.subcategory_name,
+        p_catalog_item_id: unit.catalog_item_id,
+        p_description: unit.description,
+        p_transfer_direction: unit.transfer_direction ?? null,
+        p_payments: unit.payments,
+        p_professionals: unit.professionals.map(p => ({
+          hairdresser_id: p.id,
+          commission_rate: p.commission_rate,
+        })),
+        p_product_id: unit.product_id,
+        p_product_qty: unit.product_qty,
+        p_unit_sale_price: unit.unit_sale_price,
+        p_sena_amount: unit.sena_amount,
+        p_created_by: user?.id ?? null,
       })
-
-      if (runFifo && unit.product_id) {
-        const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
-          p_product_id: unit.product_id,
-          p_quantity: unit.product_qty,
-          p_transaction_id: tx.id,
-          p_unit_sale_price: unit.unit_sale_price,
-          p_created_by: user!.id,
-        })
-        if (fifoError) throw new Error(fifoError.message)
-      }
+      if (error) throw new Error(error.message)
     }
 
+    qc.invalidateQueries({ queryKey: ['transactions'] })
+    qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
+    qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
+    qc.invalidateQueries({ queryKey: ['transaction-recipe-costs'] })
     qc.invalidateQueries({ queryKey: ['products'] })
     qc.invalidateQueries({ queryKey: ['anticipo-balance'] })
   }
 
-  return { submitTicket, isPending: createTx.isPending }
+  return { submitTicket }
 }

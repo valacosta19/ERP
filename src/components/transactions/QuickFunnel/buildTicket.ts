@@ -75,6 +75,7 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
     })
 
     const units: TicketUnit[] = state.lines.map((line, i) => ({
+      client_uuid: crypto.randomUUID(),
       kind: line.kind,
       transaction_type: 'income',
       description: line.name,
@@ -91,6 +92,7 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
 
     if (tip > 0) {
       units.push({
+        client_uuid: crypto.randomUUID(),
         kind: 'tip',
         transaction_type: 'income',
         description: 'Propina',
@@ -117,6 +119,7 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
     ...base,
     units: [
       {
+        client_uuid: crypto.randomUUID(),
         kind: 'simple',
         transaction_type: txType,
         description: state.concept || subcat?.name || null,
