@@ -1,27 +1,30 @@
 import { useState } from 'react'
-import { Search, Plus, Scissors, Package } from 'lucide-react'
-import type { CatalogItem, Product } from '@/types'
+import { Search, Plus, Scissors, Package, Tag } from 'lucide-react'
+import type { CatalogItem, Product, TransactionCategory } from '@/types'
 import { StepHeading } from './funnelAtoms'
 import { money } from './funnelFormat'
 
-type Mode = 'services' | 'products'
+type Mode = 'services' | 'products' | 'other'
 
 type Props = {
   catalogItems: CatalogItem[]
   products: Product[]
   cartCount: number
+  incomeSubcategories: TransactionCategory[]
   onAddService: (item: CatalogItem) => void
   onAddProduct: (product: Product) => void
+  onAddOther: (subcat: TransactionCategory) => void
   productLabel: (p: Product) => string
 }
 
-export function StepDetailIncome({ catalogItems, products, cartCount, onAddService, onAddProduct, productLabel }: Props) {
+export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubcategories, onAddService, onAddProduct, onAddOther, productLabel }: Props) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<Mode>('services')
   const q = query.trim().toLowerCase()
 
   const filteredServices = catalogItems.filter(c => !q || c.name.toLowerCase().includes(q))
   const filteredProducts = products.filter(p => !q || productLabel(p).toLowerCase().includes(q))
+  const filteredOther = incomeSubcategories.filter(c => !q || c.name.toLowerCase().includes(q))
 
   return (
     <div>
@@ -44,6 +47,14 @@ export function StepDetailIncome({ catalogItems, products, cartCount, onAddServi
             count={products.length}
             accent="#6366F1"
             onClick={() => setMode('products')}
+          />
+          <ModeTab
+            active={mode === 'other'}
+            icon={<Tag size={16} strokeWidth={2.4} />}
+            label="Otros"
+            count={incomeSubcategories.length}
+            accent="#F59E0B"
+            onClick={() => setMode('other')}
           />
         </div>
 
@@ -79,14 +90,28 @@ export function StepDetailIncome({ catalogItems, products, cartCount, onAddServi
             />
           )
         })}
-        {((mode === 'services' && filteredServices.length === 0) || (mode === 'products' && filteredProducts.length === 0)) && (
+        {mode === 'other' && filteredOther.map(c => (
+          <ItemTile key={c.id} title={c.name} accent="#F59E0B" onClick={() => onAddOther(c)} />
+        ))}
+        {mode === 'services' && filteredServices.length === 0 && (
+          <p style={{ gridColumn: '1 / -1', fontSize: '0.875rem', color: 'var(--color-muted)' }}>Sin resultados.</p>
+        )}
+        {mode === 'products' && filteredProducts.length === 0 && (
+          <p style={{ gridColumn: '1 / -1', fontSize: '0.875rem', color: 'var(--color-muted)' }}>Sin resultados.</p>
+        )}
+        {mode === 'other' && incomeSubcategories.length === 0 && (
+          <p style={{ gridColumn: '1 / -1', fontSize: '0.875rem', color: 'var(--color-muted)' }}>
+            No hay subcategorías de ingreso configuradas. Agregalas en Ajustes.
+          </p>
+        )}
+        {mode === 'other' && incomeSubcategories.length > 0 && filteredOther.length === 0 && (
           <p style={{ gridColumn: '1 / -1', fontSize: '0.875rem', color: 'var(--color-muted)' }}>Sin resultados.</p>
         )}
       </div>
 
       {cartCount === 0 && (
         <p style={{ marginTop: '14px', fontSize: '0.8125rem', color: 'var(--color-muted)' }}>
-          Tocá un ítem para agregarlo al ticket. Podés sumar servicios y productos.
+          Tocá un ítem para agregarlo al ticket. Podés sumar servicios, productos y otros ingresos.
         </p>
       )}
     </div>
@@ -114,7 +139,7 @@ function ModeTab({ active, icon, label, count, accent, onClick }: { active: bool
   )
 }
 
-function ItemTile({ title, price, accent, badge, badgeWarn, onClick }: { title: string; price: string; accent: string; badge?: string; badgeWarn?: boolean; onClick: () => void }) {
+function ItemTile({ title, price, accent, badge, badgeWarn, onClick }: { title: string; price?: string; accent: string; badge?: string; badgeWarn?: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -138,7 +163,7 @@ function ItemTile({ title, price, accent, badge, badgeWarn, onClick }: { title: 
         </span>
       </div>
       <div className="flex items-end justify-between gap-2">
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.15rem', fontWeight: 700, color: accent }}>{price}</span>
+        {price && <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.15rem', fontWeight: 700, color: accent }}>{price}</span>}
         {badge && <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: badgeWarn ? 'var(--color-warning)' : 'var(--color-muted)' }}>{badge}</span>}
       </div>
     </button>

@@ -6,12 +6,13 @@ export type FunnelStep = 'type' | 'detail' | 'amount' | 'adjust' | 'payment' | '
 
 export type CartLine = {
   key: string
-  kind: 'service' | 'product'
+  kind: 'service' | 'product' | 'other'
   name: string
   unitPrice: number
   qty: number
   catalogItemId: string | null
   productId: string | null
+  subcategoryId: string | null
   professionals: { id: string; commission_rate: number }[]
 }
 

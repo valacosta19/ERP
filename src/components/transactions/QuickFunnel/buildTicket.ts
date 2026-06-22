@@ -74,21 +74,24 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
       })
     })
 
-    const units: TicketUnit[] = state.lines.map((line, i) => ({
-      client_uuid: crypto.randomUUID(),
-      kind: line.kind,
-      transaction_type: 'income',
-      description: line.name,
-      catalog_item_id: line.catalogItemId,
-      product_id: line.productId,
-      product_qty: line.qty,
-      unit_sale_price: line.qty > 0 ? Math.round(lineNets[i] / line.qty) : 0,
-      subcategory_id: line.kind === 'service' ? servicio?.id ?? null : producto?.id ?? null,
-      subcategory_name: line.kind === 'service' ? servicio?.name ?? null : producto?.name ?? null,
-      professionals: line.kind === 'service' ? line.professionals : [],
-      sena_amount: i === firstServiceIdx && anticipo > 0 ? anticipo : null,
-      payments: perUnitPayments[i],
-    }))
+    const units: TicketUnit[] = state.lines.map((line, i) => {
+      const otherSubcat = line.kind === 'other' ? ctx.categories.find(c => c.id === line.subcategoryId) : undefined
+      return {
+        client_uuid: crypto.randomUUID(),
+        kind: line.kind === 'other' ? 'service' : line.kind,
+        transaction_type: 'income',
+        description: line.name,
+        catalog_item_id: line.catalogItemId,
+        product_id: line.productId,
+        product_qty: line.qty,
+        unit_sale_price: line.qty > 0 ? Math.round(lineNets[i] / line.qty) : 0,
+        subcategory_id: line.kind === 'service' ? servicio?.id ?? null : line.kind === 'product' ? producto?.id ?? null : otherSubcat?.id ?? null,
+        subcategory_name: line.kind === 'service' ? servicio?.name ?? null : line.kind === 'product' ? producto?.name ?? null : otherSubcat?.name ?? null,
+        professionals: line.kind === 'service' ? line.professionals : [],
+        sena_amount: i === firstServiceIdx && anticipo > 0 ? anticipo : null,
+        payments: perUnitPayments[i],
+      }
+    })
 
     if (tip > 0) {
       units.push({

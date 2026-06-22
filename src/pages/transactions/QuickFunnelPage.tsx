@@ -97,7 +97,7 @@ export function QuickFunnelPage() {
     setState(s => {
       const existing = s.lines.find(l => l.catalogItemId === item.id)
       if (existing) return { ...s, lines: s.lines.map(l => l === existing ? { ...l, qty: l.qty + 1 } : l) }
-      const line: CartLine = { key: nextKey(), kind: 'service', name: item.name, unitPrice: item.price, qty: 1, catalogItemId: item.id, productId: null, professionals: [] }
+      const line: CartLine = { key: nextKey(), kind: 'service', name: item.name, unitPrice: item.price, qty: 1, catalogItemId: item.id, productId: null, subcategoryId: null, professionals: [] }
       return { ...s, lines: [...s.lines, line] }
     })
   }
@@ -107,9 +107,14 @@ export function QuickFunnelPage() {
     setState(s => {
       const existing = s.lines.find(l => l.productId === p.id)
       if (existing) return { ...s, lines: s.lines.map(l => l === existing ? { ...l, qty: l.qty + 1 } : l) }
-      const line: CartLine = { key: nextKey(), kind: 'product', name: productLabel(p), unitPrice: p.sale_price ?? 0, qty: 1, catalogItemId: null, productId: p.id, professionals: [] }
+      const line: CartLine = { key: nextKey(), kind: 'product', name: productLabel(p), unitPrice: p.sale_price ?? 0, qty: 1, catalogItemId: null, productId: p.id, subcategoryId: null, professionals: [] }
       return { ...s, lines: [...s.lines, line] }
     })
+  }
+
+  function addOtherIncome(subcat: { id: string; name: string }) {
+    const line: CartLine = { key: nextKey(), kind: 'other', name: subcat.name, unitPrice: 0, qty: 1, catalogItemId: null, productId: null, subcategoryId: subcat.id, professionals: [] }
+    setState(s => ({ ...s, lines: [...s.lines, line] }))
   }
 
   const setLineQty = (key: string, qty: number) => setState(s => ({ ...s, lines: s.lines.map(l => l.key === key ? { ...l, qty } : l) }))
@@ -224,6 +229,11 @@ export function QuickFunnelPage() {
       })
     : []
 
+  const incomeSubcats = categories.filter(c => {
+    const parent = categories.find(p => p.id === c.parent_id)
+    return parent?.name === 'Ingresos' && c.name !== 'Servicio' && c.name !== 'Producto'
+  })
+
   const showTicketPanel = state.step !== 'type' && state.step !== 'done'
   const isLastInput = steps[steps.indexOf(state.step) + 1] === 'done'
 
@@ -320,8 +330,10 @@ export function QuickFunnelPage() {
                 catalogItems={catalogItems}
                 products={products}
                 cartCount={state.lines.length}
+                incomeSubcategories={incomeSubcats}
                 onAddService={addService}
                 onAddProduct={addProduct}
+                onAddOther={addOtherIncome}
                 productLabel={productLabel}
               />
             )}
