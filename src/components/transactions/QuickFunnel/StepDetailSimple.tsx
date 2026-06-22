@@ -4,6 +4,8 @@ import type { TransactionCategory, Product } from '@/types'
 import type { FunnelType } from './funnelTypes'
 import { FUNNEL_TYPE_META } from './funnelTypes'
 import { StepHeading, SectionLabel } from './funnelAtoms'
+import { Select } from '@/components/ui/Select'
+import { Input } from '@/components/ui/Input'
 import { funnelInput } from './funnelFormat'
 
 type Props = {
@@ -97,34 +99,21 @@ export function StepDetailSimple({
             </span>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 500, color: 'var(--color-text)', marginBottom: '6px' }}>
-                Producto
-              </label>
-              <select
-                value={selectedProductId ?? ''}
-                onChange={e => onProduct(e.target.value || null)}
-                style={{ ...funnelInput, height: '38px' }}
-              >
-                <option value="">Seleccionar...</option>
-                {productOptions.map(p => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 500, color: 'var(--color-text)', marginBottom: '6px' }}>
-                Cantidad{selectedProduct?.unit ? ` (${selectedProduct.unit})` : ''}
-              </label>
-              <input
-                type="number"
-                value={selectedProductQty}
-                onChange={e => onProductQty(Math.max(0.01, Number(e.target.value) || 1))}
-                min="0.01"
-                step="0.01"
-                style={{ ...funnelInput, height: '38px' }}
-              />
-            </div>
+            <Select
+              label="Producto"
+              value={selectedProductId ?? ''}
+              onChange={e => onProduct(e.target.value || null)}
+              options={productOptions}
+              placeholder="Seleccionar..."
+            />
+            <Input
+              label={`Cantidad${selectedProduct?.unit ? ` (${selectedProduct.unit})` : ''}`}
+              type="number"
+              value={String(selectedProductQty)}
+              onChange={e => onProductQty(Math.max(0.01, Number(e.target.value) || 1))}
+              min="0.01"
+              step="0.01"
+            />
           </div>
           {!selectedProductId && (
             <p style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--color-warning)', fontWeight: 500 }}>
