@@ -1,73 +1,80 @@
-# React + TypeScript + Vite
+# ERP-BO — Sistema de gestión para peluquería
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+ERP interno que reemplaza un sistema en Excel. Núcleo: costeo FIFO estricto de inventario, por lo que cada venta refleja el costo real del lote consumido.
 
-Currently, two official plugins are available:
+**Stack:** React 19 + TypeScript + Vite · Supabase (Postgres + Auth) · TanStack Query · Tailwind CSS · Recharts
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+En producción desde fase 8. Fase actual: 28.
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Arrancar el proyecto
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cp .env.example .env   # completar con las credenciales de Supabase
+npm install
+npm run dev            # dev server con HMR en http://localhost:5173
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Variables de entorno requeridas:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+| Variable | Descripción |
+|----------|-------------|
+| `VITE_SUPABASE_URL` | URL del proyecto Supabase |
+| `VITE_SUPABASE_ANON_KEY` | Clave anon pública de Supabase |
+| `VITE_GEMINI_API_KEY` | API key de Gemini (AI Widget) — expuesta en el bundle, ver `docs/backlog.md` |
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Comandos
+
+```bash
+npm run build   # tsc + vite build — debe salir en 0 antes de cualquier commit
+npm run lint    # eslint sobre todo .ts/.tsx
+npm run dev     # servidor de desarrollo
 ```
+
+---
+
+## Estructura del código
+
+```
+src/
+  pages/       → una carpeta por ruta (componente de página + modales locales)
+  hooks/       → un useX (query) + useCreateX/useUpdateX/useDeleteX (mutations) por dominio
+  components/  → ui/ (primitivos reutilizables) · layout/ · transactions/QuickFunnel/
+  lib/         → supabaseClient, fetchAllRows, gemini, buildSystemPrompt
+  types/       → database.ts (schema Supabase) · index.ts (tipos de dominio)
+supabase/
+  migrations/  → 61 migraciones numeradas; aplicar manualmente en Supabase SQL editor
+```
+
+Patrón de datos: Postgres → `supabaseClient.ts` → `hooks/` (TanStack Query) → `pages/` (sin llamadas directas a Supabase en componentes).
+
+---
+
+## Documentación
+
+| Doc | Qué contiene |
+|-----|-------------|
+| [`CLAUDE.md`](./CLAUDE.md) | Instrucciones para la IA: comandos, reglas de negocio, convenciones de código, fase actual |
+| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | **Mapa por módulo: archivos, tablas/RPCs, invariantes que no se pueden rompen** — leer antes de tocar una feature |
+| [`docs/accounting.md`](./docs/accounting.md) | Manual contable: FIFO, valuación, cálculo de comisiones, reportes — para auditoría o referencia |
+| [`PROJECT_STATE.md`](./PROJECT_STATE.md) | Estado actual del proyecto: fase en curso, deuda técnica abierta |
+| [`docs/backlog.md`](./docs/backlog.md) | Features pendientes priorizadas |
+| [`docs/roadmap/`](./docs/roadmap/) | Iniciativas planificadas a futuro (no en sprint) |
+
+---
+
+## Validación manual
+
+```bash
+npm run build   # 0 errores
+npm run dev     # verificar en el browser:
+```
+
+- `/login` — auth funciona, redirige correctamente
+- `/transactions` — lista carga, crear/editar inline, tarjetas de balance por método y moneda
+- `/suppliers` — CRUD funciona
+- `/purchase-orders` — crear PO (con flete + sugerencia de reposición), recepción parcial, stock sube en `/inventory`
+- `/inventory` — stock correcto, drawer de lote abre inline-editable, venta descuenta stock
+- `/cuentas` — tabs "Por pagar" y "Por cobrar" (solo admin)
+- `/reportes` — tabs Financiero, Comisiones, Sueldos, Utilidad, Costos, Valoración

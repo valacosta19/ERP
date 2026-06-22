@@ -18,13 +18,14 @@ npm run lint      # eslint on all .ts/.tsx
 
 ## Working by phases
 
-- Check `PROJECT_STATE.md` and the most recent `PHASE_N_SUMMARY.md` before starting anything.
+- Check `PROJECT_STATE.md` for the current phase scope.
+- **Before touching a feature**: read its section in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — it lists the files, tables/RPCs and invariants for that module.
 - Work only within the current phase's scope. Document out-of-scope items — do not implement them.
 - If a task is too large, propose how to split it first.
-- When a phase closes: `npm run build` passes, user validates manually, then write `PHASE_N_SUMMARY.md` and update `PROJECT_STATE.md`.
-- After every commit: review whether `PROJECT_STATE.md` needs to reflect the new changes (new migrations, behavioral changes, new components, fixed bugs). If yes, update it before considering the task done.
+- When a phase closes: `npm run build` passes, user validates manually, then update `PROJECT_STATE.md` (add a one-line entry to the "Fases completadas" table) and update the affected module section in `docs/ARCHITECTURE.md` (new invariants, new files, changed tables). Do NOT create `PHASE_N_SUMMARY.md` — git log is the change history.
+- After every commit: review whether `PROJECT_STATE.md` or `docs/ARCHITECTURE.md` need to reflect new changes.
 
-**Current phase: 26** — See `PROJECT_STATE.md` for current scope.
+**Current phase: 28** — See `PROJECT_STATE.md` for current scope.
 
 ---
 
