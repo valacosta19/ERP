@@ -118,6 +118,7 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
   const subcat = ctx.categories.find(c => c.id === state.subcategoryId)
   const txType: TicketUnit['transaction_type'] = state.type === 'transfer' ? 'transfer' : 'expense'
   const amount = Math.round(Math.max(0, state.manualAmount))
+  const inventoryFunded = subcat?.deducts_inventory === true && !!state.simpleProductId
   return {
     ...base,
     units: [
@@ -135,7 +136,7 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
         professionals: [],
         sena_amount: null,
         transfer_direction: state.type === 'transfer' ? state.transferDirection : undefined,
-        payments: amount > 0 ? [{ payment_method: state.simpleMethod, instrument: null, amount }] : [],
+        payments: inventoryFunded ? [] : amount > 0 ? [{ payment_method: state.simpleMethod, instrument: null, amount }] : [],
       },
     ],
   }

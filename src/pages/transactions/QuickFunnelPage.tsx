@@ -136,7 +136,7 @@ export function QuickFunnelPage() {
       case 'amount':
         return state.type === 'income'
           ? state.lines.every(l => l.unitPrice > 0)
-          : state.manualAmount > 0 && !!state.simpleMethod
+          : state.manualAmount > 0 && (selectedSimpleSubcat?.deducts_inventory === true || !!state.simpleMethod)
       case 'adjust': return true
       case 'payment': return totalToCharge <= 0 || Math.abs(totalToCharge - paymentsSum) < 1
       default: return true
@@ -389,8 +389,24 @@ export function QuickFunnelPage() {
                 selectedProductQty={state.simpleProductQty}
                 onSubcategory={id => setState(s => ({ ...s, subcategoryId: id }))}
                 onConcept={v => setState(s => ({ ...s, concept: v }))}
-                onProduct={pid => setState(s => ({ ...s, simpleProductId: pid }))}
-                onProductQty={qty => setState(s => ({ ...s, simpleProductQty: qty }))}
+                onProduct={pid => {
+                  const p = pid ? products.find(pr => pr.id === pid) ?? null : null
+                  setState(s => ({
+                    ...s,
+                    simpleProductId: pid,
+                    manualAmount: p?.min_cost != null ? p.min_cost * s.simpleProductQty : s.manualAmount,
+                  }))
+                }}
+                onProductQty={qty => {
+                  setState(s => {
+                    const p = s.simpleProductId ? products.find(pr => pr.id === s.simpleProductId) ?? null : null
+                    return {
+                      ...s,
+                      simpleProductQty: qty,
+                      manualAmount: p?.min_cost != null ? p.min_cost * qty : s.manualAmount,
+                    }
+                  })
+                }}
               />
             )}
 
@@ -417,6 +433,7 @@ export function QuickFunnelPage() {
                 paymentMethods={paymentMethods}
                 transferDirection={state.transferDirection}
                 onDirection={d => setState(s => ({ ...s, transferDirection: d }))}
+                deductsInventory={selectedSimpleSubcat?.deducts_inventory === true}
               />
             )}
 

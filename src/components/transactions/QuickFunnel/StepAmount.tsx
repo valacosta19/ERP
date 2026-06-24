@@ -27,6 +27,7 @@ type SimpleProps = {
   paymentMethods: string[]
   transferDirection: 'entrada' | 'salida'
   onDirection: (d: 'entrada' | 'salida') => void
+  deductsInventory?: boolean
 }
 
 export function StepAmount(props: IncomeProps | SimpleProps) {
@@ -182,7 +183,7 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
   )
 }
 
-function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simpleMethod, onMethod, paymentMethods, transferDirection, onDirection }: SimpleProps) {
+function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simpleMethod, onMethod, paymentMethods, transferDirection, onDirection, deductsInventory }: SimpleProps) {
   return (
     <div style={{ maxWidth: '520px' }}>
       <StepHeading kicker="Paso 3 — Monto" title="¿Cuánto?" />
@@ -249,26 +250,32 @@ function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simp
         </div>
       )}
 
-      <div>
-        <SectionLabel>{type === 'transfer' ? 'Cuenta / caja' : 'Sale de'}</SectionLabel>
-        <div className="flex flex-wrap gap-2" style={{ marginTop: '8px' }}>
-          {paymentMethods.map(m => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => onMethod(m)}
-              style={{
-                padding: '10px 16px', borderRadius: '999px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600,
-                border: simpleMethod === m ? '2px solid var(--color-accent)' : '1.5px solid var(--color-border)',
-                background: simpleMethod === m ? 'var(--color-accent-light)' : 'var(--color-surface)',
-                color: 'var(--color-text)',
-              }}
-            >
-              {m}
-            </button>
-          ))}
+      {deductsInventory ? (
+        <div style={{ padding: '14px 16px', borderRadius: '12px', border: '1.5px solid var(--color-border)', background: 'var(--color-bg)', fontSize: '0.875rem', color: 'var(--color-muted)', fontWeight: 500 }}>
+          El costo se calcula del inventario — no hay salida de caja.
         </div>
-      </div>
+      ) : (
+        <div>
+          <SectionLabel>{type === 'transfer' ? 'Cuenta / caja' : 'Sale de'}</SectionLabel>
+          <div className="flex flex-wrap gap-2" style={{ marginTop: '8px' }}>
+            {paymentMethods.map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => onMethod(m)}
+                style={{
+                  padding: '10px 16px', borderRadius: '999px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600,
+                  border: simpleMethod === m ? '2px solid var(--color-accent)' : '1.5px solid var(--color-border)',
+                  background: simpleMethod === m ? 'var(--color-accent-light)' : 'var(--color-surface)',
+                  color: 'var(--color-text)',
+                }}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
