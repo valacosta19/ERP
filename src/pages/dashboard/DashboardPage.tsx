@@ -2,8 +2,7 @@ import { useMemo } from 'react'
 import { TrendingUp, TrendingDown, Wallet, Receipt } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { TopBar } from '@/components/layout/TopBar'
-import { useTransactions } from '@/hooks/useTransactions'
-import type { Transaction } from '@/types'
+import { useDashboardStats } from '@/hooks/useDashboardStats'
 
 function kpiCard(label: string, value: string, sub: string, icon: React.ReactNode, color: string) {
   return (
@@ -33,7 +32,7 @@ function getMonthLabel(key: string) {
   return new Date(Number(year), Number(month) - 1).toLocaleDateString('es-CO', { month: 'short', year: '2-digit' })
 }
 
-function buildChartData(transactions: Transaction[]) {
+function buildChartData(transactions: { date: string; amount: number; subcategory: { transaction_type: string } | null }[]) {
   const now = new Date()
   const months: string[] = []
   for (let i = 5; i >= 0; i--) {
@@ -55,18 +54,12 @@ function buildChartData(transactions: Transaction[]) {
 }
 
 export function DashboardPage() {
-  const currentMonth = new Date().toISOString().slice(0, 7)
-  const { data: transactions = [], isLoading } = useTransactions()
-
-  const thisMonth = useMemo(
-    () => transactions.filter(tx => tx.date.startsWith(currentMonth)),
-    [transactions, currentMonth]
-  )
+  const { thisMonth, last6Months, isLoading } = useDashboardStats()
 
   const ingresos = useMemo(() => thisMonth.filter(t => t.subcategory?.transaction_type === 'income').reduce((s, t) => s + t.amount, 0), [thisMonth])
   const gastos = useMemo(() => thisMonth.filter(t => t.subcategory?.transaction_type === 'expense').reduce((s, t) => s + t.amount, 0), [thisMonth])
   const balance = ingresos - gastos
-  const chartData = useMemo(() => buildChartData(transactions), [transactions])
+  const chartData = useMemo(() => buildChartData(last6Months), [last6Months])
 
   const monthLabel = new Date().toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })
 
