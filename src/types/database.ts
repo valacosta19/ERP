@@ -199,6 +199,29 @@ export interface Database {
         }
         Relationships: []
       }
+      period_balance_snapshots: {
+        Row: {
+          year: number
+          month: number
+          payment_method: string
+          currency: string
+          closing_balance: number
+          computed_at: string
+        }
+        Insert: {
+          year: number
+          month: number
+          payment_method: string
+          currency: string
+          closing_balance?: number
+          computed_at?: string
+        }
+        Update: {
+          closing_balance?: number
+          computed_at?: string
+        }
+        Relationships: []
+      }
       hairdressers: {
         Row: {
           id: string
@@ -304,7 +327,7 @@ export interface Database {
         Insert: {
           id?: string
           name: string
-          sku: string
+          sku?: string | null
           unit?: string | null
           sale_price: number
           min_stock?: number
@@ -441,6 +464,26 @@ export interface Database {
           reference_type?: string | null
           reference_id?: string | null
           reason?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: never
+        Relationships: []
+      }
+      inventory_recounts: {
+        Row: {
+          id: string
+          cutoff_date: string
+          client_uuid: string
+          totals: Json
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          cutoff_date: string
+          client_uuid: string
+          totals?: Json
           created_by?: string | null
           created_at?: string
         }
@@ -646,6 +689,7 @@ export interface Database {
           payment_method: string
           date: string
           transaction_id: string | null
+          client_uuid: string | null
           notes: string | null
           created_at: string
         }
@@ -656,6 +700,7 @@ export interface Database {
           payment_method: string
           date: string
           transaction_id?: string | null
+          client_uuid?: string | null
           notes?: string | null
           created_at?: string
         }
@@ -666,6 +711,7 @@ export interface Database {
           payment_method?: string
           date?: string
           transaction_id?: string | null
+          client_uuid?: string | null
           notes?: string | null
         }
         Relationships: []
@@ -677,6 +723,7 @@ export interface Database {
           concept: string
           total_amount: number
           collected_amount: number
+          currency: string
           due_date: string | null
           notes: string | null
           created_at: string
@@ -694,6 +741,7 @@ export interface Database {
           concept: string
           total_amount: number
           collected_amount?: number
+          currency?: string
           due_date?: string | null
           notes?: string | null
           created_at?: string
@@ -711,6 +759,7 @@ export interface Database {
           concept?: string
           total_amount?: number
           collected_amount?: number
+          currency?: string
           due_date?: string | null
           notes?: string | null
           source_transaction_id?: string | null
@@ -725,6 +774,7 @@ export interface Database {
       commission_payouts: {
         Row: {
           id: string
+          settlement_period_id: string
           hairdresser_id: string
           period_start: string
           period_end: string
@@ -732,12 +782,16 @@ export interface Database {
           receivables_offset: number
           net_amount: number
           paid_via_transaction_id: string | null
+          payment_method: string
+          payment_date: string
+          client_uuid: string | null
           notes: string | null
           created_at: string
           created_by: string | null
         }
         Insert: {
           id?: string
+          settlement_period_id: string
           hairdresser_id: string
           period_start: string
           period_end: string
@@ -745,12 +799,16 @@ export interface Database {
           receivables_offset?: number
           net_amount: number
           paid_via_transaction_id?: string | null
+          payment_method: string
+          payment_date: string
+          client_uuid?: string | null
           notes?: string | null
           created_at?: string
           created_by?: string | null
         }
         Update: {
           id?: string
+          settlement_period_id?: string
           hairdresser_id?: string
           period_start?: string
           period_end?: string
@@ -758,7 +816,35 @@ export interface Database {
           receivables_offset?: number
           net_amount?: number
           paid_via_transaction_id?: string | null
+          payment_method?: string
+          payment_date?: string
+          client_uuid?: string | null
           notes?: string | null
+        }
+        Relationships: []
+      }
+      commission_settlement_periods: {
+        Row: {
+          id: string
+          hairdresser_id: string
+          period_start: string
+          period_end: string
+          gross_amount: number
+          legacy: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          hairdresser_id: string
+          period_start: string
+          period_end: string
+          gross_amount: number
+          legacy?: boolean
+          created_at?: string
+        }
+        Update: {
+          gross_amount?: number
+          legacy?: boolean
         }
         Relationships: []
       }
@@ -788,6 +874,7 @@ export interface Database {
           payment_method: string
           date: string
           transaction_id: string | null
+          client_uuid: string | null
           notes: string | null
           created_at: string
         }
@@ -798,6 +885,7 @@ export interface Database {
           payment_method: string
           date: string
           transaction_id?: string | null
+          client_uuid?: string | null
           notes?: string | null
           created_at?: string
         }
@@ -808,6 +896,7 @@ export interface Database {
           payment_method?: string
           date?: string
           transaction_id?: string | null
+          client_uuid?: string | null
           notes?: string | null
         }
         Relationships: []
@@ -889,6 +978,21 @@ export interface Database {
         }
         Returns: void
       }
+      preview_inventory_recount: {
+        Args: {
+          p_lines: Json
+        }
+        Returns: Json
+      }
+      apply_inventory_recount: {
+        Args: {
+          p_client_uuid: string
+          p_cutoff_date: string
+          p_lines: Json
+          p_created_by?: string | null
+        }
+        Returns: Json
+      }
       create_sale: {
         Args: {
           p_date: string
@@ -961,6 +1065,56 @@ export interface Database {
           p_created_by: string
         }
         Returns: string
+      }
+      record_receivable_collection: {
+        Args: {
+          p_client_uuid: string
+          p_receivable_id: string
+          p_amount: number
+          p_payment_method: string
+          p_date: string
+          p_notes: string | null
+        }
+        Returns: string
+      }
+      void_transaction: {
+        Args: { p_transaction_id: string }
+        Returns: Json
+      }
+      record_partial_commission_payout: {
+        Args: {
+          p_client_uuid: string
+          p_hairdresser_id: string
+          p_period_start: string
+          p_period_end: string
+          p_installment_amount: number
+          p_receivable_ids: string[]
+          p_payment_method: string
+          p_payment_date: string
+          p_subcategory_id: string | null
+          p_notes: string | null
+        }
+        Returns: string
+      }
+      lock_period_with_snapshot: {
+        Args: { p_year: number; p_month: number }
+        Returns: void
+      }
+      record_supplier_debt_payment: {
+        Args: {
+          p_client_uuid: string; p_debt_id: string; p_amount: number
+          p_payment_method: string; p_date: string
+          p_subcategory_id: string; p_notes: string | null
+        }
+        Returns: string
+      }
+      get_opening_balance: {
+        Args: {
+          p_before_date: string
+          p_payment_method?: string | null
+          p_currency?: string | null
+        }
+        Returns: number
       }
     }
     Enums: Record<string, never>

@@ -272,6 +272,7 @@ export interface Receivable {
   concept: string
   total_amount: number
   collected_amount: number
+  currency: Currency
   due_date: string | null
   notes: string | null
   created_at: string
@@ -286,6 +287,7 @@ export interface Receivable {
 
 export interface CommissionPayout {
   id: string
+  settlement_period_id: string
   hairdresser_id: string
   period_start: string
   period_end: string
@@ -293,6 +295,9 @@ export interface CommissionPayout {
   receivables_offset: number
   net_amount: number
   paid_via_transaction_id: string | null
+  payment_method: string
+  payment_date: string
+  client_uuid: string | null
   notes: string | null
   created_at: string
   created_by: string | null
@@ -305,6 +310,7 @@ export interface ReceivableCollection {
   payment_method: string
   date: string
   transaction_id: string | null
+  client_uuid: string | null
   notes: string | null
   created_at: string
 }
