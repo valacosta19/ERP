@@ -418,13 +418,13 @@ export function PurchaseOrdersPage() {
   }
 
   async function handleCreateNewProduct() {
-    if (!newProductForm.name.trim() || !newProductForm.sku.trim()) {
-      setNewProductError('Nombre y SKU son obligatorios.')
+    if (!newProductForm.name.trim()) {
+      setNewProductError('El nombre es obligatorio.')
       return
     }
     const product = await createProduct.mutateAsync({
       name: newProductForm.name.trim(),
-      sku: newProductForm.sku.trim(),
+      sku: newProductForm.sku.trim() || null,
       sale_price: parseFloat(newProductForm.sale_price) || 0,
       min_stock: parseInt(newProductForm.min_stock) || 0,
       unit: newProductForm.unit || null,
@@ -997,9 +997,10 @@ export function PurchaseOrdersPage() {
             onChange={e => setNewProductForm(f => ({ ...f, name: e.target.value }))}
           />
           <Input
-            label="SKU *"
+            label="SKU"
             value={newProductForm.sku}
             onChange={e => setNewProductForm(f => ({ ...f, sku: e.target.value }))}
+            placeholder="Se genera automático si lo dejás vacío"
           />
           <Input
             label="Precio de venta"

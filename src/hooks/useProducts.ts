@@ -22,7 +22,7 @@ export function useProducts() {
 
 interface ProductPayload {
   name: string
-  sku: string
+  sku?: string | null
   unit: string | null
   brand: string | null
   sale_price: number
