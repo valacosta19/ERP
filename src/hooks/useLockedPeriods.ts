@@ -27,10 +27,10 @@ export function useLockPeriod() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ year, month }: { year: number; month: number }) => {
-      const { data: { user } } = await supabase.auth.getUser()
-      const { error } = await supabase
-        .from('locked_periods')
-        .insert({ year, month, locked_by: user?.id ?? null })
+      const { error } = await supabase.rpc('lock_period_with_snapshot', {
+        p_year: year,
+        p_month: month,
+      })
       if (error) throw new Error(error.message)
     },
     onSuccess: () => {
