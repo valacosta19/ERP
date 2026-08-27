@@ -98,11 +98,18 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - `src/hooks/useUpdateInventoryLot.ts` — edita lote y registra movimiento de ajuste
 - `src/hooks/useCreateInventoryLot.ts`
 - `src/hooks/useCreateInventoryMovement.ts`
+- `src/pages/inventory/RecountModal.tsx` — recuento físico: subir planilla → vista previa → aplicar
+- `src/pages/inventory/countSheet.ts` — genera y parsea la planilla de conteo (XLSX)
+- `src/hooks/useInventoryRecount.ts` — historial, preview y apply del recuento
+- `src/hooks/usePendingInventoryCount.ts` — contador de transacciones con `inventory_pending`
 
 **Datos:**
-- Tablas: `products`, `inventory_lots`, `inventory_movements`, `sale_items`
+- Tablas: `products`, `inventory_lots`, `inventory_movements`, `sale_items`, `inventory_recounts`
 - Vista: `products_with_stock` (no tiene `stock` column en `products` — el stock es `SUM(remaining_quantity)`)
 - RPC: `consume_inventory_fifo(product_id, quantity, reference_id, reference_type)` — SECURITY DEFINER
+- RPC: `preview_inventory_recount(p_lines)` — solo lectura, dry run del recuento
+- RPC: `apply_inventory_recount(p_client_uuid, p_cutoff_date, p_lines, p_created_by)` — SECURITY DEFINER, atómico e idempotente
+- Trigger: `trg_set_product_sku` en `products` — completa `sku` cuando llega nulo o vacío (`PREFIX-NNNN` con secuencia global `product_sku_seq`)
 
 **Invariantes (NO romper):**
 - **FIFO solo en Postgres.** El RPC `consume_inventory_fifo` es la única forma de descontar stock. Nunca restar `remaining_quantity` directamente desde el frontend.
@@ -111,6 +118,12 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - **`products_with_stock` debe recrearse con DROP + CREATE** al agregar columnas — `CREATE OR REPLACE` no reordena columnas y puede romper queries por posición.
 - **Registrar un servicio NO descuenta inventario.** `service_recipes` solo sirve para calcular el costo teórico. El descuento físico de productos usados en un servicio se registra manualmente como transacción "Consumos y cortesías" (`deducts_inventory = true`), que llama `consume_inventory_fifo` en `TransactionsPage`.
 - **`consume_inventory_fifo` se llama desde `TransactionsPage.tsx` línea ~228** cuando la categoría de gasto tiene `deducts_inventory = true`.
+- **El recuento físico nunca borra ni recostea lotes viejos.** `apply_inventory_recount` solo lleva `remaining_quantity` a 0 con un movimiento `adjustment` por lote y abre un lote nuevo fechado en el corte. No toca `unit_cost` de los lotes existentes, porque el costo histórico de cada venta vive en `sale_items.unit_cost` y `sale_items.lot_id` es `NOT NULL` sin `ON DELETE`: borrar lotes exigiría borrar el historial de ventas y destruiría la utilidad de los meses cerrados.
+- **El recuento no crea `transactions`.** La merma impacta solo inventario (Valoración y Balance), nunca la utilidad del mes. Se consulta en el historial de recuentos de la pestaña Valoración. Si se quiere llevar a resultado, se registra a mano como gasto en `Consumos y cortesías`.
+- **El costo de material histórico se congeló hasta abril 2026.** `066_backfill_recipe_cost_snapshots.sql` escribió las filas faltantes de `transaction_recipe_costs` para los servicios de marzo/abril 2026, que no las tenían, usando los costos vigentes antes del recuento. Sin eso, cambiar costos reescribía la pestaña Costos de esos meses (el fallback de `serviceDeductionsByMonth` lee `min_cost`/`max_cost` en vivo, sin filtro de fecha). Cualquier backfill futuro de este tipo debe correr **antes** de tocar costos, nunca después.
+- **En la planilla de conteo, celda vacía ≠ 0.** Vacío significa "no contado" y el producto queda intacto; `0` lleva el stock a cero. `parseCountSheet` usa `parseNumberOrNull` para distinguirlos — no usar un parser que devuelva 0 para vacío.
+- **Toda query que alimente un informe tiene que paginar con `fetchAllRows`.** Supabase corta en 1000 filas por request, en silencio: no hay error, simplemente faltan filas. En `transaction_recipe_costs` eso hacía que transacciones con foto de costo guardada parecieran no tenerla, cayeran al costo en vivo y un recuento de inventario moviera la utilidad de meses cerrados. Siempre con un `ORDER BY` de clave única para que la paginación sea determinística. Ojo: un backfill que inserte filas puede cruzar el umbral y destapar el bug de golpe.
+- **El SKU se genera en la DB, no en el navegador.** El trigger garantiza unicidad entre inserts concurrentes y entre el importador y los formularios. No reintroducir generación client-side.
 
 ---
 
@@ -162,19 +175,26 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - `src/components/StaffWithdrawalModal.tsx` — modal unificado con prop `mode: 'withdrawal' | 'advance'`. Submitea via pipeline offline (no llama RPCs directamente).
 
 **Datos:**
-- Tablas: `hairdressers`, `transaction_hairdressers`, `receivables` (con `hairdresser_id + product_id`), `receivable_collections`, `commission_payouts`, `transactions`
+- Tablas: `hairdressers`, `transaction_hairdressers`, `receivables` (con `hairdresser_id + product_id`), `receivable_collections`, `commission_settlement_periods`, `commission_payouts`, `transactions`
 - RPC: `create_staff_receivable(p_client_uuid, hairdresser_id, product_id, quantity, value_amount, ...)` — idempotente por `client_uuid`. Registra retiro de producto, inserta `inventory_movements`, NO crea `transactions`.
 - RPC: `create_staff_advance(p_client_uuid, hairdresser_id, amount, currency, payment_method, ...)` — idempotente por `client_uuid`. Crea una `transactions` (Movimiento/transfer, salida de caja) + un `receivable` contra el empleado. No toca inventario.
-- RPC: `settle_commission_payout(hairdresser_id, period_start, period_end)` — inserta `receivable_collections` por retiros/adelantos, registra en `commission_payouts`, devuelve el monto neto.
+- RPC: `record_partial_commission_payout(client_uuid, hairdresser_id, period_start, period_end, installment_amount, ...)` — calcula la comisión autoritativa desde transacciones ARS, registra una cuota, sus compensaciones y el egreso neto en una sola transacción atómica e idempotente.
 
 **Invariantes (NO romper):**
 - **Los retiros de staff NO son gastos en `transactions`.** Un retiro de producto se modela como `receivables` con `hairdresser_id`. Solo la liquidación neta final crea una fila en `transactions` expense.
 - **Los adelantos de sueldo son Movimientos (transfer), no gastos.** Salen de caja pero no impactan el P&L. Se modelan como `receivables` con `hairdresser_id` y `source_transaction_id`. Se compensan al liquidar.
 - **`create_staff_receivable` descuenta inventario** via `inventory_movements` con `reference_type = 'receivable'`. No crea `transactions`.
 - **Ambos RPCs son idempotentes** — el short-circuit por `receivables.client_uuid` evita doble-consumo de FIFO o doble-transacción en reintentos offline.
-- **La liquidación (`settle_commission_payout`) compensa CUALQUIER receivable** del hairdresser con saldo positivo, sin distinguir si es retiro de producto o adelanto de dinero.
+- **La liquidación compensa CUALQUIER receivable seleccionado** del hairdresser con saldo positivo, sin distinguir si es retiro de producto o adelanto de dinero. Cada retiro seleccionado se aplica completo; si supera la cuota hay que desmarcarlo o aumentar el importe.
 - **La comisión devengada es siempre en bruto.** El cálculo de descuento por retiros/adelantos ocurre al liquidar.
-- **`settle_commission_payout` devuelve el neto.** La UI crea un único `transactions` expense por ese neto. No crear transactions por el bruto.
+- **Cada fila de `commission_payouts` es una cuota bruta liquidada.** Para una profesional y período exactos: `saldo = bruta devengada − SUM(gross_amount)` y `gross_amount = receivables_offset + net_amount`.
+- **El RPC crea el egreso por el neto.** Si una cuota queda totalmente compensada no crea `transactions`; siempre conserva fecha, método e historial en `commission_payouts`. No crear transacciones por el bruto.
+- **La base calcula el bruto; no confía en el navegador.** Suma `amount + seña_amount` y aplica `transaction_hairdressers.commission_rate` sobre las transacciones ARS no anuladas del rango.
+- **Los períodos nuevos de una profesional no se pueden superponer.** `commission_settlement_periods` usa una restricción `EXCLUDE` parcial sobre los encabezados nuevos. Varias cuotas reutilizan exactamente el mismo período. Los rangos históricos se importan con `legacy = true`, incluso si ya se superponían; no se fusionan ni reinterpretan. Si un rango solicitado cruza un rango histórico diferente, el RPC lo bloquea hasta resolver manualmente esa ambigüedad.
+- **La concurrencia y los reintentos se resuelven en Postgres.** `client_uuid` evita duplicados y un lock por profesional serializa tanto cuotas concurrentes como la creación de períodos.
+- **Un pago neto exige categoría de gasto.** Las cuotas cubiertas solo con retiros/adelantos pueden omitirla porque no crean una transacción.
+- **Las tablas de liquidación son de escritura exclusiva del RPC.** `authenticated` conserva `SELECT`, pero no `INSERT`, `UPDATE` ni `DELETE`; RLS sola no debe ser la barrera contra saltarse los controles atómicos.
+- **Las comisiones en moneda extranjera no se liquidan hasta tener cotización persistida.** El reporte usa una cotización externa en vivo, que no es evidencia contable autoritativa para un RPC.
 - **Tasa de comisión por profesional.** Almacenada en `transaction_hairdressers.commission_rate` (libre por transacción). Default array en `hairdressers.commission_rates` (migración `056`).
 
 ---

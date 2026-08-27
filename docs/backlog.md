@@ -4,11 +4,36 @@ Features e iniciativas pendientes, ordenadas por prioridad.
 
 ---
 
+## Crítico — Seguridad
+
+- [ ] **Auditar permisos de EXECUTE en las funciones `SECURITY DEFINER`** — Postgres otorga `EXECUTE` a `PUBLIC` por defecto y Supabase expone todo `public` en `/rest/v1/rpc/<nombre>` al rol `anon`. La anon key viaja pública en el bundle del frontend. Como `SECURITY DEFINER` saltea RLS, cualquier función sin chequeo propio de `auth.uid()` queda accesible sin autenticar. **Verificado empíricamente**: una llamada sin autenticar a `preview_inventory_recount` devolvió datos reales de inventario (arreglado en `067`).
+
+  Funciones sin chequeo de `auth.uid()`, por riesgo:
+  - `receive_purchase_order` (últ. `047`) — **muta**: crea lotes, movimientos y marca la OC como recibida.
+  - `consume_inventory_fifo` (`002`) — **muta**: descuenta stock y crea `sale_items`.
+  - `create_sale` (`003`) — **muta**: crea transacciones y ventas.
+  - `compute_period_snapshots` (`063`) — **muta**: borra y reescribe snapshots de un período.
+  - `suggest_reorder_quantity` (últ. `058`) — solo lectura, pero filtra historial de ventas y movimientos.
+
+  Al arreglarlo, ojo con **no** exigir rol admin en las que el staff no-admin usa legítimamente (`create_funnel_unit`, `consume_inventory_fifo` vía carga rápida): ahí corresponde exigir usuario autenticado, no admin. Patrón a copiar: `create_staff_receivable` en `061` (chequea `auth.uid() IS NULL`) y `apply_inventory_recount` en `065` (chequea rol admin). Cerrar además con `REVOKE EXECUTE ... FROM PUBLIC, anon` + `GRANT ... TO authenticated`.
+
+---
+
 ## Crítico — Integridad contable
 
 - [ ] **Subcategoría requerida en gastos** — `subcategory_id` aún es nullable. Hacer el campo obligatorio en el formulario de transacciones cuando `transaction_type = 'expense'`. El picker debe filtrar subcategorías por tipo de transacción.
 
 - [ ] **Bug: reservas sin categoría al editarlas** — Al editar una reserva (Fondos), el campo "Monto" aparece vacío aunque se ve en la tabla. Investigar state management del modal de edición.
+
+- [ ] **Anular una transacción no devuelve el stock** — `useVoidTransaction` (`src/hooks/useTransactions.ts`) solo setea `voided_at`: los `sale_items` y los movimientos `out` sobreviven, así que el inventario nunca se recompone. Es la mayor fuente estructural de desvío entre sistema y físico. Necesita un RPC de reversa que inserte movimientos `adjustment` compensatorios y devuelva el remanente a los lotes originales. Fase propia — detectado al implementar el recuento físico (fase 29).
+
+- [ ] **No existe valuación de inventario a una fecha** — `useInventoryValuation` y `useBalanceSheet` (`src/hooks/useReports.ts`) leen `inventory_lots WHERE remaining_quantity > 0` sin filtro de fecha; `asOfDate` filtra solo pagos. El `inventoryValue` y el patrimonio de meses pasados siempre reflejan el stock de hoy, así que cualquier ajuste reescribe el histórico. La migración `063` resolvió esto para caja con `period_balance_snapshots` y el mismo patrón se puede extender a inventario.
+
+- [ ] **`locked_periods` no protege inventario** — `check_transaction_period_not_locked()` (`033`) está enganchado solo a `transactions`. No hay trigger en `inventory_lots`, `inventory_movements` ni `sale_items`, y tampoco guarda de DELETE. Se pueden crear, recostear o borrar lotes dentro de un mes cerrado sin resistencia. `docs/ARCHITECTURE.md` afirma una garantía más amplia de la que el schema cumple. `apply_inventory_recount` valida la fecha de corte por su cuenta como paliativo.
+
+- [ ] **`products_with_stock` pierde el costo de lotes agotados** — La migración `017` había agregado un fallback `COALESCE(..., MIN(il.unit_cost))` para que un producto sin stock conservara su rango de costo; `019` recreó la vista sin él y `026` lo arrastró. Hoy `min_cost`/`max_cost` quedan NULL cuando todos los lotes están agotados, y eso se coalescea a 0 en los snapshots de `transaction_recipe_costs`.
+
+- [ ] **`--color-card` no existe** — `ReportsPage.tsx` lo usa 21 veces pero no está definido en `src/index.css` (el token real es `--color-surface`), así que esas tarjetas quedan sin fondo. Reemplazar en bloque.
 
 ---
 
