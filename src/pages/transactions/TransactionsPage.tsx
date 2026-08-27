@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, Link, Ban, Zap } from 'lucide-react'
+import { X, Link, Ban, Zap, Download } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { currentMonthRange } from '@/lib/dateRange'
 import { TopBar } from '@/components/layout/TopBar'
@@ -69,7 +69,10 @@ export function TransactionsPage() {
   const updateTx = useUpdateTransaction()
   const voidTx = useVoidTransaction()
   const { data: lockedPeriods = [] } = useLockedPeriods()
-  const { data: paymentBalances = [] } = usePaymentMethodBalances({ currency: currencyFilter || undefined })
+  const { data: paymentBalances = [] } = usePaymentMethodBalances({
+    to: to || undefined,
+    currency: currencyFilter || undefined,
+  })
   const { data: paymentMethodsData = [] } = usePaymentMethods()
   const paymentMethodOptions = paymentMethodsData
     .filter(pm => pm.active)
@@ -107,18 +110,29 @@ export function TransactionsPage() {
     pendingOnly,
   })
 
+  const normalizedPaymentMethodFilter = paymentMethodFilter.toLowerCase()
   const filteredTransactions = paymentMethodFilter
-    ? transactions.filter(tx => tx.payments?.some(p => p.payment_method.toLowerCase() === paymentMethodFilter.toLowerCase()))
+    ? transactions.filter(tx => tx.payments?.some(p => p.payment_method.toLowerCase() === normalizedPaymentMethodFilter))
     : transactions
 
   const totals = filteredTransactions
     .filter(tx => !tx.voided_at)
     .reduce((acc, tx) => {
-      const dir = getTxDirection(tx)
       const cur = tx.currency
       if (!acc[cur]) acc[cur] = { entrada: 0, salida: 0 }
-      if (dir === 'entrada') acc[cur].entrada += tx.amount
-      else if (dir === 'salida') acc[cur].salida += tx.amount
+
+      if (paymentMethodFilter) {
+        tx.payments
+          ?.filter(payment => payment.payment_method.toLowerCase() === normalizedPaymentMethodFilter)
+          .forEach(payment => {
+            if (payment.type === 'entrada') acc[cur].entrada += payment.amount
+            else if (payment.type === 'salida') acc[cur].salida += payment.amount
+          })
+      } else {
+        const dir = getTxDirection(tx)
+        if (dir === 'entrada') acc[cur].entrada += tx.amount
+        else if (dir === 'salida') acc[cur].salida += tx.amount
+      }
       return acc
     }, {} as Record<string, { entrada: number; salida: number }>)
 
@@ -237,6 +251,64 @@ export function TransactionsPage() {
 
     qc.invalidateQueries({ queryKey: ['products'] })
     setModalOpen(false)
+  }
+
+  async function exportCSV() {
+    const active = filteredTransactions
+      .filter(tx => !tx.voided_at)
+      .slice()
+      .sort((a, b) => a.date.localeCompare(b.date))
+
+    const fmt = (n: number) => n.toFixed(2).replace('.', ',')
+
+    let startingBalance = 0
+    if (from) {
+      const { data, error } = await supabase.rpc('get_opening_balance', {
+        p_before_date: from,
+        p_payment_method: paymentMethodFilter || null,
+        p_currency: currencyFilter || null,
+      })
+      if (error) throw new Error(error.message)
+      startingBalance = data ?? 0
+    }
+
+    let balance = startingBalance
+    const rows = active.map(tx => {
+      const dir = getTxDirection(tx)
+      const signed = dir === 'entrada' ? tx.amount : dir === 'salida' ? -tx.amount : tx.amount
+      balance += signed
+      const methods = tx.payments && tx.payments.length > 0
+        ? tx.payments.map(p => p.payment_method).join(' / ')
+        : ''
+      return [
+        tx.date,
+        `"${(tx.description ?? '').replace(/"/g, '""')}"`,
+        `"${methods}"`,
+        fmt(signed),
+        fmt(balance),
+      ].join(';')
+    })
+
+    const totalCredits = active.reduce((s, tx) => {
+      const dir = getTxDirection(tx)
+      return dir === 'entrada' ? s + tx.amount : s
+    }, 0)
+    const totalDebits = active.reduce((s, tx) => {
+      const dir = getTxDirection(tx)
+      return dir === 'salida' ? s - tx.amount : s
+    }, 0)
+
+    const summary = `BALANCE_INICIAL;CREDITOS;DEBITOS;BALANCE_FINAL\n${fmt(startingBalance)};${fmt(totalCredits)};${fmt(totalDebits)};${fmt(balance)}`
+    const header = 'FECHA;DESCRIPCION;METODO_PAGO;MONTO_NETO;BALANCE_PARCIAL'
+    const csv = [summary, '', header, ...rows].join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `transacciones_${from || 'todo'}_${to || 'todo'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function handleVoid(id: string) {
@@ -368,6 +440,10 @@ export function TransactionsPage() {
               <Link size={14} />
               Reconciliar productos
             </Button>
+            <Button variant="secondary" size="sm" onClick={exportCSV}>
+              <Download size={14} />
+              Exportar CSV
+            </Button>
             <Button onClick={() => navigate('/transactions/cargar')} size="sm">
               <Zap size={14} />
               Nueva transacción
@@ -455,6 +531,9 @@ export function TransactionsPage() {
               <div className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--color-muted)' }}>
                 {b.method}
               </div>
+              <div className="text-xs mb-2" style={{ color: 'var(--color-muted)' }}>
+                {to ? `Saldo al ${to.split('-').reverse().join('/')}` : 'Saldo acumulado'}
+              </div>
               <div className="flex flex-col gap-1">
                 {b.currencies.map(({ currency, balance }) => (
                   <div key={currency} className="flex items-baseline justify-between gap-2">
@@ -482,17 +561,12 @@ export function TransactionsPage() {
                   {Object.entries(totals).map(([currency, { entrada, salida }]) => (
                     <tr key={currency} className="border-t-2 border-[var(--color-border)]" style={{ background: 'var(--color-bg)' }}>
                       <td colSpan={6} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
-                        Total {Object.keys(totals).length > 1 ? currency : ''}
+                        Flujo neto del período {Object.keys(totals).length > 1 ? currency : ''}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex flex-col items-end gap-0.5">
-                          <span className="font-semibold tabular-nums" style={{ color: 'var(--color-success)' }}>
-                            +{CURRENCY_SYMBOL[currency as Currency] ?? ''}{entrada.toLocaleString('es-CO')}
-                          </span>
-                          <span className="font-semibold tabular-nums" style={{ color: 'var(--color-danger)' }}>
-                            -{CURRENCY_SYMBOL[currency as Currency] ?? ''}{salida.toLocaleString('es-CO')}
-                          </span>
-                        </div>
+                        <span className="font-semibold tabular-nums" style={{ color: entrada - salida >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                          {entrada - salida >= 0 ? '+' : '-'}{CURRENCY_SYMBOL[currency as Currency] ?? ''}{Math.abs(entrada - salida).toLocaleString('es-CO')}
+                        </span>
                       </td>
                       <td />
                     </tr>

@@ -11,10 +11,12 @@ import { useSupplierDebts, useRecordSupplierDebtPayment } from '@/hooks/useSuppl
 import { useReceivables, useCreateReceivable, useRecordReceivableCollection } from '@/hooks/useReceivables'
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { formatDate } from '@/lib/formatDate'
-import type { SupplierDebt, Receivable } from '@/types'
+import type { Currency, SupplierDebt, Receivable } from '@/types'
 
-function fmtCurrency(amount: number) {
-  return `$${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+const CURRENCY_SYMBOL: Record<Currency, string> = { ARS: '$', USD: 'U$D', EUR: '€' }
+
+function fmtCurrency(amount: number, currency: Currency = 'ARS') {
+  return `${CURRENCY_SYMBOL[currency]}${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function today() {
@@ -59,7 +61,7 @@ function APTab() {
   const recordPayment = useRecordSupplierDebtPayment()
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [payModal, setPayModal] = useState<{ debt: SupplierDebt } | null>(null)
+  const [payModal, setPayModal] = useState<{ debt: SupplierDebt; clientUuid: string } | null>(null)
   const [payForm, setPayForm] = useState({ amount: '', payment_method: '', date: today(), notes: '' })
   const [payError, setPayError] = useState('')
 
@@ -73,7 +75,7 @@ function APTab() {
       notes: '',
     })
     setPayError('')
-    setPayModal({ debt })
+    setPayModal({ debt, clientUuid: crypto.randomUUID() })
   }
 
   async function handlePay() {
@@ -85,11 +87,11 @@ function APTab() {
     if (amount > maxPending + 0.001) { setPayError(`El monto no puede superar el saldo pendiente (${fmtCurrency(maxPending)}).`); return }
 
     await recordPayment.mutateAsync({
+      client_uuid: payModal.clientUuid,
       debt_id: payModal.debt.id,
       amount,
       payment_method: payForm.payment_method,
       date: payForm.date,
-      transaction_id: null,
       notes: payForm.notes || null,
     })
     setPayModal(null)
@@ -275,18 +277,19 @@ function StaffWithdrawalsSummary({ receivables }: { receivables: Receivable[] })
   const staffEntries = receivables.filter(r => r.hairdresser_id != null)
   if (staffEntries.length === 0) return null
 
-  const byHairdresser = new Map<string, { name: string; pending: number; total: number; count: number }>()
+  const byHairdresserAndCurrency = new Map<string, { name: string; currency: Currency; pending: number; count: number }>()
   for (const r of staffEntries) {
     const pending = pendingAmount(r.total_amount, r.collected_amount)
-    const key = r.hairdresser_id as string
-    const existing = byHairdresser.get(key) ?? { name: r.debtor_name, pending: 0, total: 0, count: 0 }
+    const key = `${r.hairdresser_id}:${r.currency}`
+    const existing = byHairdresserAndCurrency.get(key) ?? { name: r.debtor_name, currency: r.currency, pending: 0, count: 0 }
     existing.pending += pending
-    existing.total += r.total_amount
     existing.count += 1
-    byHairdresser.set(key, existing)
+    byHairdresserAndCurrency.set(key, existing)
   }
 
-  const rows = Array.from(byHairdresser.values()).filter(e => e.pending > 0).sort((a, b) => b.pending - a.pending)
+  const rows = Array.from(byHairdresserAndCurrency.values())
+    .filter(entry => entry.pending > 0)
+    .sort((a, b) => a.name.localeCompare(b.name) || a.currency.localeCompare(b.currency))
   if (rows.length === 0) return null
 
   return (
@@ -305,10 +308,10 @@ function StaffWithdrawalsSummary({ receivables }: { receivables: Receivable[] })
         </thead>
         <tbody>
           {rows.map(r => (
-            <tr key={r.name} className="border-b border-[var(--color-border)] last:border-b-0">
+            <tr key={`${r.name}:${r.currency}`} className="border-b border-[var(--color-border)] last:border-b-0">
               <td className="px-3 py-2 text-[var(--color-text)]">{r.name}</td>
               <td className="px-3 py-2 text-right tabular-nums text-[var(--color-muted)]">{r.count}</td>
-              <td className="px-3 py-2 text-right tabular-nums font-semibold text-[var(--color-text)]">{fmtCurrency(r.pending)}</td>
+              <td className="px-3 py-2 text-right tabular-nums font-semibold text-[var(--color-text)]">{fmtCurrency(r.pending, r.currency)}</td>
             </tr>
           ))}
         </tbody>
@@ -325,17 +328,17 @@ function ARTab() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
-  const [createForm, setCreateForm] = useState({ debtor_name: '', concept: '', total_amount: '', due_date: '', notes: '' })
+  const [createForm, setCreateForm] = useState({ debtor_name: '', concept: '', total_amount: '', currency: 'ARS' as Currency, due_date: '', notes: '' })
   const [createError, setCreateError] = useState('')
 
-  const [collectModal, setCollectModal] = useState<{ receivable: Receivable } | null>(null)
+  const [collectModal, setCollectModal] = useState<{ receivable: Receivable; clientUuid: string } | null>(null)
   const [collectForm, setCollectForm] = useState({ amount: '', payment_method: '', date: today(), notes: '' })
   const [collectError, setCollectError] = useState('')
 
   const activePaymentMethods = paymentMethods.filter(m => m.active)
 
   function openCreate() {
-    setCreateForm({ debtor_name: '', concept: '', total_amount: '', due_date: '', notes: '' })
+    setCreateForm({ debtor_name: '', concept: '', total_amount: '', currency: 'ARS', due_date: '', notes: '' })
     setCreateError('')
     setCreateOpen(true)
   }
@@ -349,6 +352,7 @@ function ARTab() {
       debtor_name: createForm.debtor_name.trim(),
       concept: createForm.concept.trim(),
       total_amount: amount,
+      currency: createForm.currency,
       due_date: createForm.due_date || null,
       notes: createForm.notes || null,
     })
@@ -363,7 +367,7 @@ function ARTab() {
       notes: '',
     })
     setCollectError('')
-    setCollectModal({ receivable: r })
+    setCollectModal({ receivable: r, clientUuid: crypto.randomUUID() })
   }
 
   async function handleCollect() {
@@ -372,14 +376,14 @@ function ARTab() {
     if (!amount || amount <= 0) { setCollectError('Ingresá un monto válido.'); return }
     if (!collectForm.payment_method) { setCollectError('Seleccioná un método de pago.'); return }
     const maxPending = pendingAmount(collectModal.receivable.total_amount, collectModal.receivable.collected_amount)
-    if (amount > maxPending + 0.001) { setCollectError(`El monto no puede superar el saldo (${fmtCurrency(maxPending)}).`); return }
+    if (amount > maxPending + 0.001) { setCollectError(`El monto no puede superar el saldo (${fmtCurrency(maxPending, collectModal.receivable.currency)}).`); return }
 
     await recordCollection.mutateAsync({
+      client_uuid: collectModal.clientUuid,
       receivable_id: collectModal.receivable.id,
       amount,
       payment_method: collectForm.payment_method,
       date: collectForm.date,
-      description: `${collectModal.receivable.concept} - ${collectModal.receivable.debtor_name}`,
       notes: collectForm.notes || null,
     })
     setCollectModal(null)
@@ -414,8 +418,8 @@ function ARTab() {
           </td>
           <td className="px-3 py-3 text-sm text-[var(--color-text)]">{r.debtor_name}</td>
           <td className="px-3 py-3 text-sm text-[var(--color-muted)]">{r.concept}</td>
-          <td className="px-3 py-3 text-sm tabular-nums text-[var(--color-text)]">{fmtCurrency(r.total_amount)}</td>
-          <td className="px-3 py-3 text-sm tabular-nums font-semibold text-[var(--color-text)]">{fmtCurrency(pending)}</td>
+          <td className="px-3 py-3 text-sm tabular-nums text-[var(--color-text)]">{fmtCurrency(r.total_amount, r.currency)}</td>
+          <td className="px-3 py-3 text-sm tabular-nums font-semibold text-[var(--color-text)]">{fmtCurrency(pending, r.currency)}</td>
           <td className="px-3 py-3 text-sm text-[var(--color-muted)]">{r.due_date ? formatDate(r.due_date) : '—'}</td>
           <td className="px-3 py-3">
             <Badge variant={STATUS_BADGE[status]}>{STATUS_LABEL[status]}</Badge>
@@ -448,7 +452,7 @@ function ARTab() {
                       <tr key={c.id} className="border-t border-[var(--color-border)]">
                         <td className="py-1 text-[var(--color-muted)]">{formatDate(c.date)}</td>
                         <td className="py-1 text-[var(--color-text)]">{c.payment_method}</td>
-                        <td className="py-1 text-right tabular-nums text-[var(--color-text)]">{fmtCurrency(c.amount)}</td>
+                        <td className="py-1 text-right tabular-nums text-[var(--color-text)]">{fmtCurrency(c.amount, r.currency)}</td>
                         <td className="py-1 text-[var(--color-muted)]">{c.notes ?? '—'}</td>
                       </tr>
                     ))}
@@ -542,6 +546,12 @@ function ARTab() {
             value={createForm.concept}
             onChange={e => setCreateForm(f => ({ ...f, concept: e.target.value }))}
           />
+          <Select
+            label="Moneda"
+            options={(['ARS', 'USD', 'EUR'] as Currency[]).map(currency => ({ value: currency, label: currency }))}
+            value={createForm.currency}
+            onChange={e => setCreateForm(f => ({ ...f, currency: e.target.value as Currency }))}
+          />
           <Input
             label="Monto total"
             type="number"
@@ -549,7 +559,7 @@ function ARTab() {
             step="0.01"
             value={createForm.total_amount}
             onChange={e => setCreateForm(f => ({ ...f, total_amount: e.target.value }))}
-            prefix="$"
+            prefix={CURRENCY_SYMBOL[createForm.currency]}
           />
           <Input
             label="Fecha de vencimiento (opcional)"
@@ -575,7 +585,7 @@ function ARTab() {
           <div className="space-y-3">
             <p className="text-sm text-[var(--color-muted)]">
               Deudor: <span className="text-[var(--color-text)] font-medium">{collectModal.receivable.debtor_name}</span>
-              {' · '}Saldo: <span className="font-medium">{fmtCurrency(pendingAmount(collectModal.receivable.total_amount, collectModal.receivable.collected_amount))}</span>
+              {' · '}Saldo: <span className="font-medium">{fmtCurrency(pendingAmount(collectModal.receivable.total_amount, collectModal.receivable.collected_amount), collectModal.receivable.currency)}</span>
             </p>
             <Input
               label="Monto"
@@ -584,7 +594,7 @@ function ARTab() {
               step="0.01"
               value={collectForm.amount}
               onChange={e => setCollectForm(f => ({ ...f, amount: e.target.value }))}
-              prefix="$"
+              prefix={CURRENCY_SYMBOL[collectModal.receivable.currency]}
             />
             <Select
               label="Método de pago"

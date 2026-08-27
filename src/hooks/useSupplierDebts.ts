@@ -1,11 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
-import type { SupplierDebt, SupplierDebtPayment } from '@/types'
+import { fetchInventoryPurchaseCategoryId } from '@/lib/inventoryPurchaseCategory'
+import type { SupplierDebt } from '@/types'
 import type { Database } from '@/types/database'
 
 type DebtInsert = Database['public']['Tables']['supplier_debts']['Insert']
-type DebtUpdate = Database['public']['Tables']['supplier_debts']['Update']
-type PaymentInsert = Database['public']['Tables']['supplier_debt_payments']['Insert']
 
 export function useSupplierDebts() {
   return useQuery({
@@ -53,11 +52,11 @@ export function useCreateSupplierDebt() {
 }
 
 interface RecordPaymentPayload {
+  client_uuid: string
   debt_id: string
   amount: number
   payment_method: string
   date: string
-  transaction_id: string | null
   notes?: string | null
 }
 
@@ -65,36 +64,24 @@ export function useRecordSupplierDebtPayment() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (payload: RecordPaymentPayload) => {
-      const { data: payment, error: payErr } = await supabase
-        .from('supplier_debt_payments')
-        .insert({
-          debt_id: payload.debt_id,
-          amount: payload.amount,
-          payment_method: payload.payment_method,
-          date: payload.date,
-          transaction_id: payload.transaction_id,
-          notes: payload.notes ?? null,
-        } as PaymentInsert)
-        .select('*')
-        .single()
-      if (payErr) throw new Error(payErr.message)
-
-      const { data: debt, error: debtErr } = await supabase
-        .from('supplier_debts')
-        .select('paid_amount')
-        .eq('id', payload.debt_id)
-        .single()
-      if (debtErr) throw new Error(debtErr.message)
-
-      const newPaid = (debt.paid_amount as number) + payload.amount
-      const { error: updateErr } = await supabase
-        .from('supplier_debts')
-        .update({ paid_amount: newPaid } as DebtUpdate)
-        .eq('id', payload.debt_id)
-      if (updateErr) throw new Error(updateErr.message)
-
-      return payment as unknown as SupplierDebtPayment
+      const subcategoryId = await fetchInventoryPurchaseCategoryId()
+      const { data, error } = await supabase.rpc('record_supplier_debt_payment', {
+        p_client_uuid: payload.client_uuid,
+        p_debt_id: payload.debt_id,
+        p_amount: payload.amount,
+        p_payment_method: payload.payment_method,
+        p_date: payload.date,
+        p_subcategory_id: subcategoryId,
+        p_notes: payload.notes ?? null,
+      })
+      if (error) throw new Error(error.message)
+      return data
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['supplier_debts'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['supplier_debts'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
+      qc.invalidateQueries({ queryKey: ['reports'] })
+    },
   })
 }

@@ -10,13 +10,16 @@ import { useFinancialReport, useInventoryValuation, useProfitReport, useBalanceS
 import { useCommissionsReport } from '@/hooks/useCommissionsReport'
 import { useTransactions } from '@/hooks/useTransactions'
 import { useTransactionCategories } from '@/hooks/useTransactionCategories'
-import { useStaffReceivables } from '@/hooks/useStaffReceivables'
+import { useCommissionPayouts, useStaffReceivables } from '@/hooks/useStaffReceivables'
 import { SettleCommissionModal } from '@/components/SettleCommissionModal'
 import { useFixedCosts } from '@/hooks/useFixedCosts'
 import { useProducts } from '@/hooks/useProducts'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useTransactionRecipeCosts } from '@/hooks/useTransactionRecipeCosts'
+import { useInventoryRecounts } from '@/hooks/useInventoryRecount'
 import { supabase } from '@/lib/supabaseClient'
+import { fetchAllRows } from '@/lib/fetchAllRows'
+import type { InventoryRecount } from '@/hooks/useInventoryRecount'
 import type { FinancialCategoryRow, InventoryValuationRow, ProfitMonthRow } from '@/hooks/useReports'
 
 import type { CommissionDetailRow } from '@/hooks/useCommissionsReport'
@@ -101,6 +104,45 @@ const valuationColumns = [
   },
 ]
 
+const recountColumns = [
+  {
+    key: 'cutoff_date',
+    header: 'Fecha de corte',
+    render: (r: InventoryRecount) => formatDate(r.cutoff_date),
+  },
+  {
+    key: 'contados',
+    header: 'Productos contados',
+    render: (r: InventoryRecount) => r.totals.contados ?? 0,
+    className: 'text-right',
+  },
+  {
+    key: 'faltantes',
+    header: 'Faltantes',
+    render: (r: InventoryRecount) => r.totals.faltantes ?? 0,
+    className: 'text-right',
+  },
+  {
+    key: 'sobrantes',
+    header: 'Sobrantes',
+    render: (r: InventoryRecount) => r.totals.sobrantes ?? 0,
+    className: 'text-right',
+  },
+  {
+    key: 'delta_valor',
+    header: 'Diferencia de valor',
+    render: (r: InventoryRecount) => (
+      <span
+        className="tabular-nums font-medium"
+        style={{ color: (r.totals.delta_valor ?? 0) < 0 ? 'var(--color-danger)' : 'var(--color-success)' }}
+      >
+        {fmtAmount(r.totals.delta_valor ?? 0)}
+      </span>
+    ),
+    className: 'text-right',
+  },
+]
+
 const sueldoColumns = [
   { key: 'date', header: 'Fecha', render: (tx: Transaction) => formatDate(tx.date) },
   { key: 'description', header: 'Descripción', render: (tx: Transaction) => tx.description ?? '—' },
@@ -135,7 +177,7 @@ export function ReportsPage() {
   const [commTo, setCommTo] = useState(() => currentMonthRange().to)
   const [commProfFilter, setCommProfFilter] = useState('')
   const [commViewMode, setCommViewMode] = useState<CommViewMode>('detalle')
-  const [settleTarget, setSettleTarget] = useState<{ id: string; name: string; gross: number } | null>(null)
+  const [settleTarget, setSettleTarget] = useState<{ id: string; name: string; gross: number; settled: number } | null>(null)
   const [profitFrom, setProfitFrom] = useState(() => currentMonthRange().from)
   const [profitTo, setProfitTo] = useState(() => currentMonthRange().to)
   const [balanceDate, setBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -158,13 +200,26 @@ export function ReportsPage() {
 
   const financial = useFinancialReport({ from: from || undefined, to: to || undefined, currency: currency || undefined })
   const valuation = useInventoryValuation()
+  const recounts = useInventoryRecounts()
   const commissions = useCommissionsReport({ from: commFrom || undefined, to: commTo || undefined, usdRate: dolarBlue?.venta })
+  const commissionPayouts = useCommissionPayouts({
+    period_start: commFrom || undefined,
+    period_end: commTo || undefined,
+  })
   const { data: staffReceivables = [] } = useStaffReceivables()
+
+  const settledByProfessional = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const payout of commissionPayouts.data ?? []) {
+      map.set(payout.hairdresser_id, (map.get(payout.hairdresser_id) ?? 0) + Number(payout.gross_amount))
+    }
+    return map
+  }, [commissionPayouts.data])
 
   const pendingByProfessional = useMemo(() => {
     const map = new Map<string, number>()
     for (const r of staffReceivables) {
-      if (!r.hairdresser_id) continue
+      if (!r.hairdresser_id || r.currency !== 'ARS') continue
       const remaining = r.total_amount - r.collected_amount
       if (remaining <= 0) continue
       map.set(r.hairdresser_id, (map.get(r.hairdresser_id) ?? 0) + remaining)
@@ -292,35 +347,49 @@ export function ReportsPage() {
   const { data: allRecipes = [] } = useQuery<ServiceRecipe[]>({
     queryKey: ['service-recipes-all'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('service_recipes').select('*')
-      if (error) throw new Error(error.message)
-      return data as ServiceRecipe[]
+      return fetchAllRows<ServiceRecipe>((rangeFrom, rangeTo) =>
+        supabase.from('service_recipes').select('*').order('id', { ascending: true }).range(rangeFrom, rangeTo),
+      )
     },
   })
 
   const { data: txRevenue = [] } = useQuery<{ id: string; catalog_item_id: string; amount: number; seña_amount: number | null; currency: string; date: string }[]>({
     queryKey: ['tx-revenue-by-catalog-item'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('id, catalog_item_id, amount, seña_amount, currency, date, transaction_categories!subcategory_id!inner(transaction_type)')
-        .eq('transaction_categories.transaction_type', 'income')
-        .eq('is_seña', false)
-        .not('catalog_item_id', 'is', null)
-        .is('voided_at', null)
-      if (error) throw new Error(error.message)
-      return (data as unknown as ({ id: string; catalog_item_id: string; amount: number; seña_amount: number | null; currency: string; date: string; transaction_categories: unknown })[]).map(({ transaction_categories: _tc, ...row }) => row)
+      const rows = await fetchAllRows<{ id: string; catalog_item_id: string; amount: number; seña_amount: number | null; currency: string; date: string; transaction_categories: unknown }>(
+        (rangeFrom, rangeTo) =>
+          supabase
+            .from('transactions')
+            .select('id, catalog_item_id, amount, seña_amount, currency, date, transaction_categories!subcategory_id!inner(transaction_type)')
+            .eq('transaction_categories.transaction_type', 'income')
+            .eq('is_seña', false)
+            .not('catalog_item_id', 'is', null)
+            .is('voided_at', null)
+            .order('id', { ascending: true })
+            .range(rangeFrom, rangeTo),
+      )
+      return rows.map(row => ({
+        id: row.id,
+        catalog_item_id: row.catalog_item_id,
+        amount: row.amount,
+        seña_amount: row.seña_amount,
+        currency: row.currency,
+        date: row.date,
+      }))
     },
   })
 
   const { data: txCommissions = [] } = useQuery<{ transaction_id: string; commission_rate: number }[]>({
     queryKey: ['tx-commissions-all'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('transaction_hairdressers')
-        .select('transaction_id, commission_rate')
-      if (error) throw new Error(error.message)
-      return data as { transaction_id: string; commission_rate: number }[]
+      return fetchAllRows<{ transaction_id: string; commission_rate: number }>((rangeFrom, rangeTo) =>
+        supabase
+          .from('transaction_hairdressers')
+          .select('transaction_id, commission_rate')
+          .order('transaction_id', { ascending: true })
+          .order('hairdresser_id', { ascending: true })
+          .range(rangeFrom, rangeTo),
+      )
     },
   })
 
@@ -568,6 +637,23 @@ export function ReportsPage() {
                 />
               </div>
             </section>
+
+            <section>
+              <h2 className="text-base font-semibold text-[var(--color-text)] mb-1">Recuentos físicos</h2>
+              <p className="text-xs text-[var(--color-muted)] mb-3">
+                Ajustes por conteo físico. La diferencia de valor es merma de inventario: no impacta la
+                utilidad del mes.
+              </p>
+              <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+                <Table<InventoryRecount>
+                  columns={recountColumns}
+                  data={recounts.data ?? []}
+                  keyField="id"
+                  loading={recounts.isLoading}
+                  emptyMessage="Todavía no se registraron recuentos"
+                />
+              </div>
+            </section>
           </>
         )}
 
@@ -631,7 +717,7 @@ export function ReportsPage() {
                 <div className="px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
                   <h3 className="text-sm font-semibold text-[var(--color-text)]">Liquidación del período seleccionado</h3>
                   <p className="text-xs text-[var(--color-muted)] mt-0.5">
-                    Bruta = comisión devengada en el filtro · Retiros = saldo pendiente del empleado a la fecha · Neto = bruta − retiros aplicados.
+                    Bruta = comisión devengada en el filtro · Liquidado = pagos y retiros ya aplicados · Saldo = bruta − liquidado.
                   </p>
                 </div>
                 <table className="w-full text-sm">
@@ -639,27 +725,40 @@ export function ReportsPage() {
                     <tr className="border-b border-[var(--color-border)]">
                       <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Profesional</th>
                       <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Bruta</th>
+                      <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Liquidado</th>
                       <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Retiros pendientes</th>
-                      <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Neto estimado</th>
+                      <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Saldo</th>
                       <th className="px-4 py-2"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {commissionsByProfessional.map(p => {
                       const pending = pendingByProfessional.get(p.id) ?? 0
-                      const net = Math.max(0, p.total - pending)
+                      const settled = settledByProfessional.get(p.id) ?? 0
+                      const remaining = Math.max(0, p.total - settled)
+                      const estimatedNet = Math.max(0, remaining - pending)
+                      const canSettle = !!commFrom && !!commTo && !commissionPayouts.isLoading && !commissionPayouts.isError && remaining > 0.001
                       return (
                         <tr key={p.id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
                           <td className="px-4 py-3 text-[var(--color-text)]">{p.name}</td>
                           <td className="px-4 py-3 text-right tabular-nums">{fmtAmount(p.total)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{settled > 0 ? fmtAmount(settled) : '—'}</td>
                           <td className="px-4 py-3 text-right tabular-nums text-[var(--color-danger)]">{pending > 0 ? `−${fmtAmount(pending)}` : '—'}</td>
-                          <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--color-success)]">{fmtAmount(net)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums font-semibold text-[var(--color-success)]" title={`Neto estimado luego de retiros: ${fmtAmount(estimatedNet)}`}>{fmtAmount(remaining)}</td>
                           <td className="px-4 py-3 text-right">
                             <button
-                              onClick={() => setSettleTarget({ id: p.id, name: p.name, gross: p.total })}
-                              className="text-xs px-3 py-1.5 rounded-md bg-[var(--color-accent)] text-white hover:opacity-90 transition-opacity"
+                              onClick={() => setSettleTarget({ id: p.id, name: p.name, gross: p.total, settled })}
+                              disabled={!canSettle}
+                              title={!commFrom || !commTo
+                                ? 'Definí las fechas del período antes de liquidar.'
+                                : commissionPayouts.isLoading
+                                  ? 'Cargando liquidaciones anteriores.'
+                                  : commissionPayouts.isError
+                                    ? 'No se pudieron cargar las liquidaciones anteriores.'
+                                    : undefined}
+                              className="text-xs px-3 py-1.5 rounded-md bg-[var(--color-accent)] text-white hover:opacity-90 transition-opacity disabled:opacity-45 disabled:cursor-not-allowed"
                             >
-                              Liquidar
+                              {remaining <= 0.001 ? 'Liquidada' : 'Liquidar'}
                             </button>
                           </td>
                         </tr>
@@ -1040,21 +1139,23 @@ export function ReportsPage() {
                   <span className="text-xs text-[var(--color-muted)] pl-2">Efectivo por método de pago</span>
                 </div>
                 {(balanceSheet.data?.cash ?? []).map(c => (
-                  <div key={c.method} className="flex items-center justify-between px-4 py-2.5">
-                    <span className="text-sm text-[var(--color-muted)] pl-8 capitalize">{c.method}</span>
-                    <span className={`text-sm tabular-nums ${c.amount >= 0 ? 'text-[var(--color-text)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(c.amount)}</span>
+                  <div key={`${c.method}:${c.currency}`} className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-sm text-[var(--color-muted)] pl-8 capitalize">{c.method} ({c.currency})</span>
+                    <span className={`text-sm tabular-nums ${c.amount >= 0 ? 'text-[var(--color-text)]' : 'text-[var(--color-danger)]'}`}>{fmtAmount(c.amount, c.currency)}</span>
                   </div>
                 ))}
-                <div className="flex items-center justify-between px-4 py-3">
-                  <span className="text-sm text-[var(--color-muted)] pl-4">Cuentas por cobrar</span>
-                  <span className="text-sm tabular-nums">{fmtAmount(balanceSheet.data?.receivables ?? 0)}</span>
-                </div>
+                {(balanceSheet.data?.receivablesByCurrency ?? []).map(balance => (
+                  <div key={balance.currency} className="flex items-center justify-between px-4 py-3">
+                    <span className="text-sm text-[var(--color-muted)] pl-4">Cuentas por cobrar ({balance.currency})</span>
+                    <span className="text-sm tabular-nums">{fmtAmount(balance.amount, balance.currency)}</span>
+                  </div>
+                ))}
                 <div className="flex items-center justify-between px-4 py-3">
                   <span className="text-sm text-[var(--color-muted)] pl-4">Inventario (valor FIFO)</span>
                   <span className="text-sm tabular-nums">{fmtAmount(balanceSheet.data?.inventoryValue ?? 0)}</span>
                 </div>
                 <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg)]">
-                  <span className="text-sm font-semibold text-[var(--color-text)]">Total Activos</span>
+                  <span className="text-sm font-semibold text-[var(--color-text)]">Total Activos (ARS, sin conversión)</span>
                   <span className="text-sm font-semibold tabular-nums">{fmtAmount(balanceSheet.data?.totalAssets ?? 0)}</span>
                 </div>
 
@@ -1066,12 +1167,12 @@ export function ReportsPage() {
                   <span className="text-sm tabular-nums">{fmtAmount(balanceSheet.data?.payables ?? 0)}</span>
                 </div>
                 <div className="flex items-center justify-between px-4 py-3 bg-[var(--color-bg)]">
-                  <span className="text-sm font-semibold text-[var(--color-text)]">Total Pasivos</span>
+                  <span className="text-sm font-semibold text-[var(--color-text)]">Total Pasivos (ARS)</span>
                   <span className="text-sm font-semibold tabular-nums">{fmtAmount(balanceSheet.data?.totalLiabilities ?? 0)}</span>
                 </div>
 
                 <div className="flex items-center justify-between px-4 py-5">
-                  <span className="text-lg font-bold text-[var(--color-text)]">Patrimonio Neto</span>
+                  <span className="text-lg font-bold text-[var(--color-text)]">Patrimonio Neto (ARS, sin conversión)</span>
                   <span className={`text-2xl font-bold tabular-nums ${(balanceSheet.data?.equity ?? 0) >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
                     {fmtAmount(balanceSheet.data?.equity ?? 0)}
                   </span>
@@ -1142,6 +1243,7 @@ export function ReportsPage() {
           periodStart={commFrom || new Date().toISOString().slice(0, 10)}
           periodEnd={commTo || new Date().toISOString().slice(0, 10)}
           grossAmount={settleTarget.gross}
+          alreadySettled={settleTarget.settled}
         />
       )}
     </div>

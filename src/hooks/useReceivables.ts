@@ -1,11 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
-import type { Receivable, ReceivableCollection } from '@/types'
+import type { Currency, Receivable } from '@/types'
 import type { Database } from '@/types/database'
 
 type ReceivableInsert = Database['public']['Tables']['receivables']['Insert']
-type ReceivableUpdate = Database['public']['Tables']['receivables']['Update']
-type CollectionInsert = Database['public']['Tables']['receivable_collections']['Insert']
 
 export function useReceivables() {
   return useQuery({
@@ -25,6 +23,7 @@ interface CreateReceivablePayload {
   debtor_name: string
   concept: string
   total_amount: number
+  currency?: Currency
   due_date: string | null
   notes?: string | null
 }
@@ -40,6 +39,7 @@ export function useCreateReceivable() {
           debtor_name: payload.debtor_name,
           concept: payload.concept,
           total_amount: payload.total_amount,
+          currency: payload.currency ?? 'ARS',
           collected_amount: 0,
           due_date: payload.due_date,
           notes: payload.notes ?? null,
@@ -55,11 +55,11 @@ export function useCreateReceivable() {
 }
 
 interface RecordCollectionPayload {
+  client_uuid: string
   receivable_id: string
   amount: number
   payment_method: string
   date: string
-  description: string
   notes?: string | null
 }
 
@@ -67,59 +67,16 @@ export function useRecordReceivableCollection() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (payload: RecordCollectionPayload) => {
-      const { data: { user } } = await supabase.auth.getUser()
-
-      const { data: tx, error: txErr } = await supabase
-        .from('transactions')
-        .insert({
-          date: payload.date,
-          amount: payload.amount,
-          currency: 'ARS',
-          description: payload.description,
-          subcategory_id: null,
-          catalog_item_id: null,
-          is_seña: false,
-          seña_amount: null,
-          created_by: user?.id ?? null,
-        })
-        .select('id')
-        .single()
-      if (txErr) throw new Error(txErr.message)
-
-      const { error: pmtErr } = await supabase
-        .from('transaction_payments')
-        .insert({ transaction_id: tx.id, payment_method: payload.payment_method, instrument: null, amount: payload.amount, type: 'entrada' })
-      if (pmtErr) throw new Error(pmtErr.message)
-
-      const { data: collection, error: colErr } = await supabase
-        .from('receivable_collections')
-        .insert({
-          receivable_id: payload.receivable_id,
-          amount: payload.amount,
-          payment_method: payload.payment_method,
-          date: payload.date,
-          transaction_id: tx.id,
-          notes: payload.notes ?? null,
-        } as CollectionInsert)
-        .select('*')
-        .single()
-      if (colErr) throw new Error(colErr.message)
-
-      const { data: receivable, error: recErr } = await supabase
-        .from('receivables')
-        .select('collected_amount')
-        .eq('id', payload.receivable_id)
-        .single()
-      if (recErr) throw new Error(recErr.message)
-
-      const newCollected = (receivable.collected_amount as number) + payload.amount
-      const { error: updateErr } = await supabase
-        .from('receivables')
-        .update({ collected_amount: newCollected } as ReceivableUpdate)
-        .eq('id', payload.receivable_id)
-      if (updateErr) throw new Error(updateErr.message)
-
-      return collection as unknown as ReceivableCollection
+      const { data, error } = await supabase.rpc('record_receivable_collection', {
+        p_client_uuid: payload.client_uuid,
+        p_receivable_id: payload.receivable_id,
+        p_amount: payload.amount,
+        p_payment_method: payload.payment_method,
+        p_date: payload.date,
+        p_notes: payload.notes ?? null,
+      })
+      if (error) throw new Error(error.message)
+      return data as string
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['receivables'] })

@@ -16,28 +16,30 @@ export function useTransactions(filters: TransactionFilters = {}) {
   return useQuery({
     queryKey: ['transactions', filters],
     queryFn: async () => {
-      let query = supabase
-        .from('transactions')
-        .select('*, subcategory:transaction_categories!subcategory_id(id, name, parent_id, transaction_type, created_at), payments:transaction_payments(*), transaction_hairdressers(hairdresser_id, commission_rate, hairdressers(id, name, active, created_at))')
-        .order('date', { ascending: false })
-        .order('created_at', { ascending: false })
-
-      if (!filters.showVoided) query = query.is('voided_at', null)
-      if (filters.pendingOnly) query = query.eq('inventory_pending', true)
-      if (filters.subcategoryIds && filters.subcategoryIds.length > 0) query = query.in('subcategory_id', filters.subcategoryIds)
-      if (filters.currency) query = query.eq('currency', filters.currency)
-      if (filters.from) query = query.gte('date', filters.from)
-      if (filters.to) query = query.lte('date', filters.to)
-
-      const { data, error } = await query
-      if (error) throw new Error(error.message)
-
       type RawTx = Omit<Transaction, 'professionals' | 'subcategory'> & {
         subcategory: TransactionCategory | null
         transaction_hairdressers: { hairdresser_id: string; commission_rate: number; hairdressers: Omit<ProfessionalAssignment, 'commission_rate'> | null }[]
       }
 
-      return (data as unknown as RawTx[]).map(tx => ({
+      const rows = await fetchAllRows<RawTx>((rangeFrom, rangeTo) => {
+        let query = supabase
+          .from('transactions')
+          .select('*, subcategory:transaction_categories!subcategory_id(id, name, parent_id, transaction_type, created_at), payments:transaction_payments(*), transaction_hairdressers(hairdresser_id, commission_rate, hairdressers(id, name, active, created_at))')
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+
+        if (!filters.showVoided) query = query.is('voided_at', null)
+        if (filters.pendingOnly) query = query.eq('inventory_pending', true)
+        if (filters.subcategoryIds && filters.subcategoryIds.length > 0) query = query.in('subcategory_id', filters.subcategoryIds)
+        if (filters.currency) query = query.eq('currency', filters.currency)
+        if (filters.from) query = query.gte('date', filters.from)
+        if (filters.to) query = query.lte('date', filters.to)
+
+        return query.range(rangeFrom, rangeTo)
+      })
+
+      return rows.map(tx => ({
         ...tx,
         professionals: tx.transaction_hairdressers
           .filter(th => th.hairdressers !== null)
@@ -246,23 +248,16 @@ export function useVoidTransaction() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => {
-      const { data: { user } } = await supabase.auth.getUser()
-
       const { error } = await supabase
-        .from('transactions')
-        .update({ voided_at: new Date().toISOString(), voided_by: user?.id ?? null })
-        .eq('id', id)
+        .rpc('void_transaction', { p_transaction_id: id })
       if (error) throw new Error(error.message)
-
-      const { error: logError } = await supabase
-        .from('user_action_logs')
-        .insert({ user_id: user?.id ?? null, action: 'void_transaction', entity: 'transactions', entity_id: id })
-      if (logError) throw new Error(logError.message)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
       qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
+      qc.invalidateQueries({ queryKey: ['receivables'] })
+      qc.invalidateQueries({ queryKey: ['staff-receivables'] })
     },
   })
 }

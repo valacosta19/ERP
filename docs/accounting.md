@@ -118,7 +118,20 @@ Comisión de la profesional = Base de comisión × (commission_rate / 100)
 
 Este es el importe que se muestra en la columna "Comisión" del tab, y el que se suma en los totales quincenales.
 
-### 5.3 Comisiones en el Tab "Costos" (análisis por servicio)
+### 5.3 Liquidaciones parciales
+
+Una comisión se puede liquidar en varias cuotas, cada una con su propia fecha y método de pago. Cada fila de `commission_payouts` representa el importe bruto cubierto por esa cuota:
+
+```
+Cuota bruta liquidada = retiros/adelantos aplicados + efectivo neto pagado
+Saldo del período = comisión bruta devengada − suma de cuotas brutas liquidadas
+```
+
+El RPC `record_partial_commission_payout` calcula el bruto directamente desde las transacciones ARS no anuladas y sus porcentajes, y registra atómicamente la cuota, las compensaciones de cuentas por cobrar y, cuando el neto es mayor que cero, la transacción de egreso y su método de pago. Es idempotente por `client_uuid`, exige categoría de gasto cuando sale efectivo y rechaza cuotas que excedan el saldo.
+
+`commission_settlement_periods` no permite que los rangos nuevos se superpongan para una misma profesional. Las cuotas sucesivas deben usar exactamente el mismo inicio y fin; así una comisión devengada no se puede volver a incluir cambiando parcialmente el filtro. La migración conserva cada rango histórico como `legacy = true`, aunque dos rangos anteriores ya se superpongan: no los combina ni altera sus pagos. Cualquier cuota cuyo rango exacto cruce otro rango histórico queda bloqueada hasta que esa ambigüedad se resuelva manualmente. Si el rango contiene transacciones en moneda extranjera, la liquidación también se bloquea hasta que exista una cotización persistida: la cotización externa en vivo del reporte no es una fuente autoritativa para pagar.
+
+### 5.4 Comisiones en el Tab "Costos" (análisis por servicio)
 
 El tab Costos usa `transaction_hairdressers` para calcular la comisión promedio por servicio individual. El propósito es evaluar el margen por servicio, no el resultado del período.
 
@@ -129,7 +142,7 @@ commissionAmounts = [ amount_en_ARS × (Σ commission_rate / 100) ]
 avgCommissionCost = Σ commissionAmounts / cantidad de transacciones del servicio
 ```
 
-### 5.4 Comisiones en el Tab "Utilidad" (P&L del período)
+### 5.5 Comisiones en el Tab "Utilidad" (P&L del período)
 
 En el P&L, las comisiones **no se calculan automáticamente** desde `transaction_hairdressers`. Se capturan como transacciones de egreso de la categoría `Costos > [subcategoría]` (por ejemplo, "Costos > Comisiones"). Esto evita discrepancias entre el registro real pagado y el cálculo estimado.
 
@@ -408,6 +421,34 @@ Si el producto NO tiene lotes activos:
   → "Insumos servicios" = $0 (automático, no require acción)
   → costo capturado por transacción "Costos > Insumos" al comprar
 ```
+
+### Implementación (importante)
+
+El pago de una OC de inventario **sí** genera una transacción de egreso — es necesario para que la
+plata salga de la caja. Para que eso no duplique el costo, va a una categoría **dedicada**,
+`Costos > Compra de inventario (OC)`, y `useProfitReport` **excluye solo esa categoría** de
+`direct_costs` (ver `src/lib/inventoryPurchaseCategory.ts`). O sea: el egreso descuenta caja pero no
+resta en la utilidad, porque el costo entra vía `product_cogs` al vender.
+
+**Por qué una categoría propia y no `Productos profesionales`:** esa se usa también para compras de
+gasto directo (tinturas, oxidantes, insumos de emergencia) que no tienen lotes y por lo tanto nunca
+generan COGS. Excluir esa categoría entera borraba ~$845.000 de costos reales de la utilidad entre
+mayo y julio 2026. Ver migración `070`.
+
+Regla: **la categoría `Compra de inventario (OC)` es exclusiva del pago de órdenes de compra.** No
+usarla para nada más, y no meter pagos de OC en ninguna otra.
+
+### Transición histórica (febrero–junio 2026)
+
+Hasta mayo 2026 la compra de productos de reventa se cargaba como **gasto directo**, sin orden de
+compra, incluso para productos que hoy sí se manejan con lotes. Eso dejó 49 ventas con
+`inventory_pending = true` y sin `sale_items`. **No hay que asignarles COGS**: su costo ya está en el
+resultado como egreso, y agregarlo lo contaría dos veces.
+
+`068_backfill_pending_sales_cost.sql` resolvió esto con dos pasadas: FIFO real solo para las ventas
+desde 2026-07-01 (las atadas a los primeros pedidos con inventario gestionado), y limpieza de la
+marca sin tocar inventario para todo lo anterior. Regla para el futuro: **antes de backfillear COGS
+histórico, verificar si el costo de ese período no entró ya como gasto directo.**
 
 Mientras un producto no tenga OC/lotes, no hay doble conteo posible. Si en el futuro se decide migrar un producto de "transacción directa" a "inventario", hay que dejar de registrar la transacción de egreso por ese insumo para evitar duplicar el costo en el P&L.
 

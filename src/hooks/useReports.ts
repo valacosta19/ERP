@@ -1,12 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 import { fetchAllRows } from '@/lib/fetchAllRows'
+import { INVENTORY_PURCHASE_CATEGORY } from '@/lib/inventoryPurchaseCategory'
 import type { Currency } from '@/types'
 
 export type BalanceSheet = {
-  cash: { method: string; amount: number }[]
+  cash: { method: string; currency: Currency; amount: number }[]
   totalCash: number
   receivables: number
+  receivablesByCurrency: { currency: Currency; amount: number }[]
   inventoryValue: number
   totalAssets: number
   payables: number
@@ -157,6 +159,7 @@ type RawPaymentWithTx = {
   amount: number
   transactions: {
     date: string
+    currency: Currency
     voided_at: string | null
     transaction_categories: { transaction_type: string | null } | null
   } | null
@@ -172,13 +175,13 @@ export function useBalanceSheet(asOfDate?: string) {
         fetchAllRows<RawPaymentWithTx>((rangeFrom, rangeTo) =>
           supabase
             .from('transaction_payments')
-            .select('payment_method, amount, transactions!inner(date, voided_at, transaction_categories!subcategory_id(transaction_type))')
+            .select('payment_method, amount, transactions!inner(date, currency, voided_at, transaction_categories!subcategory_id(transaction_type))')
             .is('transactions.voided_at', null)
             .lte('transactions.date', dateFilter)
             .order('id', { ascending: true })
             .range(rangeFrom, rangeTo),
         ),
-        supabase.from('receivables').select('total_amount, collected_amount'),
+        supabase.from('receivables').select('total_amount, collected_amount, currency'),
         supabase.from('inventory_lots').select('remaining_quantity, unit_cost').gt('remaining_quantity', 0),
         supabase.from('supplier_debts').select('total_amount, paid_amount'),
       ])
@@ -187,21 +190,35 @@ export function useBalanceSheet(asOfDate?: string) {
       if (lotsRes.error) throw new Error(lotsRes.error.message)
       if (debtsRes.error) throw new Error(debtsRes.error.message)
 
-      const cashMap = new Map<string, number>()
-      for (const p of payments) {
-        const txType = p.transactions?.transaction_categories?.transaction_type
+      const cashMap = new Map<string, { method: string; currency: Currency; amount: number }>()
+      for (const payment of payments) {
+        const txType = payment.transactions?.transaction_categories?.transaction_type
         if (!txType || txType === 'transfer') continue
-        const sign = txType === 'income' ? 1 : -1
-        cashMap.set(p.payment_method, (cashMap.get(p.payment_method) ?? 0) + sign * Number(p.amount))
+        const currency = payment.transactions?.currency ?? 'ARS'
+        const key = `${payment.payment_method}:${currency}`
+        const current = cashMap.get(key) ?? { method: payment.payment_method, currency, amount: 0 }
+        current.amount += (txType === 'income' ? 1 : -1) * Number(payment.amount)
+        cashMap.set(key, current)
       }
 
-      const cash = Array.from(cashMap.entries())
-        .map(([method, amount]) => ({ method, amount }))
-        .sort((a, b) => b.amount - a.amount)
-      const totalCash = cash.reduce((s, c) => s + c.amount, 0)
+      const cash = Array.from(cashMap.values())
+        .sort((a, b) => a.method.localeCompare(b.method) || a.currency.localeCompare(b.currency))
+      const totalCash = cash
+        .filter(balance => balance.currency === 'ARS')
+        .reduce((sum, balance) => sum + balance.amount, 0)
 
-      const receivables = ((receivablesRes.data ?? []) as { total_amount: number; collected_amount: number }[])
-        .reduce((s, r) => s + (Number(r.total_amount) - Number(r.collected_amount)), 0)
+      const receivablesMap = new Map<Currency, number>([['ARS', 0], ['USD', 0], ['EUR', 0]])
+      for (const receivable of (receivablesRes.data ?? []) as { total_amount: number; collected_amount: number; currency: Currency }[]) {
+        receivablesMap.set(
+          receivable.currency,
+          (receivablesMap.get(receivable.currency) ?? 0)
+            + Number(receivable.total_amount) - Number(receivable.collected_amount),
+        )
+      }
+      const receivablesByCurrency = Array.from(receivablesMap.entries())
+        .map(([currency, amount]) => ({ currency, amount }))
+        .filter(balance => Math.abs(balance.amount) > 0.001)
+      const receivables = receivablesMap.get('ARS') ?? 0
 
       const inventoryValue = ((lotsRes.data ?? []) as { remaining_quantity: number; unit_cost: number }[])
         .reduce((s, l) => s + Number(l.remaining_quantity) * Number(l.unit_cost), 0)
@@ -213,7 +230,7 @@ export function useBalanceSheet(asOfDate?: string) {
       const totalLiabilities = payables
       const equity = totalAssets - totalLiabilities
 
-      return { cash, totalCash, receivables, inventoryValue, totalAssets, payables, totalLiabilities, equity }
+      return { cash, totalCash, receivables, receivablesByCurrency, inventoryValue, totalAssets, payables, totalLiabilities, equity }
     },
   })
 }
@@ -329,6 +346,9 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
             byMonth.get(month)!.product_revenue += amountARS
           }
         } else if (tx.transaction_categories?.transaction_type === 'expense') {
+          // La compra de mercadería de inventario no entra al resultado: su costo se reconoce
+          // vía product_cogs al venderse. Contarla también acá duplicaba el costo.
+          if (tx.transaction_categories.name === INVENTORY_PURCHASE_CATEGORY) continue
           const parentId = tx.transaction_categories.parent_id
           const parentName = parentId ? (catNameById.get(parentId) ?? '') : ''
           if (parentName.toLowerCase() === 'costos') {
