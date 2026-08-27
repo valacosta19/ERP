@@ -6,6 +6,14 @@ import { lineGross } from './funnelTypes'
 import { StepHeading, SectionLabel } from './funnelAtoms'
 import { money, funnelInput } from './funnelFormat'
 
+export type PriceTier = 'cash' | 'transfer' | 'card'
+
+const PRICE_TIER_LABELS: Record<PriceTier, string> = {
+  cash: 'Efectivo',
+  transfer: 'Transferencia',
+  card: 'Tarjeta',
+}
+
 type IncomeProps = {
   mode: 'income'
   lines: CartLine[]
@@ -13,6 +21,11 @@ type IncomeProps = {
   professionals: Professional[]
   onUnitPrice: (key: string, price: number) => void
   onLineProfessionals: (key: string, profs: { id: string; commission_rate: number }[]) => void
+  paymentMethods: string[]
+  selectedMethod: string
+  onMethod: (m: string) => void
+  priceTier: PriceTier
+  onPriceTier: (t: PriceTier) => void
 }
 
 type SimpleProps = {
@@ -35,7 +48,7 @@ export function StepAmount(props: IncomeProps | SimpleProps) {
   return <SimpleAmount {...props} />
 }
 
-function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfessionals }: IncomeProps) {
+function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfessionals, paymentMethods, selectedMethod, onMethod, priceTier, onPriceTier }: IncomeProps) {
   const [editing, setEditing] = useState<string | null>(null)
   const activeProfs = professionals.filter(p => p.active)
 
@@ -53,6 +66,51 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
   return (
     <div style={{ maxWidth: '660px' }}>
       <StepHeading kicker="Paso 3 — Monto" title="Precios y profesionales" />
+
+      <div style={{ marginBottom: '14px' }}>
+        <SectionLabel>Tipo de cobro — ajusta el precio automáticamente</SectionLabel>
+        <div className="flex flex-wrap gap-2" style={{ marginTop: '8px' }}>
+          {(Object.keys(PRICE_TIER_LABELS) as PriceTier[]).map(tier => (
+            <button
+              key={tier}
+              type="button"
+              onClick={() => onPriceTier(tier)}
+              style={{
+                padding: '9px 16px', borderRadius: '999px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600,
+                border: priceTier === tier ? '2px solid var(--color-accent)' : '1.5px solid var(--color-border)',
+                background: priceTier === tier ? 'var(--color-accent-light)' : 'var(--color-surface)',
+                color: 'var(--color-text)',
+              }}
+            >
+              {PRICE_TIER_LABELS[tier]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {paymentMethods.length > 0 && (
+        <div style={{ marginBottom: '18px' }}>
+          <SectionLabel>Cuenta / medio</SectionLabel>
+          <div className="flex flex-wrap gap-2" style={{ marginTop: '8px' }}>
+            {paymentMethods.map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => onMethod(m)}
+                style={{
+                  padding: '9px 16px', borderRadius: '999px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600,
+                  border: selectedMethod === m ? '2px solid var(--color-accent)' : '1.5px solid var(--color-border)',
+                  background: selectedMethod === m ? 'var(--color-accent-light)' : 'var(--color-surface)',
+                  color: 'var(--color-text)',
+                }}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-3">
         {lines.map(line => (
           <div

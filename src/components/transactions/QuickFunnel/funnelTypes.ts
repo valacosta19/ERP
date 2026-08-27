@@ -33,6 +33,8 @@ export type FunnelState = {
   concept: string
   manualAmount: number
   simpleMethod: string
+  incomeMethod: string
+  incomePriceTier: 'cash' | 'transfer' | 'card'
   subcategoryId: string
   transferDirection: 'entrada' | 'salida'
   discountMode: DiscountMode
@@ -62,6 +64,8 @@ export function makeEmptyFunnelState(): FunnelState {
     concept: '',
     manualAmount: 0,
     simpleMethod: 'Efectivo',
+    incomeMethod: '',
+    incomePriceTier: 'cash',
     subcategoryId: '',
     transferDirection: 'entrada',
     discountMode: 'none',

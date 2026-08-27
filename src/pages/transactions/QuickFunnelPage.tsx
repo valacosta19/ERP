@@ -73,6 +73,7 @@ export function QuickFunnelPage() {
   const paymentMethods = useMemo(() => paymentMethodsData.filter(m => m.active).map(m => m.name), [paymentMethodsData])
   const cashMethod = useMemo(() => paymentMethods.find(m => m.toLowerCase().includes('efectivo')) ?? null, [paymentMethods])
   const productLabel = useCallback((p: Product) => (p.unit ? `${p.name} ${p.unit}` : p.name), [])
+  const effectiveIncomeMethod = state.incomeMethod || cashMethod || paymentMethods[0] || ''
 
   const steps = stepsFor(state.type)
   const stepperItems = steps.map(s => ({ key: s, label: STEP_LABELS[s] }))
@@ -119,6 +120,29 @@ export function QuickFunnelPage() {
     setState(s => ({ ...s, lines: [...s.lines, line] }))
   }
 
+  function priceForTier(item: CatalogItem, tier: 'cash' | 'transfer' | 'card'): number {
+    if (tier === 'transfer') return item.price_transfer ?? item.price
+    if (tier === 'card') return item.price_card ?? item.price
+    return item.price
+  }
+
+  function setIncomeMethod(method: string) {
+    setState(s => ({ ...s, incomeMethod: method }))
+  }
+
+  function setIncomePriceTier(tier: 'cash' | 'transfer' | 'card') {
+    setState(s => ({
+      ...s,
+      incomePriceTier: tier,
+      lines: s.lines.map(l => {
+        if (l.kind !== 'service' || !l.catalogItemId) return l
+        const item = catalogItems.find(ci => ci.id === l.catalogItemId)
+        if (!item) return l
+        return { ...l, unitPrice: priceForTier(item, tier) }
+      }),
+    }))
+  }
+
   const setLineQty = (key: string, qty: number) => setState(s => ({ ...s, lines: s.lines.map(l => l.key === key ? { ...l, qty } : l) }))
   const removeLine = (key: string) => setState(s => ({ ...s, lines: s.lines.filter(l => l.key !== key) }))
   const setUnitPrice = (key: string, price: number) => setState(s => ({ ...s, lines: s.lines.map(l => l.key === key ? { ...l, unitPrice: price } : l) }))
@@ -156,7 +180,7 @@ export function QuickFunnelPage() {
     if (next === 'payment') {
       setState(s => {
         if (s.payments.length > 0) return { ...s, step: next }
-        const method = cashMethod ?? paymentMethods[0]
+        const method = s.type === 'income' ? (s.incomeMethod || cashMethod || paymentMethods[0]) : (cashMethod ?? paymentMethods[0])
         const total = chargeTotal(s)
         return { ...s, step: next, payments: method && total > 0 ? [{ payment_method: method, amount: total, received: null }] : [] }
       })
@@ -418,6 +442,11 @@ export function QuickFunnelPage() {
                 professionals={professionals}
                 onUnitPrice={setUnitPrice}
                 onLineProfessionals={setLineProfs}
+                paymentMethods={paymentMethods}
+                selectedMethod={effectiveIncomeMethod}
+                onMethod={setIncomeMethod}
+                priceTier={state.incomePriceTier}
+                onPriceTier={setIncomePriceTier}
               />
             )}
             {state.step === 'amount' && state.type && state.type !== 'income' && (
