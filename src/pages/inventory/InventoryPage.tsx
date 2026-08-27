@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Archive, HandCoins, Layers, Pencil } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { AlertTriangle, Archive, ClipboardCheck, Download, HandCoins, Layers, Pencil } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
 import { Table } from '@/components/ui/Table'
@@ -8,7 +9,11 @@ import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useProducts, useUpdateProduct, useDeleteProduct } from '@/hooks/useProducts'
+import { usePendingInventoryCount } from '@/hooks/usePendingInventoryCount'
+import { useAuth } from '@/hooks/useAuth'
 import { LotDrawer } from './LotDrawer'
+import { RecountModal } from './RecountModal'
+import { downloadCountSheet } from './countSheet'
 import { StaffWithdrawalModal } from '@/components/StaffWithdrawalModal'
 import type { Product } from '@/types'
 
@@ -36,12 +41,30 @@ export function InventoryPage() {
   const [stockFilter, setStockFilter] = useState<'all' | 'with' | 'without'>('all')
   const [archiveProductId, setArchiveProductId] = useState<string | null>(null)
   const [withdrawalOpen, setWithdrawalOpen] = useState(false)
+  const [recountOpen, setRecountOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
 
+  const { profile } = useAuth()
+  const isAdmin = profile?.role === 'admin'
   const { data: products = [], isLoading } = useProducts()
+  const { data: pendingInventoryCount = 0 } = usePendingInventoryCount()
   const updateProduct = useUpdateProduct()
   const deleteProduct = useDeleteProduct()
 
   const brands = Array.from(new Set(products.map(p => p.brand).filter(Boolean) as string[])).sort()
+
+  async function handleExportCountSheet() {
+    setExportError(null)
+    setExporting(true)
+    try {
+      await downloadCountSheet(products)
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Error al generar la planilla.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const filteredProducts = products.filter(p => {
     if (brandFilter && p.brand !== brandFilter) return false
@@ -215,14 +238,42 @@ export function InventoryPage() {
         title="Inventario"
         subtitle={`${filteredProducts.length} productos`}
         actions={
-          <Button variant="secondary" onClick={() => setWithdrawalOpen(true)}>
-            <HandCoins size={14} />
-            Registrar retiro
-          </Button>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <>
+                <Button variant="secondary" onClick={handleExportCountSheet} loading={exporting}>
+                  <Download size={14} />
+                  Exportar planilla de conteo
+                </Button>
+                <Button variant="secondary" onClick={() => setRecountOpen(true)}>
+                  <ClipboardCheck size={14} />
+                  Recuento físico
+                </Button>
+              </>
+            )}
+            <Button variant="secondary" onClick={() => setWithdrawalOpen(true)}>
+              <HandCoins size={14} />
+              Registrar retiro
+            </Button>
+          </div>
         }
       />
 
       <div className="flex-1 min-h-0 flex flex-col p-6 gap-4">
+        {exportError && <p className="text-sm text-[var(--color-danger)]">{exportError}</p>}
+        {pendingInventoryCount > 0 && (
+          <div className="flex items-start gap-2 rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-light)] px-3 py-2">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-[var(--color-warning)]" />
+            <p className="text-sm text-[var(--color-text)]">
+              {pendingInventoryCount} transacción(es) debían descontar inventario y no lo hicieron.
+              Cada una es una diferencia entre el sistema y el físico.{' '}
+              <Link to="/transactions" className="underline underline-offset-2 hover:opacity-75">
+                Revisalas en Transacciones
+              </Link>{' '}
+              con el filtro «Sin descontar».
+            </p>
+          </div>
+        )}
         <div className="flex items-center gap-3 flex-wrap">
           <select
             value={brandFilter}
@@ -266,6 +317,8 @@ export function InventoryPage() {
         mode="withdrawal"
       />
 
+      <RecountModal open={recountOpen} onClose={() => setRecountOpen(false)} />
+
       <Modal open={!!archiveProductId} onClose={() => setArchiveProductId(null)} title="Archivar producto">
         <div className="space-y-4">
           <p className="text-[var(--color-text)]">¿Seguro que quieres archivar este producto? Ya no aparecerá en el inventario.</p>
@@ -290,7 +343,7 @@ export function InventoryPage() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <Input label="Nombre" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
-            <Input label="SKU" value={editForm.sku} onChange={e => setEditForm(f => ({ ...f, sku: e.target.value }))} />
+            <Input label="SKU" value={editForm.sku} onChange={e => setEditForm(f => ({ ...f, sku: e.target.value }))} placeholder="Se genera automático si lo dejás vacío" />
           </div>
           <Input label="Marca" value={editForm.brand} onChange={e => setEditForm(f => ({ ...f, brand: e.target.value }))} placeholder="Opcional" />
           <div className="grid grid-cols-2 gap-3">
