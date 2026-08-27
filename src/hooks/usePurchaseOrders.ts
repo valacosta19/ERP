@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
+import { fetchInventoryPurchaseCategoryId } from '@/lib/inventoryPurchaseCategory'
 import type { Database } from '@/types/database'
 import type { PurchaseOrder } from '@/types'
 
@@ -122,11 +123,7 @@ export function useReceivePurchaseOrder() {
       if (error) throw new Error(error.message)
 
       if (paymentOption.mode === 'immediate') {
-        const { data: subcat } = await supabase
-          .from('transaction_categories')
-          .select('id')
-          .eq('name', 'Productos profesionales')
-          .single()
+        const subcategoryId = await fetchInventoryPurchaseCategoryId()
 
         const { data: tx, error: txErr } = await supabase
           .from('transactions')
@@ -134,7 +131,7 @@ export function useReceivePurchaseOrder() {
             date: paymentOption.date,
             amount: totalAmount,
             currency: 'ARS',
-            subcategory_id: subcat?.id ?? null,
+            subcategory_id: subcategoryId,
             description: `Pago OC - ${po.supplier?.name ?? ''}`.trim().replace(/- $/, ''),
             is_seña: false,
             seña_amount: null,
