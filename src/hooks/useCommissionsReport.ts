@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 
 export type CommissionDetailRow = {
   transaction_id: string
@@ -41,10 +42,13 @@ export function useCommissionsReport(filters: CommissionsFilters = {}) {
       if (filters.from) query = query.gte('transactions.date', filters.from)
       if (filters.to) query = query.lte('transactions.date', filters.to)
 
-      const { data, error } = await query
-      if (error) throw new Error(error.message)
+      query = query
+        .order('transaction_id', { ascending: true })
+        .order('hairdresser_id', { ascending: true })
 
-      const rows = (data as unknown as RawTxHd[]) ?? []
+      const rows = await fetchAllRows<RawTxHd>((rangeFrom, rangeTo) =>
+        query.range(rangeFrom, rangeTo),
+      )
 
       return rows
         .filter(row => row.hairdressers !== null && row.transactions !== null)
