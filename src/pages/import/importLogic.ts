@@ -171,6 +171,33 @@ export function downloadSampleTemplate() {
   XLSX.writeFile(wb, 'plantilla-importacion.xlsx')
 }
 
+// Normaliza números escritos con separadores es-AR ("1.234,56") o en-US ("1,234.56").
+// Devuelve null cuando la celda viene vacía o no es un número, para que quien llama
+// pueda distinguir "sin dato" de un cero explícito.
+export function parseNumberOrNull(s: string): number | null {
+  const trimmed = s.trim()
+  if (!trimmed) return null
+
+  const lastComma = trimmed.lastIndexOf(',')
+  const lastDot = trimmed.lastIndexOf('.')
+  let normalized: string
+  if (lastComma !== -1 && lastDot !== -1) {
+    normalized = lastDot > lastComma
+      ? trimmed.replace(/,/g, '')
+      : trimmed.replace(/\./g, '').replace(',', '.')
+  } else if (lastComma !== -1) {
+    const afterComma = trimmed.slice(lastComma + 1)
+    normalized = afterComma.length === 3 && /^\d{3}$/.test(afterComma)
+      ? trimmed.replace(/,/g, '')
+      : trimmed.replace(',', '.')
+  } else {
+    normalized = trimmed
+  }
+
+  const parsed = parseFloat(normalized)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 export function autoSuggestMapping(headers: string[], entityType: EntityType): Record<string, string> {
   const fields = ENTITY_FIELDS[entityType]
   const mapping: Record<string, string> = {}

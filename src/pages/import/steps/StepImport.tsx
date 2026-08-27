@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { CheckCircle, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabaseClient'
-import { ENTITY_LABELS } from '../importLogic'
+import { ENTITY_LABELS, parseNumberOrNull } from '../importLogic'
 import type { ParsedSheet, EntityType, SheetAssignments, ColumnMappings, ImportResult } from '../importTypes'
 
 interface Props {
@@ -18,23 +18,7 @@ function getVal(row: Record<string, string>, mapping: Record<string, string>, fi
 }
 
 function parseNum(s: string): number {
-  if (!s) return 0
-  const lastComma = s.lastIndexOf(',')
-  const lastDot = s.lastIndexOf('.')
-  let normalized: string
-  if (lastComma !== -1 && lastDot !== -1) {
-    normalized = lastDot > lastComma
-      ? s.replace(/,/g, '')
-      : s.replace(/\./g, '').replace(',', '.')
-  } else if (lastComma !== -1) {
-    const afterComma = s.slice(lastComma + 1)
-    normalized = afterComma.length === 3 && /^\d{3}$/.test(afterComma)
-      ? s.replace(/,/g, '')
-      : s.replace(',', '.')
-  } else {
-    normalized = s
-  }
-  return parseFloat(normalized) || 0
+  return parseNumberOrNull(s) ?? 0
 }
 
 function parseDirection(s: string): 'income' | 'expense' {
@@ -133,22 +117,17 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
 
           if (entityType === 'products') {
             for (const row of sheet.rows) {
-              let sku = getVal(row, m, 'sku')
+              const sku = getVal(row, m, 'sku')
               const name = getVal(row, m, 'name')
               if (!name) { result.skipped++; continue }
-              if (!sku) {
-                const prefix = name.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3).padEnd(3, 'X')
-                let counter = 1
-                do { sku = `${prefix}-${String(counter).padStart(3, '0')}`; counter++ } while (skuMap.has(sku))
-              }
-              if (skuMap.has(sku)) { result.skipped++; continue }
+              if (sku && skuMap.has(sku)) { result.skipped++; continue }
               const sale_price = parseNum(getVal(row, m, 'sale_price'))
               const min_stock = parseNum(getVal(row, m, 'min_stock'))
               const unit = getVal(row, m, 'unit') || null
               const brand = getVal(row, m, 'brand') || null
-              const { data, error } = await supabase.from('products').insert({ sku, name, unit, sale_price, min_stock, brand }).select('id, sku').single()
-              if (error) { result.errors.push(`${sku}: ${error.message}`); continue }
-              skuMap.set(sku, data.id)
+              const { data, error } = await supabase.from('products').insert({ sku: sku || null, name, unit, sale_price, min_stock, brand }).select('id, sku').single()
+              if (error) { result.errors.push(`${sku || name}: ${error.message}`); continue }
+              skuMap.set(data.sku, data.id)
               result.inserted++
               const unit_cost = parseNum(getVal(row, m, 'unit_cost'))
               const initial_quantity = parseNum(getVal(row, m, 'initial_quantity'))
@@ -163,7 +142,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
                   remaining_quantity: qty,
                   unit_cost: unit_cost || 0,
                 })
-                if (lotError) result.errors.push(`${sku} (lote): ${lotError.message}`)
+                if (lotError) result.errors.push(`${data.sku} (lote): ${lotError.message}`)
               }
             }
           }
