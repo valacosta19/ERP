@@ -61,20 +61,25 @@ function PageNavButton({ onClick, disabled, title, children }: { onClick: () => 
 
 export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow, pageSize }: TableProps<T>) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const footRef = useRef<HTMLTableSectionElement>(null)
   const [autoPageSize, setAutoPageSize] = useState(pageSize ?? 25)
   const [page, setPage] = useState(1)
 
   useEffect(() => {
     if (pageSize !== undefined) return
     if (!containerRef.current) return
-    const observer = new ResizeObserver(entries => {
-      const height = entries[0].contentRect.height
-      const rows = Math.max(1, Math.floor((height - HEADER_HEIGHT - PAGINATION_HEIGHT) / ROW_HEIGHT))
+    const container = containerRef.current
+    const recalc = () => {
+      const height = container.clientHeight
+      const footHeight = footRef.current?.offsetHeight ?? 0
+      const rows = Math.max(1, Math.floor((height - HEADER_HEIGHT - PAGINATION_HEIGHT - footHeight) / ROW_HEIGHT))
       setAutoPageSize(rows)
-    })
-    observer.observe(containerRef.current)
+    }
+    const observer = new ResizeObserver(recalc)
+    observer.observe(container)
+    if (footRef.current) observer.observe(footRef.current)
     return () => observer.disconnect()
-  }, [pageSize])
+  }, [pageSize, appendRow])
 
   const effectivePageSize = pageSize ?? autoPageSize
   const totalPages = Math.ceil(data.length / effectivePageSize)
@@ -127,8 +132,12 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
                 </tr>
               ))
             )}
-            {appendRow}
           </tbody>
+          {appendRow && (
+            <tfoot ref={footRef} className="data-table__foot">
+              {appendRow}
+            </tfoot>
+          )}
         </table>
       </div>
       {totalPages > 1 && (
