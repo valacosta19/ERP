@@ -160,6 +160,8 @@ export interface Database {
           note: string | null
           date: string
           created_at: string
+          transaction_id: string | null
+          payment_method: string
         }
         Insert: {
           id?: string
@@ -168,6 +170,8 @@ export interface Database {
           note?: string | null
           date: string
           created_at?: string
+          transaction_id?: string | null
+          payment_method: string
         }
         Update: {
           id?: string
@@ -175,6 +179,8 @@ export interface Database {
           amount?: number
           note?: string | null
           date?: string
+          transaction_id?: string | null
+          payment_method?: string
         }
         Relationships: []
       }
@@ -361,6 +367,7 @@ export interface Database {
           discount_amount: number
           created_by: string | null
           created_at: string
+          payment_transaction_id: string | null
         }
         Insert: {
           id?: string
@@ -371,6 +378,7 @@ export interface Database {
           discount_amount?: number
           created_by?: string | null
           created_at?: string
+          payment_transaction_id?: string | null
         }
         Update: {
           id?: string
@@ -379,6 +387,7 @@ export interface Database {
           status?: 'draft' | 'received' | 'cancelled'
           shipping_cost?: number
           discount_amount?: number
+          payment_transaction_id?: string | null
         }
         Relationships: []
       }
@@ -1099,6 +1108,14 @@ export interface Database {
       lock_period_with_snapshot: {
         Args: { p_year: number; p_month: number }
         Returns: void
+      }
+      update_reserve_movement: {
+        Args: {
+          p_id: string
+          p_amount: number
+          p_date: string
+        }
+        Returns: { mirror_updated: boolean }
       }
       record_supplier_debt_payment: {
         Args: {

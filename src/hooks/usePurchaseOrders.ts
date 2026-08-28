@@ -151,6 +151,12 @@ export function useReceivePurchaseOrder() {
             type: 'salida',
           })
         if (pmtErr) throw new Error(pmtErr.message)
+
+        const { error: linkErr } = await supabase
+          .from('purchase_orders')
+          .update({ payment_transaction_id: tx.id })
+          .eq('id', po.id)
+        if (linkErr) throw new Error(linkErr.message)
       } else if (paymentOption.mode === 'deferred') {
         const { error: debtErr } = await supabase
           .from('supplier_debts')
