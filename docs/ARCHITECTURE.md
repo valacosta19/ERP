@@ -44,6 +44,8 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - **Soft-delete only.** Nunca borrar una transacción. Void = setear `voided_at` + insertar en `user_action_logs`. `useVoidTransaction` ya hace ambos.
 - **`is_seña = true` son anticipos puros.** Se excluyen de revenue, profit y reportes de costos. Solo entran al resultado cuando la transacción final los referencia via `seña_amount`. Verificar exclusión en `useReports.ts` línea ~320.
 - **`transaction_payments` es el origen del balance.** El campo `transactions.amount` es suma derivada de `transaction_payments.amount`. Los balances por método de pago (`usePaymentMethodBalances`) leen `transaction_payments`, no `transactions.amount`.
+- **`payment_method` es una FK contra `payment_methods.name`** (mig. `082`), con `ON UPDATE CASCADE`: renombrar una cuenta en Ajustes propaga a sus pagos, y no se puede borrar una cuenta con pagos. No escribir nombres de cuenta literales ni centinelas: un gasto costeado desde el stock no lleva fila de pago, lleva `payments: []` (`buildTicket.ts:139`). El catálogo es único sin distinguir mayúsculas.
+- **`transaction_payments.amount` tiene las mismas reglas que `transactions.amount`**: `numeric(12,2)` y mayor a cero (mig. `082`). El signo va en `type`, que solo admite `'entrada'` o `'salida'`. Antes ambas columnas eran libres, y el costo FIFO por gramo se filtraba al pago con cuatro decimales.
 - **`sale_items` es inmutable** — no tiene UI de edición ni update policy en DB.
 - **Period locking.** Antes de crear/editar/anular, verificar que el período no esté en `locked_periods`. La validación se hace en la UI (ver `useLockedPeriods`); la DB tiene triggers que lo refuerzan.
 - **Categorías de gasto.** `subcategory_id` requerido cuando `transaction_type = 'expense'`. La categoría `'Consumos y cortesías'` con `deducts_inventory = true` es la que dispara el descuento físico de inventario vía FIFO.
@@ -82,6 +84,7 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - **`funnelSubmit.ts` es un dispatcher multi-kind.** `submitTicket` rutea por `unit.kind`: `service/product/tip/simple` → `create_funnel_unit`; `staff_advance` → `create_staff_advance`; `staff_withdrawal` → `create_staff_receivable`. Todos son idempotentes por `client_uuid`.
 - **`flushQueue` tiene mutex de módulo.** Previene ejecuciones concurrentes desde múltiples instancias de `useFunnelQueue` (AppShell + QuickFunnelPage).
 - **`buildTicket.ts` es la única función** que convierte el estado del funnel en un `TicketPayload`. No construir el payload directamente en componentes.
+- **Un ingreso de subcategoría "Otros" no pasa por el carrito.** Elegir un ítem de la pestaña "Otros" en el paso 2 pone el funnel en `incomeMode: 'simple'`: el recorrido se acorta a cuatro pasos (sin Ajustes ni Pago), el monto se carga en un input único y el ticket se guarda como una sola transacción con un solo pago. Es excluyente con el carrito — agregar un servicio o un producto vuelve a `incomeMode: 'cart'` y limpia la selección. Usar `isCartIncome(state)` para distinguir los dos caminos; no comparar `state.type === 'income'` a secas.
 - **`StepDetailSimple` exige producto cuando `deducts_inventory`.** Si la subcategoría seleccionada tiene `deducts_inventory = true`, el picker de producto es obligatorio y `canAdvance('detail')` retorna false hasta que se seleccione uno.
 
 ---
@@ -141,12 +144,15 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - Tablas: `purchase_orders`, `purchase_order_items`, `suppliers`, `inventory_lots`, `inventory_movements`
 - RPC: `receive_purchase_order(po_id, received_items[])` — crea lotes y movimientos
 - RPC: `suggest_reorder_quantity(product_id, month, year)` — promedio histórico × tasa de crecimiento, con fallback a mes anterior (3 meses de run-rate)
-- Migración relevante: `022_partial_receive_po.sql`, `029_fix_receive_po_lot_id_ambiguous.sql`
+- Migración relevante: `022_partial_receive_po.sql`, `029_fix_receive_po_lot_id_ambiguous.sql`, `076_link_mirror_transactions.sql`, `077_backfill_po_payment_links.sql`, `078_link_po_payment_outside_flow.sql`
 
 **Invariantes (NO romper):**
 - **Recepción parcial via RPC.** No insertar lotes manualmente. El RPC `receive_purchase_order` distribuye el flete proporcionalmente por valor de ítem y crea los lotes.
 - **Flete editable solo en estado draft.** Una vez recibida la PO, el flete es inmutable.
 - **Sugerencia de reposición tiene fallback.** Si no hay historial del mismo mes en años anteriores, cae a promedio de los últimos 3 meses (run-rate). No asumir que siempre retorna un número — puede ser null.
+- **Todo pago de una OC va en la categoría `Compra de inventario (OC)`.** Es la única que `useReports.ts:351` excluye de `direct_costs`, porque ese costo entra al resultado como COGS al vender. Un pago de OC en cualquier otra categoría se cuenta dos veces. La mig. `083` reclasifica por `payment_transaction_id`, no por descripción — un pago cargado a mano con texto libre (`'Pago a proveedor (…)'`) no lo encuentra ninguna búsqueda por plantilla.
+- **El pago inmediato guarda el id de su transacción.** `purchase_orders.payment_transaction_id` apunta al egreso que generó el pago al recibir la OC. Es el par del `supplier_debts.purchase_order_id` que cubre el camino diferido: las dos formas de pagar una OC quedan rastreables. Las OCs históricas pueden tenerlo en null. Al cerrar el backfill quedaron dos así, y en ninguna de las dos existe una transacción por el monto recibido: entró mercadería al stock sin que se registrara la salida de plata. Eso no es un vínculo perdido sino un gasto sin cargar.
+- **Una OC se recibe una sola vez.** `receive_purchase_order` rechaza cualquier OC que no esté en `draft` y la deja en `received`. La recepción parcial es elegir un subconjunto de ítems dentro de ese único evento.
 
 ---
 
@@ -237,7 +243,7 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 
 **Invariantes (NO romper):**
 - **`supplier_debts`** se crean automáticamente al recibir una PO según `payment_option` (`immediate | deferred | none`). No crearlas manualmente desde la UI de Cuentas.
-- **Los pagos/cobros pueden vincular opcionalmente a una `transactions`.** Este vínculo es opcional, no requerido.
+- **Toda transacción espejo guarda el id de la fila que la originó.** El vínculo lo lleva siempre la fila de dominio, nunca `transactions`: `receivable_collections.transaction_id`, `supplier_debt_payments.transaction_id`, `commission_payouts.paid_via_transaction_id`, `receivables.source_transaction_id`, `reserve_movements.transaction_id`, `purchase_orders.payment_transaction_id`. La columna es nullable pero no opcional: un null solo es admisible cuando no hubo transacción — el caso legítimo es una liquidación de comisiones totalmente compensada por retiros, que no genera egreso de caja. Sin este vínculo, `void_transaction` no puede revertir el efecto de una anulación y el monto queda contado dos veces.
 - **Los retiros de staff (`hairdresser_id != null`) en `receivables`** aparecen en "Por cobrar" pero se liquidan a través del flujo de comisiones, no del flujo de cobro general. Distinguir en la UI por la presencia de `hairdresser_id`.
 
 ---
@@ -251,10 +257,19 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - `src/hooks/useReserveAccounts.ts`
 - `src/hooks/useReserveMovements.ts`
 
-**Datos:** `reserve_accounts`, `reserve_movements`
+**Datos:**
+- Tablas: `reserve_accounts`, `reserve_movements`, `transactions`
+- RPC: `update_reserve_movement(p_id, p_amount, p_date)` — edita movimiento y espejo de forma atómica; devuelve `{ mirror_updated }`
+- Migración relevante: `034_reserve_accounts.sql`, `076_link_mirror_transactions.sql`, `079_fix_reinversion_reserve_movement.sql`, `080_fix_reserve_movement_payment_sync.sql`, `081_reserve_movement_payment_method.sql`
 
 **Invariantes:**
 - La cuenta de reinversión fue restaurada en migración `048_restore_reinversion_reserve.sql` tras un drop accidental. Si se agrega lógica de seed, verificar que no duplique cuentas existentes.
+- **Cada movimiento guarda el id de su transacción espejo** en `reserve_movements.transaction_id`. Las filas anteriores a la migración `076` pueden tenerlo en null cuando el cruce por descripción, fecha y monto resultó ambiguo o no había espejo.
+- **`amount` lleva signo**: positivo entra a la reserva, negativo vuelve a la caja principal. La transacción espejo guarda el valor absoluto. La dirección no se edita.
+- **Una reserva es una cuenta real, no una marca contable.** Las cuentas de reserva son cuentas separadas dentro del banco o billetera (hoy, Mercado Pago), así que transferir a una reserva saca plata de la cuenta de origen de verdad. Cada movimiento guarda su `payment_method` y su espejo escribe una fila en `transaction_payments`: `salida` al transferir, `entrada` al retornar. Por eso el saldo por método que se ve en Transacciones muestra solo la cuenta principal.
+- **FondosPage NO resta el total reservado.** `baseBalance` ya excluye lo reservado, porque los pagos lo sacaron del saldo del método. La tarjeta "Cuenta principal" es `baseBalance` a secas y la de "Total" es `baseBalance + totalReserved`. Restar el total reservado del saldo principal lo descontaría dos veces (era el modelo anterior, previo a la mig. `081`).
+- **Toda edición pasa por `update_reserve_movement`.** Actualiza movimiento, espejo y el pago del espejo en una sola transacción, y no toca un espejo anulado. No editar `reserve_movements` con un update directo.
+- **El espejo puede tener `transaction_payments`.** El hook no los crea, pero hay espejos históricos cargados a mano desde el formulario de transacciones que sí los tienen. Al editar el monto hay que sincronizar el pago o los saldos por método quedan mal. Si el espejo tuviera más de un pago, el RPC aborta (mig. `080`).
 
 ---
 
