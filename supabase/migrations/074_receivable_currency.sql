@@ -1,3 +1,34 @@
+-- ============================================================
+-- NOTA (agosto 2026): esta migración se detectó SIN APLICAR en la base de
+-- producción, junto con la 075. Se descubrió al verificar por qué fallaba el
+-- cierre de un período: la app llamaba a record_receivable_collection y a
+-- void_transaction, que no existían, y "Cobrar una cuenta por cobrar" y
+-- "Anular una transacción" estaban rotas.
+--
+-- Se aplica fuera de orden, después de las migraciones 076–084. Se verificó que
+-- no hay conflicto: ninguna de esas redefine los objetos de acá, y las
+-- funciones de esta migración ya validan el método de pago y redondean los
+-- importes, así que cumplen la FK y el CHECK que agregó la 082.
+--
+-- Los guardias de abajo cortan con un mensaje claro si falta un prerrequisito o
+-- si hay datos que no pasarían las restricciones, en vez de fallar con un error
+-- opaco a mitad de camino.
+-- ============================================================
+
+DO $guard$
+DECLARE v_faltan text;
+BEGIN
+  SELECT string_agg(t, ', ') INTO v_faltan
+  FROM unnest(ARRAY['receivables','receivable_collections','commission_payout_receivables','transactions','payment_methods']) AS t
+  WHERE NOT EXISTS (
+    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = t AND c.relkind = 'r'
+  );
+  IF v_faltan IS NOT NULL THEN
+    RAISE EXCEPTION 'Faltan tablas requeridas por esta migración: %. Aplicar antes las migraciones que las crean (041, 052).', v_faltan;
+  END IF;
+END $guard$;
+
 -- Preserve the denomination of receivables from creation through collection.
 ALTER TABLE receivables
   ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'ARS';
@@ -13,6 +44,18 @@ ALTER TABLE receivables
 ALTER TABLE receivables
   ADD CONSTRAINT receivables_currency_check
   CHECK (currency IN ('ARS', 'USD', 'EUR')) NOT VALID;
+-- Antes de validar: si alguna fila tiene una moneda fuera de ARS/USD/EUR, la
+-- validación falla con un error de constraint que no dice cuál es. Cortar acá.
+DO $guard$
+DECLARE v_malas text;
+BEGIN
+  SELECT string_agg(DISTINCT COALESCE(currency, '(nulo)'), ', ') INTO v_malas
+  FROM receivables WHERE currency IS NULL OR currency NOT IN ('ARS', 'USD', 'EUR');
+  IF v_malas IS NOT NULL THEN
+    RAISE EXCEPTION 'Hay cuentas por cobrar con monedas inválidas: %. Corregirlas antes de seguir.', v_malas;
+  END IF;
+END $guard$;
+
 ALTER TABLE receivables VALIDATE CONSTRAINT receivables_currency_check;
 
 -- Product withdrawals are inventory-valued receivables and remain ARS.
