@@ -53,12 +53,13 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
 
   const runImport = async () => {
     try {
-      const [catRes, supRes, prodRes, hdRes, svcRes, incomeCatRes, expenseCatRes] = await Promise.all([
+      const [catRes, supRes, prodRes, hdRes, svcRes, pmRes, incomeCatRes, expenseCatRes] = await Promise.all([
         supabase.from('transaction_categories').select('id, name').not('parent_id', 'is', null),
         supabase.from('suppliers').select('id, name'),
         supabase.from('products').select('id, sku').is('deleted_at', null),
         supabase.from('hairdressers').select('id, name'),
         supabase.from('catalog_items').select('id, name'),
+        supabase.from('payment_methods').select('name'),
         supabase.from('transaction_categories').select('id').eq('transaction_type', 'income').limit(1).single(),
         supabase.from('transaction_categories').select('id').eq('name', 'Otros gastos').single(),
       ])
@@ -67,6 +68,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
       if (prodRes.error) throw new Error(prodRes.error.message)
       if (hdRes.error) throw new Error(hdRes.error.message)
       if (svcRes.error) throw new Error(svcRes.error.message)
+      if (pmRes.error) throw new Error(pmRes.error.message)
 
       const defaultIncomeSubcatId: string | null = incomeCatRes.data?.id ?? null
       const defaultExpenseSubcatId: string | null = expenseCatRes.data?.id ?? null
@@ -76,6 +78,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
       const skuMap = new Map(prodRes.data.map(p => [p.sku, p.id]))
       const hdMap = new Map(hdRes.data.map(h => [h.name.toLowerCase(), h.id]))
       const svcMap = new Set(svcRes.data.map(s => s.name.toLowerCase()))
+      const pmMap = new Map(pmRes.data.map(pm => [pm.name.toLowerCase(), pm.name]))
 
       const importResults: ImportResult[] = []
 
@@ -172,6 +175,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
                 direction = parseDirection(getVal(row, m, 'type'))
               }
 
+              amount = Math.round(amount * 100) / 100
               if (!date || amount === 0) { result.skipped++; continue }
 
               const categoryName = getVal(row, m, 'category')
@@ -197,8 +201,13 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
                 .single()
               if (txError) { result.errors.push(`${date} $${amount}: ${txError.message}`); continue }
 
-              const paymentMethod = getVal(row, m, 'payment_method')
-              if (paymentMethod) {
+              const rawPaymentMethod = getVal(row, m, 'payment_method').trim()
+              if (rawPaymentMethod) {
+                const paymentMethod = pmMap.get(rawPaymentMethod.toLowerCase())
+                if (!paymentMethod) {
+                  result.errors.push(`${date} $${amount}: la cuenta "${rawPaymentMethod}" no existe. Creala en Ajustes o corregí el archivo.`)
+                  continue
+                }
                 const instrument = getVal(row, m, 'instrument') || null
                 const { error: pmError } = await supabase.from('transaction_payments').insert({
                   transaction_id: txData.id,
