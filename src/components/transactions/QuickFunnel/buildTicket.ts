@@ -6,6 +6,7 @@ import {
   linesGross,
   discountValueFor,
   chargeTotal,
+  isCartIncome,
 } from './funnelTypes'
 
 export type BuildContext = {
@@ -36,7 +37,7 @@ function allocate(chargeBases: number[], amount: number, total: number): number[
 export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayload {
   const base = { date: state.date, currency: state.currency }
 
-  if (state.type === 'income') {
+  if (isCartIncome(state)) {
     const gross = linesGross(state.lines)
     const discount = discountValueFor(state)
     const netTotal = Math.max(0, gross - discount)
@@ -114,9 +115,10 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
     return { ...base, units }
   }
 
-  // expense / cost / transfer — single simple unit, one payment method.
+  // expense / cost / transfer / otros ingresos — single simple unit, one payment method.
   const subcat = ctx.categories.find(c => c.id === state.subcategoryId)
-  const txType: TicketUnit['transaction_type'] = state.type === 'transfer' ? 'transfer' : 'expense'
+  const txType: TicketUnit['transaction_type'] =
+    state.type === 'transfer' ? 'transfer' : state.type === 'income' ? 'income' : 'expense'
   const amount = Math.round(Math.max(0, state.manualAmount))
   const inventoryFunded = subcat?.deducts_inventory === true && !!state.simpleProductId
   return {

@@ -24,9 +24,12 @@ export type FunnelPaymentRow = {
 
 export type DiscountMode = 'none' | 'amount' | 'percent'
 
+export type IncomeMode = 'cart' | 'simple'
+
 export type FunnelState = {
   step: FunnelStep
   type: FunnelType | null
+  incomeMode: IncomeMode
   date: string
   currency: Currency
   lines: CartLine[]
@@ -58,6 +61,7 @@ export function makeEmptyFunnelState(): FunnelState {
   return {
     step: 'type',
     type: null,
+    incomeMode: 'cart',
     date: new Date().toLocaleDateString('en-CA'),
     currency: 'ARS',
     lines: [],
@@ -109,4 +113,8 @@ export function paymentsTotal(state: FunnelState): number {
 
 export function hasServiceLine(state: FunnelState): boolean {
   return state.lines.some(l => l.kind === 'service')
+}
+
+export function isCartIncome(state: FunnelState): boolean {
+  return state.type === 'income' && state.incomeMode === 'cart'
 }

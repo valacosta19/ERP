@@ -30,7 +30,7 @@ type IncomeProps = {
 
 type SimpleProps = {
   mode: 'simple'
-  type: Exclude<FunnelType, 'income'>
+  type: FunnelType
   currency: Currency
   onCurrency: (c: Currency) => void
   manualAmount: number
@@ -41,6 +41,7 @@ type SimpleProps = {
   transferDirection: 'entrada' | 'salida'
   onDirection: (d: 'entrada' | 'salida') => void
   deductsInventory?: boolean
+  methodLabel?: string
 }
 
 export function StepAmount(props: IncomeProps | SimpleProps) {
@@ -241,7 +242,7 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
   )
 }
 
-function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simpleMethod, onMethod, paymentMethods, transferDirection, onDirection, deductsInventory }: SimpleProps) {
+function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simpleMethod, onMethod, paymentMethods, transferDirection, onDirection, deductsInventory, methodLabel }: SimpleProps) {
   return (
     <div style={{ maxWidth: '520px' }}>
       <StepHeading kicker="Paso 3 — Monto" title="¿Cuánto?" />
@@ -314,7 +315,7 @@ function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simp
         </div>
       ) : (
         <div>
-          <SectionLabel>{type === 'transfer' ? 'Cuenta / caja' : 'Sale de'}</SectionLabel>
+          <SectionLabel>{methodLabel ?? (type === 'transfer' ? 'Cuenta / caja' : 'Sale de')}</SectionLabel>
           <div className="flex flex-wrap gap-2" style={{ marginTop: '8px' }}>
             {paymentMethods.map(m => (
               <button

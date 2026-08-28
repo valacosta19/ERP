@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search, Plus, Scissors, Package, Tag } from 'lucide-react'
+import { Search, Plus, Check, Scissors, Package, Tag } from 'lucide-react'
 import type { CatalogItem, Product, TransactionCategory } from '@/types'
 import { StepHeading } from './funnelAtoms'
 import { money } from './funnelFormat'
@@ -11,13 +11,14 @@ type Props = {
   products: Product[]
   cartCount: number
   incomeSubcategories: TransactionCategory[]
+  selectedOtherId: string | null
   onAddService: (item: CatalogItem) => void
   onAddProduct: (product: Product) => void
   onAddOther: (subcat: TransactionCategory) => void
   productLabel: (p: Product) => string
 }
 
-export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubcategories, onAddService, onAddProduct, onAddOther, productLabel }: Props) {
+export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubcategories, selectedOtherId, onAddService, onAddProduct, onAddOther, productLabel }: Props) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<Mode>('services')
   const q = query.trim().toLowerCase()
@@ -91,7 +92,7 @@ export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubc
           )
         })}
         {mode === 'other' && filteredOther.map(c => (
-          <ItemTile key={c.id} title={c.name} accent="#F59E0B" onClick={() => onAddOther(c)} />
+          <ItemTile key={c.id} title={c.name} accent="#F59E0B" selected={selectedOtherId === c.id} onClick={() => onAddOther(c)} />
         ))}
         {mode === 'services' && filteredServices.length === 0 && (
           <p style={{ gridColumn: '1 / -1', fontSize: '0.875rem', color: 'var(--color-muted)' }}>Sin resultados.</p>
@@ -109,9 +110,14 @@ export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubc
         )}
       </div>
 
-      {cartCount === 0 && (
+      {cartCount === 0 && !selectedOtherId && (
         <p style={{ marginTop: '14px', fontSize: '0.8125rem', color: 'var(--color-muted)' }}>
-          Tocá un ítem para agregarlo al ticket. Podés sumar servicios, productos y otros ingresos.
+          Tocá un servicio o producto para sumarlo al ticket. Los ingresos de "Otros" se cargan solos, con su propio monto.
+        </p>
+      )}
+      {selectedOtherId && (
+        <p style={{ marginTop: '14px', fontSize: '0.8125rem', color: 'var(--color-muted)' }}>
+          Este ingreso se carga solo. Si agregás un servicio o un producto, se reemplaza por el ticket.
         </p>
       )}
     </div>
@@ -139,7 +145,7 @@ function ModeTab({ active, icon, label, count, accent, onClick }: { active: bool
   )
 }
 
-function ItemTile({ title, price, accent, badge, badgeWarn, onClick }: { title: string; price?: string; accent: string; badge?: string; badgeWarn?: boolean; onClick: () => void }) {
+function ItemTile({ title, price, accent, badge, badgeWarn, selected, onClick }: { title: string; price?: string; accent: string; badge?: string; badgeWarn?: boolean; selected?: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -148,18 +154,20 @@ function ItemTile({ title, price, accent, badge, badgeWarn, onClick }: { title: 
       style={{
         position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '10px',
         textAlign: 'left', padding: '15px', minHeight: '104px', borderRadius: '16px',
-        border: '1.5px solid var(--color-border)', background: 'var(--color-surface)', cursor: 'pointer',
+        border: selected ? `2px solid ${accent}` : '1.5px solid var(--color-border)',
+        background: selected ? `color-mix(in srgb, ${accent} 12%, var(--color-surface))` : 'var(--color-surface)',
+        cursor: 'pointer',
         transition: 'border-color 0.12s, transform 0.12s, box-shadow 0.12s',
       }}
       onMouseEnter={e => { e.currentTarget.style.borderColor = accent; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 12px 26px -18px ${accent}` }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none' }}
+      onMouseLeave={e => { if (!selected) e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none' }}
     >
       <div className="flex items-start justify-between">
         <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--color-text)', lineHeight: 1.25 }}>{title}</span>
         <span
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '26px', height: '26px', borderRadius: '9px', background: accent, color: '#fff', flexShrink: 0 }}
         >
-          <Plus size={15} strokeWidth={2.6} />
+          {selected ? <Check size={15} strokeWidth={2.6} /> : <Plus size={15} strokeWidth={2.6} />}
         </span>
       </div>
       <div className="flex items-end justify-between gap-2">

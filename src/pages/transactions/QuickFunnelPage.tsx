@@ -24,6 +24,7 @@ import {
   chargeTotal,
   paymentsTotal as paymentsTotalFn,
   hasServiceLine,
+  isCartIncome,
 } from '@/components/transactions/QuickFunnel/funnelTypes'
 import { buildTicket } from '@/components/transactions/QuickFunnel/buildTicket'
 import { useFunnelSubmit } from '@/components/transactions/QuickFunnel/funnelSubmit'
@@ -43,8 +44,8 @@ const STEP_LABELS: Record<FunnelStep, string> = {
   type: 'Tipo', detail: 'Detalle', amount: 'Monto', adjust: 'Ajustes', payment: 'Pago', done: 'Cierre',
 }
 
-function stepsFor(type: FunnelType | null): FunnelStep[] {
-  if (type === 'income') return ['type', 'detail', 'amount', 'adjust', 'payment', 'done']
+function stepsFor(state: FunnelState): FunnelStep[] {
+  if (isCartIncome(state)) return ['type', 'detail', 'amount', 'adjust', 'payment', 'done']
   return ['type', 'detail', 'amount', 'done']
 }
 
@@ -75,7 +76,7 @@ export function QuickFunnelPage() {
   const productLabel = useCallback((p: Product) => (p.unit ? `${p.name} ${p.unit}` : p.name), [])
   const effectiveIncomeMethod = state.incomeMethod || cashMethod || paymentMethods[0] || ''
 
-  const steps = stepsFor(state.type)
+  const steps = stepsFor(state)
   const stepperItems = steps.map(s => ({ key: s, label: STEP_LABELS[s] }))
 
   const gross = linesGross(state.lines)
@@ -97,7 +98,8 @@ export function QuickFunnelPage() {
 
   function addService(item: CatalogItem) {
     bumpFrequent(`s:${item.id}`)
-    setState(s => {
+    setState(s0 => {
+      const s = leaveSimpleIncome(s0)
       const existing = s.lines.find(l => l.catalogItemId === item.id)
       if (existing) return { ...s, lines: s.lines.map(l => l === existing ? { ...l, qty: l.qty + 1 } : l) }
       const line: CartLine = { key: nextKey(), kind: 'service', name: item.name, unitPrice: item.price, qty: 1, catalogItemId: item.id, productId: null, subcategoryId: null, professionals: [] }
@@ -107,7 +109,8 @@ export function QuickFunnelPage() {
 
   function addProduct(p: Product) {
     bumpFrequent(`p:${p.id}`)
-    setState(s => {
+    setState(s0 => {
+      const s = leaveSimpleIncome(s0)
       const existing = s.lines.find(l => l.productId === p.id)
       if (existing) return { ...s, lines: s.lines.map(l => l === existing ? { ...l, qty: l.qty + 1 } : l) }
       const line: CartLine = { key: nextKey(), kind: 'product', name: productLabel(p), unitPrice: p.sale_price ?? 0, qty: 1, catalogItemId: null, productId: p.id, subcategoryId: null, professionals: [] }
@@ -115,9 +118,25 @@ export function QuickFunnelPage() {
     })
   }
 
-  function addOtherIncome(subcat: { id: string; name: string }) {
-    const line: CartLine = { key: nextKey(), kind: 'other', name: subcat.name, unitPrice: 0, qty: 1, catalogItemId: null, productId: null, subcategoryId: subcat.id, professionals: [] }
-    setState(s => ({ ...s, lines: [...s.lines, line] }))
+  function leaveSimpleIncome(s: FunnelState): FunnelState {
+    if (s.incomeMode !== 'simple') return s
+    return { ...s, incomeMode: 'cart', subcategoryId: '', concept: '', manualAmount: 0, simpleMethod: 'Efectivo' }
+  }
+
+  function pickOtherIncome(subcat: { id: string; name: string }) {
+    setState(s => ({
+      ...s,
+      incomeMode: 'simple',
+      subcategoryId: subcat.id,
+      concept: subcat.name,
+      lines: [],
+      discountMode: 'none',
+      discountValue: 0,
+      tipEnabled: false,
+      tipAmount: 0,
+      anticipoAmount: 0,
+      payments: [],
+    }))
   }
 
   function priceForTier(item: CatalogItem, tier: 'cash' | 'transfer' | 'card'): number {
@@ -152,15 +171,15 @@ export function QuickFunnelPage() {
     switch (step) {
       case 'type': return state.type !== null
       case 'detail': {
-        if (state.type === 'income') return state.lines.length > 0
+        if (state.type === 'income') return isCartIncome(state) ? state.lines.length > 0 : !!state.subcategoryId
         if (!state.subcategoryId) return false
         if (selectedSimpleSubcat?.deducts_inventory) return !!state.simpleProductId
         return true
       }
       case 'amount':
-        return state.type === 'income'
-          ? state.lines.every(l => l.unitPrice > 0)
-          : state.manualAmount > 0 && (selectedSimpleSubcat?.deducts_inventory === true || !!state.simpleMethod)
+        if (isCartIncome(state)) return state.lines.every(l => l.unitPrice > 0)
+        if (state.type === 'income') return state.manualAmount > 0 && !!state.simpleMethod
+        return state.manualAmount > 0 && (selectedSimpleSubcat?.deducts_inventory === true || !!state.simpleMethod)
       case 'adjust': return true
       case 'payment': return totalToCharge <= 0 || Math.abs(totalToCharge - paymentsSum) < 1
       default: return true
@@ -198,12 +217,13 @@ export function QuickFunnelPage() {
 
   function advanceHint(step: FunnelStep): string {
     if (step === 'detail') {
-      if (state.type === 'income') return 'Agregá al menos un ítem al ticket.'
+      if (isCartIncome(state)) return 'Agregá al menos un ítem al ticket.'
+      if (state.type === 'income') return 'Elegí un tipo de ingreso.'
       if (!state.subcategoryId) return 'Elegí una categoría.'
       if (selectedSimpleSubcat?.deducts_inventory && !state.simpleProductId) return 'Esta categoría descuenta inventario — seleccioná el producto.'
       return 'Elegí una categoría.'
     }
-    if (step === 'amount') return state.type === 'income' ? 'Cada ítem necesita un precio mayor a cero.' : 'Ingresá un monto mayor a cero.'
+    if (step === 'amount') return isCartIncome(state) ? 'Cada ítem necesita un precio mayor a cero.' : 'Ingresá un monto mayor a cero.'
     if (step === 'payment') return 'El pago debe cubrir el total a cobrar.'
     return 'Completá este paso para continuar.'
   }
@@ -212,7 +232,7 @@ export function QuickFunnelPage() {
     setSubmitting(true)
     setError('')
     const payload = buildTicket(state, { categories })
-    const summary = state.type === 'income'
+    const summary = isCartIncome(state)
       ? totalToCharge <= 0
         ? `Pagado con anticipo · ${money(netToPay, state.currency)}`
         : `Cobrado ${money(totalToCharge, state.currency)}`
@@ -396,9 +416,10 @@ export function QuickFunnelPage() {
                 products={products}
                 cartCount={state.lines.length}
                 incomeSubcategories={incomeSubcats}
+                selectedOtherId={state.incomeMode === 'simple' ? state.subcategoryId || null : null}
                 onAddService={addService}
                 onAddProduct={addProduct}
-                onAddOther={addOtherIncome}
+                onAddOther={pickOtherIncome}
                 productLabel={productLabel}
               />
             )}
@@ -434,7 +455,7 @@ export function QuickFunnelPage() {
               />
             )}
 
-            {state.step === 'amount' && state.type === 'income' && (
+            {state.step === 'amount' && isCartIncome(state) && (
               <StepAmount
                 mode="income"
                 lines={state.lines}
@@ -447,6 +468,22 @@ export function QuickFunnelPage() {
                 onMethod={setIncomeMethod}
                 priceTier={state.incomePriceTier}
                 onPriceTier={setIncomePriceTier}
+              />
+            )}
+            {state.step === 'amount' && state.type === 'income' && state.incomeMode === 'simple' && (
+              <StepAmount
+                mode="simple"
+                type="income"
+                currency={state.currency}
+                onCurrency={c => setState(s => ({ ...s, currency: c }))}
+                manualAmount={state.manualAmount}
+                onAmount={v => setState(s => ({ ...s, manualAmount: v }))}
+                simpleMethod={state.simpleMethod}
+                onMethod={m => setState(s => ({ ...s, simpleMethod: m }))}
+                paymentMethods={paymentMethods}
+                transferDirection={state.transferDirection}
+                onDirection={d => setState(s => ({ ...s, transferDirection: d }))}
+                methodLabel="Entra en"
               />
             )}
             {state.step === 'amount' && state.type && state.type !== 'income' && (

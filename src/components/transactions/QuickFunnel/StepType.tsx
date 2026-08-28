@@ -13,7 +13,7 @@ export function StepType({ value, onPick }: { value: FunnelType | null; onPick: 
     <div className="flex flex-col items-center justify-center" style={{ minHeight: '64vh' }}>
       <div style={{ textAlign: 'center', marginBottom: '34px' }}>
         <div style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--color-accent)', marginBottom: '8px' }}>
-          Paso 1 de 6
+          Paso 1
         </div>
         <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--color-text)' }}>
           ¿Qué vas a registrar?

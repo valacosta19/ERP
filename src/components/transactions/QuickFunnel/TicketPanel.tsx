@@ -7,6 +7,7 @@ import {
   discountValueFor,
   ticketNet,
   chargeTotal,
+  isCartIncome,
 } from './funnelTypes'
 import { money } from './funnelFormat'
 import { Input } from '@/components/ui/Input'
@@ -19,7 +20,7 @@ type Props = {
 }
 
 export function TicketPanel({ state, onQty, onRemove, onDate }: Props) {
-  const isIncome = state.type === 'income'
+  const isIncome = isCartIncome(state)
   const cur = state.currency
   const discount = discountValueFor(state)
   const tip = state.tipEnabled ? Math.max(0, state.tipAmount) : 0
