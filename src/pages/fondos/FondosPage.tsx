@@ -1,9 +1,15 @@
 import { useState, useMemo } from 'react'
-import { Trash2, Plus, ArrowRight } from 'lucide-react'
+import { Trash2, Plus, ArrowRight, Pencil } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
+import { Modal } from '@/components/ui/Modal'
+import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
 import { usePaymentMethodBalances } from '@/hooks/useTransactions'
+import { usePaymentMethods } from '@/hooks/usePaymentMethods'
+import { useLockedPeriods } from '@/hooks/useLockedPeriods'
 import { useReserveAccounts, useCreateReserveAccount, useDeleteReserveAccount } from '@/hooks/useReserveAccounts'
-import { useReserveMovements, useCreateReserveMovement } from '@/hooks/useReserveMovements'
+import { useReserveMovements, useCreateReserveMovement, useUpdateReserveMovement } from '@/hooks/useReserveMovements'
+import type { ReserveMovement } from '@/types'
 
 function fmtAmount(amount: number) {
   return `$${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -21,18 +27,33 @@ export function FondosPage() {
   const createReserve = useCreateReserveAccount()
   const deleteReserve = useDeleteReserveAccount()
   const createMovement = useCreateReserveMovement()
+  const updateMovement = useUpdateReserveMovement()
+  const { data: lockedPeriods = [] } = useLockedPeriods()
+  const { data: paymentMethodsData = [] } = usePaymentMethods()
+  const activeMethods = useMemo(() => paymentMethodsData.filter(m => m.active).map(m => m.name), [paymentMethodsData])
 
   const [direction, setDirection] = useState<'to_reserve' | 'to_main'>('to_reserve')
   const [selectedReserve, setSelectedReserve] = useState('')
+  const [transferMethod, setTransferMethod] = useState('')
+
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(today())
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [transferError, setTransferError] = useState<string | null>(null)
 
+  const [editing, setEditing] = useState<ReserveMovement | null>(null)
+  const [editAmount, setEditAmount] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editError, setEditError] = useState<string | null>(null)
+  const [editNotice, setEditNotice] = useState<string | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [addingReserve, setAddingReserve] = useState(false)
+
+  const effectiveTransferMethod = transferMethod || activeMethods[0] || ''
 
   const arsBalanceByMethod = useMemo(() => {
     const map = new Map<string, number>()
@@ -62,20 +83,22 @@ export function FondosPage() {
     return sum
   }, [reserveBalances])
 
-  const netBalance = baseBalance
-  const mainBalance = baseBalance - totalReserved
+  // Cada movimiento de reserva escribe su fila de pago, así que baseBalance ya
+  // excluye lo reservado: restarlo de nuevo lo descontaría dos veces.
+  const mainBalance = baseBalance
+  const netBalance = baseBalance + totalReserved
 
   async function handleTransfer(e: React.FormEvent) {
     e.preventDefault()
     const parsedAmount = parseFloat(amount)
-    if (!parsedAmount || parsedAmount <= 0 || !selectedReserve || !date) return
+    if (!parsedAmount || parsedAmount <= 0 || !selectedReserve || !date || !effectiveTransferMethod) return
     const finalAmount = direction === 'to_reserve' ? parsedAmount : -parsedAmount
     const reserve = reserves.find(r => r.id === selectedReserve)
     if (!reserve) return
     setSubmitting(true)
     setTransferError(null)
     try {
-      await createMovement.mutateAsync({ reserve_id: selectedReserve, reserve_name: reserve.name, amount: finalAmount, date, note: note || null })
+      await createMovement.mutateAsync({ reserve_id: selectedReserve, reserve_name: reserve.name, amount: finalAmount, date, payment_method: effectiveTransferMethod, note: note || null })
       setAmount('')
       setNote('')
       setDate(today())
@@ -83,6 +106,51 @@ export function FondosPage() {
       setTransferError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  function isDateLocked(value: string) {
+    const d = new Date(value + 'T00:00:00')
+    return lockedPeriods.some(p => p.year === d.getFullYear() && p.month === d.getMonth() + 1)
+  }
+
+  function openEdit(m: ReserveMovement) {
+    setEditing(m)
+    setEditAmount(String(Math.abs(m.amount)))
+    setEditDate(m.date)
+    setEditError(null)
+    setEditNotice(null)
+  }
+
+  async function handleEdit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editing) return
+    const parsed = parseFloat(editAmount)
+    if (!parsed || parsed <= 0) {
+      setEditError('El monto debe ser mayor a cero.')
+      return
+    }
+    if (!editDate) {
+      setEditError('La fecha es obligatoria.')
+      return
+    }
+    if (isDateLocked(editDate)) {
+      setEditError('El período de la fecha nueva está cerrado. Elegí otra fecha o reabrilo en Ajustes.')
+      return
+    }
+    setSavingEdit(true)
+    setEditError(null)
+    try {
+      const result = await updateMovement.mutateAsync({ id: editing.id, amount: parsed, date: editDate })
+      if (result.mirror_updated) {
+        setEditing(null)
+      } else {
+        setEditNotice('Se actualizó el movimiento, pero no tiene una transacción asociada activa: revisá la lista de transacciones si esperabas verla ahí.')
+      }
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Error desconocido')
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -215,6 +283,19 @@ export function FondosPage() {
                 ))}
               </select>
 
+              <select
+                value={effectiveTransferMethod}
+                onChange={e => setTransferMethod(e.target.value)}
+                required
+                title={direction === 'to_reserve' ? 'Cuenta de la que sale' : 'Cuenta a la que vuelve'}
+                className="rounded-lg border px-3 py-2 text-sm"
+                style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }}
+              >
+                {activeMethods.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+
               <input
                 type="number"
                 value={amount}
@@ -274,7 +355,9 @@ export function FondosPage() {
                     <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--color-muted)' }}>Fecha</th>
                     <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--color-muted)' }}>Movimiento</th>
                     <th className="text-right px-4 py-3 font-medium" style={{ color: 'var(--color-muted)' }}>Monto</th>
+                    <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--color-muted)' }}>Cuenta</th>
                     <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--color-muted)' }}>Nota</th>
+                    <th className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody>
@@ -297,7 +380,22 @@ export function FondosPage() {
                           {fmtAmount(Math.abs(m.amount))}
                         </td>
                         <td className="px-4 py-3" style={{ color: 'var(--color-muted)' }}>
+                          {m.payment_method}
+                        </td>
+                        <td className="px-4 py-3" style={{ color: 'var(--color-muted)' }}>
                           {m.note ?? '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {!isDateLocked(m.date) && (
+                            <button
+                              type="button"
+                              onClick={() => openEdit(m)}
+                              title="Editar fecha y monto"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-muted)', padding: '2px' }}
+                            >
+                              <Pencil size={14} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     )
@@ -404,6 +502,46 @@ export function FondosPage() {
           )}
         </section>
       </div>
+
+      <Modal open={!!editing} onClose={() => setEditing(null)} title="Editar reserva">
+        <form onSubmit={handleEdit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Fecha"
+              type="date"
+              value={editDate}
+              onChange={e => setEditDate(e.target.value)}
+            />
+            <Input
+              label="Monto"
+              type="number"
+              step="0.01"
+              min="0"
+              value={editAmount}
+              onChange={e => setEditAmount(e.target.value)}
+            />
+          </div>
+          <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+            La dirección del movimiento no se edita. Para cambiarla, eliminá el movimiento y cargalo de nuevo.
+          </p>
+          {editError && (
+            <p className="text-sm" style={{ color: 'var(--color-danger)' }}>{editError}</p>
+          )}
+          {editNotice && (
+            <p className="text-sm" style={{ color: 'var(--color-warning)' }}>{editNotice}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setEditing(null)}>
+              {editNotice ? 'Cerrar' : 'Cancelar'}
+            </Button>
+            {!editNotice && (
+              <Button type="submit" disabled={savingEdit}>
+                {savingEdit ? 'Guardando…' : 'Guardar'}
+              </Button>
+            )}
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

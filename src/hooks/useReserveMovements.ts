@@ -25,6 +25,7 @@ export function useCreateReserveMovement() {
       reserve_name: string
       amount: number
       date: string
+      payment_method: string
       note?: string | null
     }) => {
       const { reserve_name, ...movementPayload } = payload
@@ -48,7 +49,7 @@ export function useCreateReserveMovement() {
         .eq('name', 'Transferencia interna')
         .single()
 
-      const { error: txErr } = await supabase
+      const { data: tx, error: txErr } = await supabase
         .from('transactions')
         .insert({
           date: payload.date,
@@ -61,14 +62,62 @@ export function useCreateReserveMovement() {
           seña_amount: null,
           created_by: user?.id ?? null,
         })
+        .select('id')
+        .single()
       if (txErr) throw new Error(txErr.message)
 
-      return movement as ReserveMovement
+      const { error: pmtErr } = await supabase
+        .from('transaction_payments')
+        .insert({
+          transaction_id: tx.id,
+          payment_method: payload.payment_method,
+          instrument: null,
+          amount: Math.abs(payload.amount),
+          type: isDeposit ? 'salida' : 'entrada',
+        })
+      if (pmtErr) throw new Error(pmtErr.message)
+
+      const { error: linkErr } = await supabase
+        .from('reserve_movements')
+        .update({ transaction_id: tx.id })
+        .eq('id', movement.id)
+      if (linkErr) {
+        throw new Error(
+          `Se creó el movimiento y su transacción, pero no se pudieron vincular: ${linkErr.message}. ` +
+          'Correr la consulta de huérfanos de la migración 076 para enlazarlos.',
+        )
+      }
+
+      return { ...(movement as ReserveMovement), transaction_id: tx.id }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reserve-movements'] })
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['reports', 'financial'] })
+      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
+    },
+  })
+}
+
+export function useUpdateReserveMovement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: { id: string; amount: number; date: string }) => {
+      const { data, error } = await supabase.rpc('update_reserve_movement', {
+        p_id: payload.id,
+        p_amount: payload.amount,
+        p_date: payload.date,
+      })
+      if (error) throw new Error(error.message)
+      return data as { mirror_updated: boolean }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reserve-movements'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['reports', 'financial'] })
+      qc.invalidateQueries({ queryKey: ['reports', 'profit'] })
+      qc.invalidateQueries({ queryKey: ['reports', 'balance-sheet'] })
+      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
     },
   })
 }

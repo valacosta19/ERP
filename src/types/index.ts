@@ -240,6 +240,8 @@ export interface ReserveMovement {
   note: string | null
   date: string
   created_at: string
+  transaction_id: string | null
+  payment_method: string
 }
 
 export interface SupplierDebt {
