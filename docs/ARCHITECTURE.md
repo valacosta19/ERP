@@ -27,9 +27,12 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 **Qué hace:** CRUD de transacciones de caja. Cada transacción puede tener múltiples formas de pago, múltiples profesionales, seña, y vínculo a categoría/subcategoría.
 
 **Archivos:**
-- `src/pages/transactions/TransactionsPage.tsx` (746 líneas — página principal, formulario inline, lista, balances por método)
+- `src/pages/transactions/TransactionsPage.tsx` (~1000 líneas — página principal, formulario inline, lista, balances por método)
 - `src/pages/transactions/ReconcileModal.tsx` — conciliación
 - `src/hooks/useTransactions.ts` — `useTransactions`, `useCreateTransaction`, `useUpdateTransaction`, `useVoidTransaction`, `useUnrefundedAnticipos`, `usePaymentMethodBalances`
+- `src/hooks/useTransactionOrder.ts` — `useReorderTransactions` (orden manual por fecha)
+- `src/hooks/useTransactionGroups.ts` — `useTransactionGroups`, `useCreateTransactionGroup`, `useDeleteTransactionGroup`, `useRemoveGroupMember`
+- `src/lib/transactionOrder.ts` — `fetchDisplayPositions`, `compareByDisplayOrder`
 - `src/hooks/useTransactionCategories.ts` — `useTransactionCategories`, `useCreateCategory`, `useUpdateCategory`
 - `src/hooks/useTransactionPayments.ts`
 - `src/hooks/useTransactionRecipeCosts.ts`
@@ -37,11 +40,12 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - `src/components/transactions/ProductCombobox.tsx`
 
 **Datos:**
-- Tablas: `transactions`, `transaction_payments`, `transaction_hairdressers`, `transaction_categories`, `transaction_recipe_costs`, `receivables`, `user_action_logs`
+- Tablas: `transactions`, `transaction_payments`, `transaction_hairdressers`, `transaction_categories`, `transaction_recipe_costs`, `transaction_display_order`, `transaction_groups`, `transaction_group_members`, `receivables`, `user_action_logs`
 - Vistas: `products_with_stock` (para snapshot de costo al registrar servicio con receta)
 
 **Invariantes (NO romper):**
 - **Soft-delete only.** Nunca borrar una transacción. Void = setear `voided_at` + insertar en `user_action_logs`. `useVoidTransaction` ya hace ambos.
+- **`amount = 0` solo con `seña_amount > 0`** (mig. `087`): un servicio cubierto íntegramente por el anticipo se graba sin pagos y se contabiliza por la seña.
 - **`is_seña = true` son anticipos puros.** Se excluyen de revenue, profit y reportes de costos. Solo entran al resultado cuando la transacción final los referencia via `seña_amount`. Verificar exclusión en `useReports.ts` línea ~320.
 - **`transaction_payments` es el origen del balance.** El campo `transactions.amount` es suma derivada de `transaction_payments.amount`. Los balances por método de pago (`usePaymentMethodBalances`) leen `transaction_payments`, no `transactions.amount`.
 - **`payment_method` es una FK contra `payment_methods.name`** (mig. `082`), con `ON UPDATE CASCADE`: renombrar una cuenta en Ajustes propaga a sus pagos, y no se puede borrar una cuenta con pagos. No escribir nombres de cuenta literales ni centinelas: un gasto costeado desde el stock no lleva fila de pago, lleva `payments: []` (`buildTicket.ts:139`). El catálogo es único sin distinguir mayúsculas.
@@ -50,11 +54,17 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - **Period locking.** Antes de crear/editar/anular, verificar que el período no esté en `locked_periods`. La validación se hace en la UI (ver `useLockedPeriods`); la DB tiene triggers que lo refuerzan.
 - **Categorías de gasto.** `subcategory_id` requerido cuando `transaction_type = 'expense'`. La categoría `'Consumos y cortesías'` con `deducts_inventory = true` es la que dispara el descuento físico de inventario vía FIFO.
 - **Préstamos otorgados.** Al crear una transacción cuya subcategoría es `'Préstamos otorgados'`, `useCreateTransaction` inserta automáticamente una fila en `receivables`. No duplicar esta lógica.
+- **El orden manual vive en `transaction_display_order`, no en `transactions`** (mig. `085`). El arrastre reordena filas **dentro de una misma fecha**; el orden por `date DESC` no se toca. La tabla lateral existe porque `trg_check_locked_period_update` (mig. `033`) es `BEFORE UPDATE ON transactions` sin acotar columnas y rechazaría cualquier escritura en un mes cerrado; como el orden es presentación pura, puede convivir con un período cerrado. Al soltar se renumera el grupo de fecha **completo** —incluidas las filas que el filtro oculta, que van al final—, así que el orden nunca queda indefinido. La ausencia de posición equivale a `0`: una transacción nueva en un día ya reordenado aparece arriba de su grupo.
+- **Los grupos de transacciones son presentacionales** (mig. `086`). `transaction_groups` + `transaction_group_members` juntan dos o más transacciones bajo una etiqueta para que la lista las muestre como una sola fila con el total, y sirven para conciliar contra una transferencia que cubrió varios conceptos. Ningún reporte, balance, snapshot ni RPC lee esas tablas: `totals` y `exportCSV` siguen reduciendo sobre la lista **plana** de transacciones, nunca sobre las filas agrupadas, y no existe ninguna transacción "resumen" — crearla duplicaría el importe en todos los agregadores. Igual que el orden manual, la membresía vive en una tabla lateral porque `trg_check_locked_period_update` (mig. `033`) rechazaría un `UPDATE` sobre `transactions` en un mes cerrado, y conciliar una transferencia vieja es justo el caso de uso.
+- **Un grupo no mezcla monedas.** `trg_check_group_member_currency` lo rechaza en DB, y el `Select` de moneda del modal de edición queda deshabilitado mientras la transacción pertenezca a un grupo — si no, se podría desarmar la invariante por la puerta de atrás. Sí admite entradas y salidas mezcladas: el total de la fila es la suma con signo vía `getTxDirection`, calculada sobre **todos** los miembros no anulados, no solo los que pasan el filtro activo.
 - **`transaction_recipe_costs`** se inserta en `useCreateTransaction` si el `catalog_item_id` tiene recetas en `service_recipes`. Es un snapshot del costo de materiales en ese momento — no se recalcula luego.
 
 **Gotchas:**
 - Al editar una transacción, los `transaction_payments` y `transaction_hairdressers` se borran y reinsertan (no se actualizan). No usar `update` sobre ellos.
 - `voided_at` debe excluirse en todas las queries de reportes y balances (`.is('voided_at', null)`).
+- `fetchDisplayPositions` acota siempre por los ids ya traídos. Un `select` sin filtro sobre `transaction_display_order` lo trunca PostgREST a 1000 filas y los días más viejos revertirían a su orden de carga sin ningún error visible.
+- `Table` pagina en cliente, así que un grupo de fecha puede quedar partido entre páginas y el arrastre solo alcanza a las filas renderizadas. Para eso existe el modo levantar y colocar: clic en el handle deja la fila en `movingId`, se cambia de página con libertad y un clic en cualquier fila del mismo día la inserta ahí; Esc cancela. `movingId` es estado de la página, no de `Table`, que es lo que lo hace sobrevivir al cambio de página. El handle es un `<button>` a propósito: como `<span>` su clic burbujeaba a la `<tr>` y colocar y levantar se disparaban a la vez.
+- Solo las filas `kind === 'single'` son destino válido de reordenación (`rowProps` corta antes para las de grupo). En un día donde casi todo está agrupado quedan pocos destinos, y con una sola fila suelta más grupos no queda ninguno.
 
 ---
 
@@ -76,6 +86,7 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - RPC: `create_funnel_unit` (idempotente — recibe un `idempotency_key` en UUID)
 - Tablas escritas por el RPC: `transactions`, `transaction_payments`, `transaction_hairdressers`, `transaction_recipe_costs`
 - Migración de idempotencia: `059_funnel_idempotency.sql`, `060_funnel_idempotency_race_fix.sql`
+- Migración `087_funnel_full_sena.sql`: `transactions.amount` admite `0` solo cuando `seña_amount > 0` (servicio cubierto íntegramente por el anticipo)
 
 **Invariantes (NO romper):**
 - **El RPC `create_funnel_unit` es idempotente.** Cada ticket lleva un `idempotency_key` (UUID generado en el cliente). Si la red falla y se reintenta, el RPC detecta la clave duplicada y devuelve el resultado anterior sin reinsertar. No usar `useCreateTransaction` para el funnel.
@@ -84,6 +95,9 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - **`funnelSubmit.ts` es un dispatcher multi-kind.** `submitTicket` rutea por `unit.kind`: `service/product/tip/simple` → `create_funnel_unit`; `staff_advance` → `create_staff_advance`; `staff_withdrawal` → `create_staff_receivable`. Todos son idempotentes por `client_uuid`.
 - **`flushQueue` tiene mutex de módulo.** Previene ejecuciones concurrentes desde múltiples instancias de `useFunnelQueue` (AppShell + QuickFunnelPage).
 - **`buildTicket.ts` es la única función** que convierte el estado del funnel en un `TicketPayload`. No construir el payload directamente en componentes.
+- **Un carrito se graba agrupado.** `TicketPayload.group_label` (nombres de las líneas unidos con ` + `) viaja dentro del ticket, también en la cola offline. Al terminar el bucle de unidades, `submitTicket` recoge los `transaction_id` que devuelve `create_funnel_unit` y crea un `transaction_groups` con ellos vía `createTransactionGroup` (`useTransactionGroups.ts`); la propina entra en el grupo. Es idempotente: si alguno de esos ids ya tiene membresía no se crea nada, así que reintentar un ticket ya sincronizado no duplica el grupo. Los tickets de una sola unidad (simple, adelanto, retiro) no generan grupo.
+- **Un fallo a mitad de ticket informa el progreso.** Si falla la unidad `i` de `n`, el error dice `Unidad i de n: …` y, si ya se grabó alguna, añade que reintentar no duplica lo grabado (cada unidad es idempotente por `client_uuid`).
+- **El anticipo solo aplica con una línea de servicio.** `chargeTotal` ignora `anticipoAmount` si no hay servicio y `StepPayment` no ofrece imputarlo (`hasService`), igual que la propina en `StepAdjust`.
 - **Un ingreso de subcategoría "Otros" no pasa por el carrito.** Elegir un ítem de la pestaña "Otros" en el paso 2 pone el funnel en `incomeMode: 'simple'`: el recorrido se acorta a cuatro pasos (sin Ajustes ni Pago), el monto se carga en un input único y el ticket se guarda como una sola transacción con un solo pago. Es excluyente con el carrito — agregar un servicio o un producto vuelve a `incomeMode: 'cart'` y limpia la selección. Usar `isCartIncome(state)` para distinguir los dos caminos; no comparar `state.type === 'income'` a secas.
 - **`StepDetailSimple` exige producto cuando `deducts_inventory`.** Si la subcategoría seleccionada tiene `deducts_inventory = true`, el picker de producto es obligatorio y `canAdvance('detail')` retorna false hasta que se seleccione uno.
 

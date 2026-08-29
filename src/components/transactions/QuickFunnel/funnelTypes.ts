@@ -104,7 +104,8 @@ export function ticketNet(state: FunnelState): number {
 
 export function chargeTotal(state: FunnelState): number {
   const tip = state.tipEnabled ? Math.max(0, state.tipAmount) : 0
-  return Math.max(0, ticketNet(state) - Math.max(0, state.anticipoAmount) + tip)
+  const anticipo = hasServiceLine(state) ? Math.max(0, state.anticipoAmount) : 0
+  return Math.max(0, ticketNet(state) - anticipo + tip)
 }
 
 export function paymentsTotal(state: FunnelState): number {

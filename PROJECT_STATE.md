@@ -48,7 +48,7 @@ ERP para peluquería. Reemplaza Excel. Núcleo: costeo **FIFO** estricto — cad
 | 25 | Cuentas por Pagar (supplier_debts) y Cuentas por Cobrar (receivables): migraciones 040–041, página `/cuentas`, pago inmediato/diferido al recibir PO |
 | 26 | Historial de costos fijos append-only: tabla `fixed_cost_rates` con `effective_from`, hooks actualizados en Settings |
 | 27 | Soporte offline para Carga Rápida: RPC atómico `create_funnel_unit` (idempotente vía `client_uuid`), cola offline con estados pending/stuck. Tab "Sueldos" en Reportes |
-| 28 | Adelantos de sueldo + retiros de producto desde Carga Rápida (offline-capable): RPCs idempotentes `create_staff_advance` / `create_staff_receivable` (mig. 061), dispatcher multi-kind en `funnelSubmit`, flush global en AppShell, `StaffWithdrawalModal` unificado con prop `mode`. Picker de producto obligatorio para subcategorías con `deducts_inventory` en Carga Rápida. |
+| 28 | Adelantos de sueldo + retiros de producto desde Carga Rápida (offline-capable): RPCs idempotentes `create_staff_advance` / `create_staff_receivable` (mig. 061), dispatcher multi-kind en `funnelSubmit`, flush global en AppShell, `StaffWithdrawalModal` unificado con prop `mode`. Picker de producto obligatorio para subcategorías con `deducts_inventory` en Carga Rápida. Agrupación de transacciones para conciliación: `transaction_groups` + `transaction_group_members` (mig. `086`), fila única con el total y detalle expandible en `/transactions`; la Carga Rápida agrupa sola las unidades de un carrito. `amount = 0` admitido solo con seña (mig. `087`) |
 
 ---
 

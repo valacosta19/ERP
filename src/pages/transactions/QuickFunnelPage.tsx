@@ -351,8 +351,8 @@ export function QuickFunnelPage() {
                 <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-danger)' }}>
                   {new Date(ticket.createdAt).toLocaleString('es-AR')}
                 </span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--color-danger)', opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {ticket.lastError ? ticket.lastError.slice(0, 80) : ''}
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-danger)', opacity: 0.8 }}>
+                  {ticket.lastError ?? ''}
                 </span>
               </div>
               <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
@@ -540,6 +540,7 @@ export function QuickFunnelPage() {
                 })}
                 anticipoPresets={anticipoPresets.map(p => p.amount)}
                 anticipoBalance={anticipoBalance?.[state.currency] ?? 0}
+                hasService={hasServiceLine(state)}
               />
             )}
 

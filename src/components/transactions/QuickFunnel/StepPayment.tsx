@@ -17,11 +17,12 @@ type Props = {
   onAnticipo: (v: number) => void
   anticipoPresets: number[]
   anticipoBalance: number
+  hasService: boolean
 }
 
 export function StepPayment({
   currency, netToPay, totalToCharge, paymentsTotal, payments, onPayments,
-  paymentMethods, cashMethod, anticipoAmount, onAnticipo, anticipoPresets, anticipoBalance,
+  paymentMethods, cashMethod, anticipoAmount, onAnticipo, anticipoPresets, anticipoBalance, hasService,
 }: Props) {
   const remaining = totalToCharge - paymentsTotal
   const isCash = (m: string) => cashMethod != null && m === cashMethod
@@ -44,6 +45,7 @@ export function StepPayment({
     <div style={{ maxWidth: '560px' }}>
       <StepHeading kicker="Paso 5 — Pago" title="Cobrar" />
 
+      {hasService && (
       <div style={{ marginBottom: '22px' }}>
         <div className="flex items-center justify-between">
           <SectionLabel>Imputar anticipo previo</SectionLabel>
@@ -87,6 +89,7 @@ export function StepPayment({
           </div>
         )}
       </div>
+      )}
 
       {totalToCharge <= 0 ? (
         <div
