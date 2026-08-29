@@ -3,6 +3,7 @@ import { TrendingUp, TrendingDown, Wallet, Receipt } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { TopBar } from '@/components/layout/TopBar'
 import { useDashboardStats } from '@/hooks/useDashboardStats'
+import { formatMoney } from '@/lib/money'
 
 function kpiCard(label: string, value: string, sub: string, icon: React.ReactNode, color: string) {
   return (
@@ -20,7 +21,7 @@ function kpiCard(label: string, value: string, sub: string, icon: React.ReactNod
 }
 
 function fmt(n: number) {
-  return `$${n.toLocaleString('es-CO', { minimumFractionDigits: 0 })}`
+  return formatMoney(n)
 }
 
 function getMonthKey(dateStr: string) {

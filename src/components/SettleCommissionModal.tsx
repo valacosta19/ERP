@@ -7,6 +7,8 @@ import { useStaffReceivables, useSettleCommissionPayout } from '@/hooks/useStaff
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { formatDate } from '@/lib/formatDate'
+import { todayLocal } from '@/lib/dateRange'
+import { formatMoney } from '@/lib/money'
 
 interface Props {
   open: boolean
@@ -20,7 +22,7 @@ interface Props {
 }
 
 function fmt(amount: number) {
-  return `$${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return formatMoney(amount)
 }
 
 export function SettleCommissionModal({
@@ -47,7 +49,7 @@ export function SettleCommissionModal({
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null)
   const [clientUuid] = useState(() => crypto.randomUUID())
   const [paymentMethod, setPaymentMethod] = useState('')
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [paymentDate, setPaymentDate] = useState(() => todayLocal())
   const [installmentAmount, setInstallmentAmount] = useState(() => Math.max(0, grossAmount - alreadySettled).toFixed(2))
   const [subcategoryId, setSubcategoryId] = useState('')
   const [notes, setNotes] = useState('')

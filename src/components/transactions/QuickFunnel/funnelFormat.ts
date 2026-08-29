@@ -1,10 +1,11 @@
 import type { CSSProperties } from 'react'
 import type { Currency } from '@/types'
+import { formatMoney } from '@/lib/money'
 
-export const CURRENCY_SYMBOL: Record<Currency, string> = { ARS: '$', USD: 'U$D', EUR: '€' }
+export { CURRENCY_SYMBOL } from '@/lib/money'
 
 export function money(amount: number, currency: Currency = 'ARS'): string {
-  return `${CURRENCY_SYMBOL[currency]}${Math.round(amount).toLocaleString('es-CO')}`
+  return formatMoney(Math.round(amount), currency)
 }
 
 export const funnelInput: CSSProperties = {

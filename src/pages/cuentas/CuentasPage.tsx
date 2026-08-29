@@ -12,16 +12,13 @@ import { useReceivables, useCreateReceivable, useRecordReceivableCollection } fr
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { formatDate } from '@/lib/formatDate'
 import type { Currency, SupplierDebt, Receivable } from '@/types'
-
-const CURRENCY_SYMBOL: Record<Currency, string> = { ARS: '$', USD: 'U$D', EUR: '€' }
+import { todayLocal } from '@/lib/dateRange'
+import { formatMoney, CURRENCY_SYMBOL } from '@/lib/money'
 
 function fmtCurrency(amount: number, currency: Currency = 'ARS') {
-  return `${CURRENCY_SYMBOL[currency]}${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return formatMoney(amount, currency)
 }
 
-function today() {
-  return new Date().toISOString().slice(0, 10)
-}
 
 function pendingAmount(total: number, paid: number) {
   return Math.max(0, total - paid)
@@ -30,14 +27,14 @@ function pendingAmount(total: number, paid: number) {
 function debtStatus(debt: SupplierDebt): 'paid' | 'overdue' | 'open' {
   const pending = pendingAmount(debt.total_amount, debt.paid_amount)
   if (pending <= 0) return 'paid'
-  if (debt.due_date && debt.due_date < today()) return 'overdue'
+  if (debt.due_date && debt.due_date < todayLocal()) return 'overdue'
   return 'open'
 }
 
 function receivableStatus(r: Receivable): 'collected' | 'overdue' | 'open' {
   const pending = pendingAmount(r.total_amount, r.collected_amount)
   if (pending <= 0) return 'collected'
-  if (r.due_date && r.due_date < today()) return 'overdue'
+  if (r.due_date && r.due_date < todayLocal()) return 'overdue'
   return 'open'
 }
 
@@ -62,7 +59,7 @@ function APTab() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [payModal, setPayModal] = useState<{ debt: SupplierDebt; clientUuid: string } | null>(null)
-  const [payForm, setPayForm] = useState({ amount: '', payment_method: '', date: today(), notes: '' })
+  const [payForm, setPayForm] = useState({ amount: '', payment_method: '', date: todayLocal(), notes: '' })
   const [payError, setPayError] = useState('')
 
   const activePaymentMethods = paymentMethods.filter(m => m.active)
@@ -71,7 +68,7 @@ function APTab() {
     setPayForm({
       amount: String(pendingAmount(debt.total_amount, debt.paid_amount)),
       payment_method: activePaymentMethods[0]?.name ?? '',
-      date: today(),
+      date: todayLocal(),
       notes: '',
     })
     setPayError('')
@@ -332,7 +329,7 @@ function ARTab() {
   const [createError, setCreateError] = useState('')
 
   const [collectModal, setCollectModal] = useState<{ receivable: Receivable; clientUuid: string } | null>(null)
-  const [collectForm, setCollectForm] = useState({ amount: '', payment_method: '', date: today(), notes: '' })
+  const [collectForm, setCollectForm] = useState({ amount: '', payment_method: '', date: todayLocal(), notes: '' })
   const [collectError, setCollectError] = useState('')
 
   const activePaymentMethods = paymentMethods.filter(m => m.active)
@@ -363,7 +360,7 @@ function ARTab() {
     setCollectForm({
       amount: String(pendingAmount(r.total_amount, r.collected_amount)),
       payment_method: activePaymentMethods[0]?.name ?? '',
-      date: today(),
+      date: todayLocal(),
       notes: '',
     })
     setCollectError('')

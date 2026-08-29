@@ -10,14 +10,13 @@ import { useLockedPeriods } from '@/hooks/useLockedPeriods'
 import { useReserveAccounts, useCreateReserveAccount, useDeleteReserveAccount } from '@/hooks/useReserveAccounts'
 import { useReserveMovements, useCreateReserveMovement, useUpdateReserveMovement } from '@/hooks/useReserveMovements'
 import type { ReserveMovement } from '@/types'
+import { todayLocal } from '@/lib/dateRange'
+import { formatMoney } from '@/lib/money'
 
 function fmtAmount(amount: number) {
-  return `$${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return formatMoney(amount)
 }
 
-function today() {
-  return new Date().toISOString().slice(0, 10)
-}
 
 export function FondosPage() {
   const { data: paymentBalances = [] } = usePaymentMethodBalances()
@@ -37,7 +36,7 @@ export function FondosPage() {
   const [transferMethod, setTransferMethod] = useState('')
 
   const [amount, setAmount] = useState('')
-  const [date, setDate] = useState(today())
+  const [date, setDate] = useState(todayLocal())
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [transferError, setTransferError] = useState<string | null>(null)
@@ -101,7 +100,7 @@ export function FondosPage() {
       await createMovement.mutateAsync({ reserve_id: selectedReserve, reserve_name: reserve.name, amount: finalAmount, date, payment_method: effectiveTransferMethod, note: note || null })
       setAmount('')
       setNote('')
-      setDate(today())
+      setDate(todayLocal())
     } catch (err) {
       setTransferError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
