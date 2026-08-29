@@ -1,60 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useContext } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabaseClient'
 import type { Profile } from '@/types'
-
-interface AuthState {
-  user: User | null
-  session: Session | null
-  profile: Profile | null
-  loading: boolean
-}
+import { AuthContext } from '@/components/layout/AuthContext'
 
 export function useAuth() {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    session: null,
-    profile: null,
-    loading: true,
-  })
-
-  async function fetchProfile(user: User) {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single()
-    const profile = data ? { ...data, email: user.email ?? '' } as Profile : null
-    setState(prev => ({ ...prev, profile, loading: false }))
-  }
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setState(prev => ({ ...prev, user: session?.user ?? null, session }))
-      if (session?.user) fetchProfile(session.user)
-      else setState(prev => ({ ...prev, loading: false }))
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setState(prev => ({ ...prev, user: session?.user ?? null, session }))
-      if (session?.user) fetchProfile(session.user)
-      else setState(prev => ({ ...prev, profile: null, loading: false }))
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return { error }
-  }
-
-  async function signOut() {
-    await supabase.auth.signOut()
-  }
-
-  return { ...state, signIn, signOut }
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
+  return ctx
 }
 
 export function useUsers() {
