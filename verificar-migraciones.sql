@@ -164,6 +164,11 @@ WHERE n.nspname='public' AND p.prosecdef
   AND p.proname IN ('consume_inventory_fifo','create_sale','receive_purchase_order','create_staff_receivable','create_staff_advance','suggest_reorder_quantity','create_funnel_unit')
   AND has_function_privilege('anon', p.oid, 'EXECUTE')
 UNION ALL
+SELECT 'RPC_SOBRECARGA', p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')', 'firma vieja residente: DROP FUNCTION' FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+WHERE n.nspname='public'
+  AND p.proname IN ('consume_inventory_fifo','create_sale','receive_purchase_order','create_staff_receivable','create_staff_advance','suggest_reorder_quantity','create_funnel_unit','void_transaction','update_reserve_movement','preview_inventory_recount','lock_period_with_snapshot','compute_period_snapshots','get_opening_balance')
+  AND (SELECT count(*) FROM pg_proc q WHERE q.pronamespace=p.pronamespace AND q.proname=p.proname) > 1
+UNION ALL
 SELECT 'TRIGGER', e.nombre, e.migracion FROM esperado_triggers e
 WHERE NOT EXISTS (SELECT 1 FROM pg_trigger t WHERE NOT t.tgisinternal AND t.tgname=e.nombre)
 UNION ALL
