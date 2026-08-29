@@ -12,7 +12,7 @@ This is an MVP. `npm run build` is the validation gate; `npm run test` (Vitest) 
 npm run dev       # dev server with HMR
 npm run build     # tsc + vite build — must exit 0 before any task is done
 npm run lint      # eslint on all .ts/.tsx
-npm run test      # vitest — unit tests in src/**/*.test.ts
+npm run test      # vitest — unit tests in src/**/*.test.ts, component tests in *.test.tsx (jsdom + Testing Library)
 ```
 
 ---
