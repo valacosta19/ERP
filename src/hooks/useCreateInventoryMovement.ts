@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 
 interface CreateInventoryMovementPayload {
@@ -10,6 +10,7 @@ interface CreateInventoryMovementPayload {
 }
 
 export function useCreateInventoryMovement() {
+  const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ lot_id, product_id, quantity, unit_cost, reason }: CreateInventoryMovementPayload) => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -26,6 +27,11 @@ export function useCreateInventoryMovement() {
           created_by: user?.id ?? null,
         })
       if (error) throw new Error(error.message)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['inventory_lots'] })
+      qc.invalidateQueries({ queryKey: ['reports'] })
     },
   })
 }

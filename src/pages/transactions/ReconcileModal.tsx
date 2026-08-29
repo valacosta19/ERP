@@ -43,10 +43,11 @@ export function ReconcileModal({ open, onClose }: Props) {
 
   async function loadUnlinked() {
     setLoading(true)
-    const { data: incomeSubcats } = await supabase
+    const { data: incomeSubcats, error: subcatError } = await supabase
       .from('transaction_categories')
       .select('id')
       .eq('transaction_type', 'income')
+    if (subcatError) throw new Error(subcatError.message)
 
     const { data, error } = await supabase
       .from('transactions')

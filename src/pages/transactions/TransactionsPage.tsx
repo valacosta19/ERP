@@ -435,13 +435,14 @@ export function TransactionsPage() {
     let runFifo = false
     let inventoryPending = editing!.inventory_pending ?? false
     if (editSubcatTriggersInventory && editForm.product_id) {
-      const { data: existingMovement } = await supabase
+      const { data: existingMovement, error: movementError } = await supabase
         .from('inventory_movements')
         .select('id')
         .eq('reference_id', editing!.id)
         .eq('reference_type', 'transaction')
         .limit(1)
         .maybeSingle()
+      if (movementError) throw new Error(movementError.message)
       if (existingMovement) {
         inventoryPending = false
       } else if ((products.find(p => p.id === editForm.product_id)?.stock ?? 0) >= 1) {

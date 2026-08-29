@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { fetchAllRows } from '@/lib/fetchAllRows'
 import { fetchDisplayPositions, compareByDisplayOrder } from '@/lib/transactionOrder'
 import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, ProfessionalAssignment, TransactionCategory } from '@/types'
+import { invalidateAccounting } from '@/lib/invalidateAccounting'
 
 interface TransactionFilters {
   subcategoryIds?: string[]
@@ -193,13 +194,7 @@ export function useCreateTransaction() {
 
       return tx
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
-      qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
-      qc.invalidateQueries({ queryKey: ['transaction-recipe-costs'] })
-      qc.invalidateQueries({ queryKey: ['products'] })
-    },
+    onSuccess: () => invalidateAccounting(qc, [['transaction-recipe-costs'], ['products'], ['receivables']]),
   })
 }
 
@@ -249,12 +244,7 @@ export function useUpdateTransaction() {
 
       return data as unknown as Transaction
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['transaction-groups'] })
-      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
-      qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
-    },
+    onSuccess: () => invalidateAccounting(qc, [['products'], ['inventory_lots']]),
   })
 }
 
@@ -266,16 +256,7 @@ export function useVoidTransaction() {
         .rpc('void_transaction', { p_transaction_id: id })
       if (error) throw new Error(error.message)
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['transaction-groups'] })
-      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
-      qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
-      qc.invalidateQueries({ queryKey: ['receivables'] })
-      qc.invalidateQueries({ queryKey: ['staff-receivables'] })
-      qc.invalidateQueries({ queryKey: ['products'] })
-      qc.invalidateQueries({ queryKey: ['inventory_lots'] })
-    },
+    onSuccess: () => invalidateAccounting(qc, [['receivables'], ['staff-receivables'], ['products'], ['inventory_lots'], ['transaction-recipe-costs']]),
   })
 }
 
@@ -288,22 +269,29 @@ export function useUnrefundedAnticipos() {
   return useQuery({
     queryKey: ['unrefunded-anticipos'],
     queryFn: async () => {
-      const { data: anticipos, error: aErr } = await supabase
-        .from('transactions')
-        .select('id, date, amount, currency, subcategory_id')
-        .eq('is_seña', true)
-        .is('voided_at', null)
-        .order('date', { ascending: false })
-      if (aErr) throw new Error(aErr.message)
+      type Anticipo = { id: string; date: string; amount: number; currency: string; subcategory_id: string | null }
+      const anticipos = await fetchAllRows<Anticipo>((rangeFrom, rangeTo) =>
+        supabase
+          .from('transactions')
+          .select('id, date, amount, currency, subcategory_id')
+          .eq('is_seña', true)
+          .is('voided_at', null)
+          .order('date', { ascending: false })
+          .order('id', { ascending: false })
+          .range(rangeFrom, rangeTo),
+      )
 
-      const { data: refunded, error: rErr } = await supabase
-        .from('transactions')
-        .select('refunds_anticipo_id')
-        .not('refunds_anticipo_id', 'is', null)
-      if (rErr) throw new Error(rErr.message)
+      const refunded = await fetchAllRows<{ refunds_anticipo_id: string }>((rangeFrom, rangeTo) =>
+        supabase
+          .from('transactions')
+          .select('refunds_anticipo_id')
+          .not('refunds_anticipo_id', 'is', null)
+          .order('id', { ascending: true })
+          .range(rangeFrom, rangeTo),
+      )
 
-      const refundedIds = new Set((refunded as { refunds_anticipo_id: string }[]).map(r => r.refunds_anticipo_id))
-      return (anticipos as { id: string; date: string; amount: number; currency: string; subcategory_id: string | null }[]).filter(a => !refundedIds.has(a.id))
+      const refundedIds = new Set(refunded.map(r => r.refunds_anticipo_id))
+      return anticipos.filter(a => !refundedIds.has(a.id))
     },
   })
 }

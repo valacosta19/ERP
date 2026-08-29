@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 import type { Currency, Receivable } from '@/types'
 import type { Database } from '@/types/database'
+import { invalidateAccounting } from '@/lib/invalidateAccounting'
 
 type ReceivableInsert = Database['public']['Tables']['receivables']['Insert']
 
@@ -78,10 +79,6 @@ export function useRecordReceivableCollection() {
       if (error) throw new Error(error.message)
       return data as string
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['receivables'] })
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
-    },
+    onSuccess: () => invalidateAccounting(qc, [['receivables'], ['staff-receivables'], ['staff-receivable-balance']]),
   })
 }

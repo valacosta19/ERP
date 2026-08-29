@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 import { createTransactionGroup } from '@/hooks/useTransactionGroups'
 import type { Currency } from '@/types'
+import { invalidateAccounting } from '@/lib/invalidateAccounting'
 
 export type TicketUnit = {
   client_uuid: string
@@ -118,18 +119,7 @@ export function useFunnelSubmit() {
 
     await ensureTicketGroup(payload, transactionIds)
 
-    qc.invalidateQueries({ queryKey: ['transactions'] })
-    qc.invalidateQueries({ queryKey: ['transaction-groups'] })
-    qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
-    qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
-    qc.invalidateQueries({ queryKey: ['transaction-recipe-costs'] })
-    qc.invalidateQueries({ queryKey: ['products'] })
-    qc.invalidateQueries({ queryKey: ['anticipo-balance'] })
-    qc.invalidateQueries({ queryKey: ['staff-receivables'] })
-    qc.invalidateQueries({ queryKey: ['staff-receivable-balance'] })
-    qc.invalidateQueries({ queryKey: ['receivables'] })
-    qc.invalidateQueries({ queryKey: ['inventory-lots'] })
-    qc.invalidateQueries({ queryKey: ['inventory-movements'] })
+    invalidateAccounting(qc, [['transaction-recipe-costs'], ['products'], ['staff-receivables'], ['staff-receivable-balance'], ['receivables'], ['inventory_lots']])
   }
 
   return { submitTicket }

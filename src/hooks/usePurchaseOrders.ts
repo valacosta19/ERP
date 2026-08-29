@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { fetchInventoryPurchaseCategoryId } from '@/lib/inventoryPurchaseCategory'
 import type { Database } from '@/types/database'
 import type { PurchaseOrder } from '@/types'
+import { invalidateAccounting } from '@/lib/invalidateAccounting'
 
 type POInsert = Database['public']['Tables']['purchase_orders']['Insert']
 type POUpdate = Database['public']['Tables']['purchase_orders']['Update']
@@ -115,6 +116,7 @@ export function useReceivePurchaseOrder() {
       paymentOption: POPaymentOption
     }) => {
       const { data: { user } } = await supabase.auth.getUser()
+      const subcategoryId = paymentOption.mode === 'immediate' ? await fetchInventoryPurchaseCategoryId() : null
       const { error } = await supabase.rpc('receive_purchase_order', {
         p_po_id: po.id,
         p_created_by: user?.id ?? null,
@@ -123,8 +125,6 @@ export function useReceivePurchaseOrder() {
       if (error) throw new Error(error.message)
 
       if (paymentOption.mode === 'immediate') {
-        const subcategoryId = await fetchInventoryPurchaseCategoryId()
-
         const { data: tx, error: txErr } = await supabase
           .from('transactions')
           .insert({
@@ -172,11 +172,7 @@ export function useReceivePurchaseOrder() {
       }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['purchase_orders'] })
-      qc.invalidateQueries({ queryKey: ['products'] })
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['supplier_debts'] })
-      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
+      invalidateAccounting(qc, [['purchase_orders'], ['products'], ['inventory_lots'], ['supplier_debts']])
     },
   })
 }

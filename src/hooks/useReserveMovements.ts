@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 import type { ReserveMovement } from '@/types'
+import { invalidateAccounting } from '@/lib/invalidateAccounting'
 
 export function useReserveMovements() {
   return useQuery({
@@ -43,11 +44,13 @@ export function useCreateReserveMovement() {
         ? `Transferencia → ${reserve_name}`
         : `Retorno ← ${reserve_name}`
 
-      const { data: subcat } = await supabase
+      const { data: subcat, error: subcatErr } = await supabase
         .from('transaction_categories')
         .select('id')
         .eq('name', 'Transferencia interna')
-        .single()
+        .maybeSingle()
+      if (subcatErr) throw new Error(subcatErr.message)
+      if (!subcat) throw new Error('Falta la subcategoría "Transferencia interna": el movimiento no se registró.')
 
       const { data: tx, error: txErr } = await supabase
         .from('transactions')
@@ -56,7 +59,7 @@ export function useCreateReserveMovement() {
           amount: Math.abs(payload.amount),
           currency: 'ARS',
           description,
-          subcategory_id: subcat?.id ?? null,
+          subcategory_id: subcat.id,
           catalog_item_id: null,
           is_seña: false,
           seña_amount: null,
@@ -90,12 +93,7 @@ export function useCreateReserveMovement() {
 
       return { ...(movement as ReserveMovement), transaction_id: tx.id }
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['reserve-movements'] })
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['reports', 'financial'] })
-      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
-    },
+    onSuccess: () => invalidateAccounting(qc, [['reserve-movements']]),
   })
 }
 
@@ -111,13 +109,6 @@ export function useUpdateReserveMovement() {
       if (error) throw new Error(error.message)
       return data as { mirror_updated: boolean }
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['reserve-movements'] })
-      qc.invalidateQueries({ queryKey: ['transactions'] })
-      qc.invalidateQueries({ queryKey: ['reports', 'financial'] })
-      qc.invalidateQueries({ queryKey: ['reports', 'profit'] })
-      qc.invalidateQueries({ queryKey: ['reports', 'balance-sheet'] })
-      qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
-    },
+    onSuccess: () => invalidateAccounting(qc, [['reserve-movements']]),
   })
 }

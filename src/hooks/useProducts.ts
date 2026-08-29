@@ -42,7 +42,10 @@ export function useCreateProduct() {
       if (error) throw new Error(error.message)
       return data as Product
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['reports'] })
+    },
   })
 }
 
@@ -59,7 +62,10 @@ export function useUpdateProduct() {
       if (error) throw new Error(error.message)
       return data as Product
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['reports'] })
+    },
   })
 }
 
@@ -73,7 +79,10 @@ export function useSetRestockSkip() {
         .eq('id', id)
       if (error) throw new Error(error.message)
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['reports'] })
+    },
   })
 }
 
@@ -87,6 +96,9 @@ export function useDeleteProduct() {
         .eq('id', id)
       if (error) throw new Error(error.message)
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['reports'] })
+    },
   })
 }
