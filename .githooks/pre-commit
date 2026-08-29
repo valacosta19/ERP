@@ -1,0 +1,6 @@
+#!/bin/sh
+echo "pre-commit: running tests"
+npm run test --silent || {
+  echo "pre-commit: tests failed, commit aborted"
+  exit 1
+}

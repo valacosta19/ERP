@@ -2,7 +2,7 @@
 
 ERP for a hair salon. Replaces Excel. Core value: FIFO inventory costing so each sale reflects the real lot cost.
 
-This is an MVP. No automated tests. `npm run build` is the validation gate.
+This is an MVP. `npm run build` is the validation gate; `npm run test` (Vitest) covers the pure logic of Carga Rápida and transaction groups.
 
 ---
 
@@ -12,6 +12,7 @@ This is an MVP. No automated tests. `npm run build` is the validation gate.
 npm run dev       # dev server with HMR
 npm run build     # tsc + vite build — must exit 0 before any task is done
 npm run lint      # eslint on all .ts/.tsx
+npm run test      # vitest — unit tests in src/**/*.test.ts
 ```
 
 ---
@@ -140,6 +141,7 @@ Rules:
 - One line, no period at the end
 - No multi-line body unless strictly necessary
 - `npm run build` must pass before committing
+- A versioned pre-commit hook (`.githooks/pre-commit`, wired by the `prepare` script via `core.hooksPath`) runs `npm run test`; a failing suite aborts the commit
 
 ---
 

@@ -58,5 +58,5 @@ ERP para peluquería. Reemplaza Excel. Núcleo: costeo **FIFO** estricto — cad
 - Migraciones deben aplicarse manualmente en el SQL editor de Supabase (no hay CLI integrado).
 - `VITE_GEMINI_API_KEY` expuesta en el bundle del cliente — deuda de seguridad conocida (ver `docs/backlog.md`).
 - `SettingsPage.tsx` (1678 líneas), `PurchaseOrdersPage.tsx` (1173), `ReportsPage.tsx` (1149) — archivos Dios que dificultan el mantenimiento con IA.
-- Sin tests automatizados — gate de validación es `npm run build` + verificación manual en el browser.
+- Tests automatizados solo sobre lógica pura (`npm run test`, Vitest: `buildTicket`, `funnelSubmit`, `chargeTotal`, `createTransactionGroup`). El resto sigue siendo `npm run build` + verificación manual en el browser.
 - RLS: solo 4 de 61 migraciones tocan policies — auditoría pendiente.
