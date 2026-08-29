@@ -11,6 +11,11 @@ interface TransactionFilters {
   to?: string
   showVoided?: boolean
   pendingOnly?: boolean
+  search?: string
+}
+
+function escapeLikePattern(value: string) {
+  return value.replace(/[\\%_]/g, match => `\\${match}`)
 }
 
 export function useTransactions(filters: TransactionFilters = {}) {
@@ -34,8 +39,12 @@ export function useTransactions(filters: TransactionFilters = {}) {
         if (filters.pendingOnly) query = query.eq('inventory_pending', true)
         if (filters.subcategoryIds && filters.subcategoryIds.length > 0) query = query.in('subcategory_id', filters.subcategoryIds)
         if (filters.currency) query = query.eq('currency', filters.currency)
-        if (filters.from) query = query.gte('date', filters.from)
-        if (filters.to) query = query.lte('date', filters.to)
+        if (filters.search) {
+          query = query.ilike('description', `%${escapeLikePattern(filters.search)}%`)
+        } else {
+          if (filters.from) query = query.gte('date', filters.from)
+          if (filters.to) query = query.lte('date', filters.to)
+        }
 
         return query.range(rangeFrom, rangeTo)
       })

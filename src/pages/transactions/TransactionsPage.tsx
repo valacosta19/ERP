@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type DragEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers } from 'lucide-react'
+import { X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers, Search } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { currentMonthRange } from '@/lib/dateRange'
 import { readDateParam, readCurrencyParam } from '@/lib/transactionFilters'
@@ -42,6 +42,7 @@ import {
 import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, Product, TransactionGroupWithMembers } from '@/types'
 
 const FLUSH_DELAY_MS = 450
+const SEARCH_DEBOUNCE_MS = 300
 
 const CURRENCY_FILTER_OPTIONS = [
   { value: '', label: 'Todas las monedas' },
@@ -72,7 +73,9 @@ export function TransactionsPage() {
   const to = readDateParam(searchParams, 'to', defaultRange.to)
   const showVoided = searchParams.get('voided') === '1'
   const pendingOnly = searchParams.get('pending') === '1'
-  const hasActiveFilters = ['cat', 'cur', 'method', 'from', 'to', 'voided', 'pending'].some(k => searchParams.has(k))
+  const search = searchParams.get('q') ?? ''
+  const [searchInput, setSearchInput] = useState(search)
+  const hasActiveFilters = ['cat', 'cur', 'method', 'from', 'to', 'voided', 'pending', 'q'].some(k => searchParams.has(k))
 
   const setFilterParam = (key: string, value: string | null) => {
     setSearchParams(prev => {
@@ -86,7 +89,10 @@ export function TransactionsPage() {
     setFilterParam(key, value === defaultRange[key] ? null : value)
   const setFlagParam = (key: 'voided' | 'pending', checked: boolean) =>
     setFilterParam(key, checked ? '1' : null)
-  const clearFilters = () => setSearchParams(new URLSearchParams(), { replace: true })
+  const clearFilters = () => {
+    setSearchInput('')
+    setSearchParams(new URLSearchParams(), { replace: true })
+  }
 
   const [modalOpen, setModalOpen] = useState(false)
   const [reconcileOpen, setReconcileOpen] = useState(false)
@@ -154,6 +160,7 @@ export function TransactionsPage() {
     to: to || undefined,
     showVoided,
     pendingOnly,
+    search: search || undefined,
   })
 
   const normalizedPaymentMethodFilter = paymentMethodFilter.toLowerCase()
@@ -266,6 +273,12 @@ export function TransactionsPage() {
   const rowsRef = useRef(rows)
   useEffect(() => {
     rowsRef.current = rows
+  })
+
+  useEffect(() => {
+    if (searchInput === search) return
+    const timer = setTimeout(() => setFilterParam('q', searchInput || null), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
   })
   const pendingMoveRef = useRef<{ date: string; movedIds: string[] } | null>(null)
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -827,7 +840,13 @@ export function TransactionsPage() {
               <Link size={14} />
               Reconciliar productos
             </Button>
-            <Button variant="secondary" size="sm" onClick={exportCSV}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={exportCSV}
+              disabled={!!search}
+              title={search ? 'El CSV lleva un balance corrido por período: limpiá la búsqueda para exportar' : undefined}
+            >
               <Download size={14} />
               Exportar CSV
             </Button>
@@ -847,6 +866,13 @@ export function TransactionsPage() {
 
       <div className="flex-1 min-h-0 flex flex-col p-6 gap-4">
         <div className="flex flex-wrap gap-3">
+          <Input
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            placeholder="Buscar por descripción"
+            prefix={<Search size={14} />}
+            className="w-64"
+          />
           <Select
             options={[
               { value: '', label: 'Todas las categorías' },
@@ -877,6 +903,8 @@ export function TransactionsPage() {
             onChange={e => setDateParam('from', e.target.value)}
             placeholder="Desde"
             className="w-40"
+            disabled={!!search}
+            title={search ? 'La búsqueda mira todo el histórico, sin rango de fechas' : undefined}
           />
           <Input
             type="date"
@@ -884,6 +912,8 @@ export function TransactionsPage() {
             onChange={e => setDateParam('to', e.target.value)}
             placeholder="Hasta"
             className="w-40"
+            disabled={!!search}
+            title={search ? 'La búsqueda mira todo el histórico, sin rango de fechas' : undefined}
           />
           <label className="flex items-center gap-1.5 cursor-pointer text-sm" style={{ color: 'var(--color-muted)' }}>
             <input
@@ -981,7 +1011,7 @@ export function TransactionsPage() {
               }
             }}
             appendRow={
-              Object.keys(totals).length > 0 ? (
+              !search && Object.keys(totals).length > 0 ? (
                 <>
                   {Object.entries(totals).map(([currency, { entrada, salida }]) => (
                     <tr key={currency} className="border-t-2 border-[var(--color-border)]" style={{ background: 'var(--color-bg)' }}>
