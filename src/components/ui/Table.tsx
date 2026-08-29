@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 interface Column<T> {
@@ -18,10 +18,12 @@ interface TableProps<T> {
   prependRow?: React.ReactNode
   appendRow?: React.ReactNode
   pageSize?: number
+  paginate?: boolean
   rowProps?: (row: T) => React.HTMLAttributes<HTMLTableRowElement>
   renderExpanded?: (row: T) => ReactNode
 }
 
+const SCROLL_CHUNK = 60
 const ROW_HEIGHT = 45
 const HEADER_HEIGHT = 45
 const PAGINATION_HEIGHT = 52
@@ -62,12 +64,30 @@ function PageNavButton({ onClick, disabled, title, children }: { onClick: () => 
   )
 }
 
-export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow, pageSize, rowProps, renderExpanded }: TableProps<T>) {
+export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow, pageSize, paginate = true, rowProps, renderExpanded }: TableProps<T>) {
   const containerRef = useRef<HTMLDivElement>(null)
   const footRef = useRef<HTMLTableSectionElement>(null)
   const [autoPageSize, setAutoPageSize] = useState(pageSize ?? 25)
   const [page, setPage] = useState(1)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [renderCount, setRenderCount] = useState(SCROLL_CHUNK)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const observerRef = useRef<IntersectionObserver | null>(null)
+
+  const sentinelRef = useCallback((node: HTMLTableRowElement | null) => {
+    observerRef.current?.disconnect()
+    if (!node) return
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting) setRenderCount(current => current + SCROLL_CHUNK)
+      },
+      { root: scrollRef.current }
+    )
+    observer.observe(node)
+    observerRef.current = observer
+  }, [])
+
+  useEffect(() => () => observerRef.current?.disconnect(), [])
 
   function toggleExpanded(key: string) {
     setExpanded(prev => {
@@ -100,18 +120,20 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
   }, [pageSize, appendRow])
 
   const effectivePageSize = pageSize ?? autoPageSize
-  const totalPages = Math.ceil(data.length / effectivePageSize)
+  const totalPages = paginate ? Math.ceil(data.length / effectivePageSize) : 1
   const safePage = Math.min(page, Math.max(1, totalPages))
-  const visible = data.slice((safePage - 1) * effectivePageSize, safePage * effectivePageSize)
+  const visible = paginate
+    ? data.slice((safePage - 1) * effectivePageSize, safePage * effectivePageSize)
+    : data.slice(0, renderCount)
   const rangeStart = data.length === 0 ? 0 : (safePage - 1) * effectivePageSize + 1
   const rangeEnd = Math.min(safePage * effectivePageSize, data.length)
   const totalColumns = columns.length + (renderExpanded ? 1 : 0)
 
   return (
     <div ref={containerRef} className="data-table h-full flex flex-col">
-      <div className="data-table__scroll overflow-auto">
+      <div ref={scrollRef} className="data-table__scroll overflow-auto">
         <table className="data-table__table w-full text-sm">
-          <thead className="data-table__head">
+          <thead className={`data-table__head ${paginate ? '' : 'sticky top-0 z-10 bg-[var(--color-surface)]'}`}>
             <tr className="data-table__head-row border-b border-[var(--color-border)]">
               {renderExpanded && <th className="data-table__head-cell w-8 px-2 py-3" />}
               {columns.map(col => (
@@ -183,15 +205,20 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
                 )
               })
             )}
+            {!paginate && visible.length < data.length && (
+              <tr ref={sentinelRef} className="data-table__sentinel" aria-hidden="true">
+                <td colSpan={totalColumns} className="h-1 p-0" />
+              </tr>
+            )}
           </tbody>
           {appendRow && (
-            <tfoot ref={footRef} className="data-table__foot">
+            <tfoot ref={footRef} className={`data-table__foot ${paginate ? '' : 'sticky bottom-0 z-10'}`}>
               {appendRow}
             </tfoot>
           )}
         </table>
       </div>
-      {totalPages > 1 && (
+      {paginate && totalPages > 1 && (
         <div className="data-table__pagination flex items-center justify-between px-4 py-3 border-t border-[var(--color-border)] mt-auto">
           <span className="data-table__pagination-info text-xs text-[var(--color-muted)]">{rangeStart}–{rangeEnd} de {data.length}</span>
           <div className="data-table__pagination-nav flex items-center gap-1.5">

@@ -1,4 +1,4 @@
-import { useState, useEffect, type DragEvent, type MouseEvent } from 'react'
+import { useState, useEffect, useRef, type DragEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers } from 'lucide-react'
@@ -13,7 +13,7 @@ import { Select } from '@/components/ui/Select'
 import { Table } from '@/components/ui/Table'
 import { Modal } from '@/components/ui/Modal'
 import { useTransactions, useUpdateTransaction, useVoidTransaction, usePaymentMethodBalances, useUnrefundedAnticipos } from '@/hooks/useTransactions'
-import { useReorderTransactions } from '@/hooks/useTransactionOrder'
+import { useReorderTransactions, applyOptimisticReorder } from '@/hooks/useTransactionOrder'
 import {
   useTransactionGroups,
   useCreateTransactionGroup,
@@ -40,6 +40,8 @@ import {
   type DirectionInput,
 } from '@/components/transactions/transactionDraft'
 import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, Product, TransactionGroupWithMembers } from '@/types'
+
+const FLUSH_DELAY_MS = 450
 
 const CURRENCY_FILTER_OPTIONS = [
   { value: '', label: 'Todas las monedas' },
@@ -105,7 +107,7 @@ export function TransactionsPage() {
   })
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
-  const [movingId, setMovingId] = useState<string | null>(null)
+  const [activeRowId, setActiveRowId] = useState<string | null>(null)
   const reorderTransactions = useReorderTransactions()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [groupModalOpen, setGroupModalOpen] = useState(false)
@@ -226,43 +228,114 @@ export function TransactionsPage() {
     setGroupError('')
     setGroupModalOpen(false)
   }
-  const draggedTransaction = dragId ? filteredTransactions.find(tx => tx.id === dragId) ?? null : null
-  const movingTransaction = movingId ? filteredTransactions.find(tx => tx.id === movingId) ?? null : null
+  const draggedRow = dragId ? rows.find(row => row.id === dragId) ?? null : null
+  const activeRow = activeRowId ? rows.find(row => row.id === activeRowId) ?? null : null
 
-  function applyReorder(source: Transaction, target: Transaction) {
-    if (source.id === target.id || source.date !== target.date) return
-
-    const group = filteredTransactions.filter(tx => tx.date === source.date).map(tx => tx.id)
-    const fromIndex = group.indexOf(source.id)
-    const toIndex = group.indexOf(target.id)
-    if (fromIndex === -1 || toIndex === -1) return
-
-    group.splice(fromIndex, 1)
-    group.splice(toIndex, 0, source.id)
-    reorderTransactions.mutate({ date: source.date, orderedIds: group })
+  function rowDateIds(row: TxRow): string[] {
+    if (row.kind === 'single') return [row.tx.id]
+    return row.group.members.filter(m => m.date === row.date && !m.voided_at).map(m => m.id)
   }
 
-  function handleReorderDrop(target: Transaction) {
-    const source = draggedTransaction
+  function applyReorder(source: TxRow, target: TxRow) {
+    if (source.id === target.id || source.date !== target.date) return
+
+    const dayRows = rows.filter(row => row.date === source.date)
+    const fromIndex = dayRows.findIndex(row => row.id === source.id)
+    const toIndex = dayRows.findIndex(row => row.id === target.id)
+    if (fromIndex === -1 || toIndex === -1) return
+
+    const movedIds = rowDateIds(source)
+    const anchorIds = rowDateIds(target)
+    if (movedIds.length === 0 || anchorIds.length === 0) return
+
+    reorderTransactions.mutate({
+      date: source.date,
+      movedIds,
+      anchorIds,
+      position: toIndex > fromIndex ? 'after' : 'before',
+    })
+  }
+
+  function handleReorderDrop(target: TxRow) {
+    const source = draggedRow
     setDragId(null)
     setOverId(null)
     if (source) applyReorder(source, target)
   }
 
-  function handleReorderPlace(target: Transaction) {
-    const source = movingTransaction
-    setMovingId(null)
-    if (source) applyReorder(source, target)
+  const rowsRef = useRef(rows)
+  useEffect(() => {
+    rowsRef.current = rows
+  })
+  const pendingMoveRef = useRef<{ date: string; movedIds: string[] } | null>(null)
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function flushPendingMove() {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
+    }
+    const move = pendingMoveRef.current
+    pendingMoveRef.current = null
+    if (!move) return
+
+    const dayRows = rowsRef.current.filter(row => row.date === move.date)
+    const index = dayRows.findIndex(row => rowDateIds(row).some(id => move.movedIds.includes(id)))
+    if (index === -1) return
+
+    const previous = dayRows[index - 1]
+    const next = dayRows[index + 1]
+    if (previous) {
+      reorderTransactions.mutate({ date: move.date, movedIds: move.movedIds, anchorIds: rowDateIds(previous), position: 'after' })
+    } else if (next) {
+      reorderTransactions.mutate({ date: move.date, movedIds: move.movedIds, anchorIds: rowDateIds(next), position: 'before' })
+    }
   }
 
+  function moveActiveRow(delta: 1 | -1) {
+    if (!activeRow) return
+    const dayRows = rows.filter(row => row.date === activeRow.date)
+    const index = dayRows.findIndex(row => row.id === activeRow.id)
+    const target = dayRows[index + delta]
+    if (!target) return
+
+    const movedIds = rowDateIds(activeRow)
+    const anchorIds = rowDateIds(target)
+    if (movedIds.length === 0 || anchorIds.length === 0) return
+
+    applyOptimisticReorder(qc, {
+      date: activeRow.date,
+      movedIds,
+      anchorIds,
+      position: delta === 1 ? 'after' : 'before',
+    })
+
+    pendingMoveRef.current = { date: activeRow.date, movedIds }
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
+    flushTimerRef.current = setTimeout(flushPendingMove, FLUSH_DELAY_MS)
+  }
+
+  const flushRef = useRef(flushPendingMove)
   useEffect(() => {
-    if (!movingId) return
+    flushRef.current = flushPendingMove
+  })
+  useEffect(() => () => flushRef.current(), [])
+
+  useEffect(() => {
+    if (!activeRowId) return
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setMovingId(null)
+      if (e.key === 'Escape') {
+        setActiveRowId(null)
+        flushPendingMove()
+        return
+      }
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+      e.preventDefault()
+      moveActiveRow(e.key === 'ArrowDown' ? 1 : -1)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [movingId])
+  })
 
   const totals = filteredTransactions
     .filter(tx => !tx.voided_at)
@@ -541,22 +614,25 @@ export function TransactionsPage() {
       key: 'drag',
       header: '',
       className: 'w-6 px-1!',
-      render: (row: TxRow) => row.kind !== 'single' ? null : (
+      render: (row: TxRow) => (
         <button
           type="button"
           draggable
           onDragStart={e => {
             e.dataTransfer.effectAllowed = 'move'
-            e.dataTransfer.setData('text/plain', row.tx.id)
-            setDragId(row.tx.id)
+            e.dataTransfer.setData('text/plain', row.id)
+            setDragId(row.id)
           }}
           onDragEnd={() => {
             setDragId(null)
             setOverId(null)
           }}
-          onClick={() => setMovingId(current => (current === row.tx.id ? null : row.tx.id))}
-          title={movingId === row.tx.id ? 'Elegí la fila del mismo día donde colocarla (Esc para cancelar)' : 'Arrastrar para reordenar, o clic para moverla a otra página'}
-          className={`inline-flex cursor-grab active:cursor-grabbing ${movingId === row.tx.id ? 'text-[var(--color-accent)]' : 'text-[var(--color-muted)]'}`}
+          onClick={() => {
+            flushPendingMove()
+            setActiveRowId(current => (current === row.id ? null : row.id))
+          }}
+          title={activeRowId === row.id ? 'Movela con ↑ y ↓ (Esc para soltarla)' : 'Arrastrar para reordenar, o clic para moverla con las flechas'}
+          className={`inline-flex cursor-grab active:cursor-grabbing ${activeRowId === row.id ? 'text-[var(--color-accent)]' : 'text-[var(--color-muted)]'}`}
         >
           <GripVertical size={14} />
         </button>
@@ -859,12 +935,12 @@ export function TransactionsPage() {
           ))}
         </div>
 
-        {movingTransaction && (
+        {activeRow && (
           <div className="flex items-center justify-between gap-3 px-4 py-2 rounded-xl border border-[var(--color-accent)] bg-[var(--color-surface)]">
             <span className="text-xs text-[var(--color-text)]">
-              Moviendo <strong>{movingTransaction.description || 'transacción'}</strong> — elegí la fila del {formatDate(movingTransaction.date)} donde colocarla. Podés cambiar de página.
+              Moviendo <strong>{activeRow.kind === 'single' ? activeRow.tx.description || 'transacción' : activeRow.group.label}</strong> dentro del {formatDate(activeRow.date)} — usá ↑ y ↓ para colocarla.
             </span>
-            <Button variant="ghost" size="sm" onClick={() => setMovingId(null)}>Cancelar</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setActiveRowId(null); flushPendingMove() }}>Soltar</Button>
           </div>
         )}
 
@@ -875,35 +951,26 @@ export function TransactionsPage() {
             keyField="id"
             loading={isLoading}
             emptyMessage="No hay transacciones para los filtros seleccionados"
+            paginate={false}
             renderExpanded={(row: TxRow) => row.kind === 'group' ? renderGroupDetail(row.group) : null}
             rowProps={(row: TxRow) => {
-              if (row.kind !== 'single') return {}
-              const tx = row.tx
-              const isDropTarget = draggedTransaction !== null && draggedTransaction.id !== tx.id && draggedTransaction.date === tx.date
-              const isPlaceTarget = movingTransaction !== null && movingTransaction.id !== tx.id && movingTransaction.date === tx.date
+              const isDropTarget = draggedRow !== null && draggedRow.id !== row.id && draggedRow.date === row.date
               const outline = 'outline outline-2 -outline-offset-2 outline-[var(--color-accent)]'
               return {
                 onDragOver: (e: DragEvent<HTMLTableRowElement>) => {
                   if (!isDropTarget) return
                   e.preventDefault()
                   e.dataTransfer.dropEffect = 'move'
-                  setOverId(tx.id)
+                  setOverId(row.id)
                 },
-                onDragLeave: () => setOverId(current => (current === tx.id ? null : current)),
+                onDragLeave: () => setOverId(current => (current === row.id ? null : current)),
                 onDrop: (e: DragEvent<HTMLTableRowElement>) => {
                   e.preventDefault()
-                  handleReorderDrop(tx)
+                  handleReorderDrop(row)
                 },
-                onClick: isPlaceTarget
-                  ? (e: MouseEvent<HTMLTableRowElement>) => {
-                      if ((e.target as HTMLElement).closest('input, button, a, select, textarea')) return
-                      handleReorderPlace(tx)
-                    }
-                  : undefined,
                 className: [
-                  isDropTarget && overId === tx.id ? outline : '',
-                  movingTransaction?.id === tx.id ? `${outline} outline-dashed` : '',
-                  isPlaceTarget ? 'cursor-pointer hover:outline hover:outline-2 hover:-outline-offset-2 hover:outline-[var(--color-accent)]' : '',
+                  isDropTarget && overId === row.id ? outline : '',
+                  activeRowId === row.id ? `${outline} outline-dashed` : '',
                 ].filter(Boolean).join(' '),
               }
             }}
