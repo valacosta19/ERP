@@ -59,8 +59,21 @@ function signedAmount(tx: DirectionInput & { amount: number }) {
   return getTxDirection(tx) === 'salida' ? -tx.amount : tx.amount
 }
 
-function groupTotal(group: TransactionGroupWithMembers) {
-  return group.members.filter(m => !m.voided_at).reduce((sum, m) => sum + signedAmount(m), 0)
+function groupTotals(group: TransactionGroupWithMembers) {
+  return group.members
+    .filter(m => !m.voided_at)
+    .reduce(
+      (acc, m) => {
+        if (m.is_seña) acc.señas += signedAmount(m)
+        else acc.services += signedAmount(m)
+        return acc
+      },
+      { señas: 0, services: 0 },
+    )
+}
+
+function formatSigned(amount: number, sym: string) {
+  return `${amount >= 0 ? '+' : '-'}${sym}${Math.abs(amount).toLocaleString('es-CO')}`
 }
 
 export function TransactionsPage() {
@@ -771,7 +784,12 @@ export function TransactionsPage() {
       header: 'Anticipo',
       className: 'text-right',
       render: (row: TxRow) => {
-        if (row.kind === 'group') return <span style={{ color: 'var(--color-muted)' }}>—</span>
+        if (row.kind === 'group') {
+          const { señas } = groupTotals(row.group)
+          return señas !== 0
+            ? <span className="tabular-nums text-xs font-semibold" style={{ color: 'var(--color-muted)' }}>{formatSigned(señas, CURRENCY_SYMBOL[row.group.currency])}</span>
+            : <span style={{ color: 'var(--color-muted)' }}>—</span>
+        }
         const tx = row.tx
         return tx.seña_amount != null && tx.seña_amount > 0
           ? <span className="tabular-nums text-xs" style={{ color: 'var(--color-muted)', ...(tx.voided_at ? { opacity: 0.5 } : {}) }}>${tx.seña_amount.toLocaleString('es-CO')}</span>
@@ -784,11 +802,10 @@ export function TransactionsPage() {
       className: 'text-right',
       render: (row: TxRow) => {
         if (row.kind === 'group') {
-          const total = groupTotal(row.group)
-          const sym = CURRENCY_SYMBOL[row.group.currency]
+          const { services } = groupTotals(row.group)
           return (
-            <span className="font-semibold tabular-nums" style={{ color: total >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-              {total >= 0 ? '+' : '-'}{sym}{Math.abs(total).toLocaleString('es-CO')}
+            <span className="font-semibold tabular-nums" style={{ color: services >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+              {formatSigned(services, CURRENCY_SYMBOL[row.group.currency])}
             </span>
           )
         }
