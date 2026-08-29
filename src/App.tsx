@@ -1,40 +1,65 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Toaster } from '@/components/ui/Toaster'
+import { ConfirmHost } from '@/components/ui/ConfirmHost'
+import { showToast } from '@/lib/toast'
 import { AppShell } from '@/components/layout/AppShell'
 import { AuthGuard } from '@/components/layout/AuthGuard'
+import { AuthProvider } from '@/components/layout/AuthProvider'
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary'
 import { LoginPage } from '@/pages/auth/LoginPage'
-import { DashboardPage } from '@/pages/dashboard/DashboardPage'
 import { TransactionsPage } from '@/pages/transactions/TransactionsPage'
 import { QuickFunnelPage } from '@/pages/transactions/QuickFunnelPage'
 import { InventoryPage } from '@/pages/inventory/InventoryPage'
-import { PurchaseOrdersPage } from '@/pages/purchase-orders/PurchaseOrdersPage'
 import { SuppliersPage } from '@/pages/suppliers/SuppliersPage'
-import { ReportsPage } from '@/pages/reports/ReportsPage'
-import { ImportPage } from '@/pages/import/ImportPage'
-import { SettingsPage } from '@/pages/settings/SettingsPage'
-import { FondosPage } from '@/pages/fondos/FondosPage'
-import { CuentasPage } from '@/pages/cuentas/CuentasPage'
+
+const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage').then(m => ({ default: m.DashboardPage })))
+const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage').then(m => ({ default: m.ReportsPage })))
+const ImportPage = lazy(() => import('@/pages/import/ImportPage').then(m => ({ default: m.ImportPage })))
+const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then(m => ({ default: m.SettingsPage })))
+const PurchaseOrdersPage = lazy(() => import('@/pages/purchase-orders/PurchaseOrdersPage').then(m => ({ default: m.PurchaseOrdersPage })))
+const FondosPage = lazy(() => import('@/pages/fondos/FondosPage').then(m => ({ default: m.FondosPage })))
+const CuentasPage = lazy(() => import('@/pages/cuentas/CuentasPage').then(m => ({ default: m.CuentasPage })))
+
+function RouteFallback() {
+  return (
+    <div className="flex justify-center py-16">
+      <span className="inline-block w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60,
       retry: 1,
+      refetchOnWindowFocus: false,
+    },
+    mutations: {
+      retry: 0,
     },
   },
+  mutationCache: new MutationCache({
+    onError: error => showToast(error.message || 'No se pudo guardar el cambio.'),
+  }),
 })
 
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <AuthProvider>
       <BrowserRouter>
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route
             element={
               <AuthGuard>
-                <AppShell />
+                <ErrorBoundary>
+                  <AppShell />
+                </ErrorBoundary>
               </AuthGuard>
             }
           >
@@ -81,7 +106,11 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
+      </AuthProvider>
+      <Toaster />
+      <ConfirmHost />
     </QueryClientProvider>
   )
 }

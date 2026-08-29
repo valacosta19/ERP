@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx'
 import type { EntityType, ParsedSheet } from './importTypes'
 
 export type FieldDef = {
@@ -69,7 +68,8 @@ export const ENTITY_FIELDS: Record<EntityType, FieldDef[]> = {
   ],
 }
 
-export function parseWorkbook(file: File): Promise<ParsedSheet[]> {
+export async function parseWorkbook(file: File): Promise<ParsedSheet[]> {
+  const XLSX = await import('xlsx')
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -102,7 +102,8 @@ export function parseWorkbook(file: File): Promise<ParsedSheet[]> {
   })
 }
 
-export function downloadSampleTemplate() {
+export async function downloadSampleTemplate() {
+  const XLSX = await import('xlsx')
   const wb = XLSX.utils.book_new()
 
   const sheets: { name: string; data: (string | number)[][] }[] = [

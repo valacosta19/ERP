@@ -238,7 +238,7 @@ export function ReportsPage() {
     subcategoryIds: sueldoCatId ? [sueldoCatId] : [],
     from: sueldoFrom,
     to: sueldoTo,
-  })
+  }, { enabled: sueldoCatId != null })
 
   const { summary } = financial.data ?? { summary: { total_income: 0, total_expense: 0, balance: 0 } }
   const totalInventoryValue = valuation.data?.reduce((s, r) => s + r.total_value, 0) ?? 0
@@ -459,11 +459,25 @@ export function ReportsPage() {
     for (const tc of txCommissions) {
       commissionRateByTx.set(tc.transaction_id, (commissionRateByTx.get(tc.transaction_id) ?? 0) + tc.commission_rate)
     }
+    const productById = new Map(products.map(p => [p.id, p]))
+    const recipesByService = new Map<string, ServiceRecipe[]>()
+    for (const r of allRecipes) {
+      const list = recipesByService.get(r.catalog_item_id) ?? []
+      list.push(r)
+      recipesByService.set(r.catalog_item_id, list)
+    }
+    const txByService = new Map<string, typeof txRevenue>()
+    for (const t of txRevenue) {
+      if (!t.catalog_item_id) continue
+      const list = txByService.get(t.catalog_item_id) ?? []
+      list.push(t)
+      txByService.set(t.catalog_item_id, list)
+    }
 
     return services.map(service => {
-      const recipes = allRecipes.filter(r => r.catalog_item_id === service.id)
+      const recipes = recipesByService.get(service.id) ?? []
       const materialCost = recipes.reduce((s, r) => {
-        const product = products.find(p => p.id === r.product_id)
+        const product = productById.get(r.product_id)
         if (!product?.unit_size) return s
         const min = product.min_cost ?? 0
         const max = product.max_cost ?? min
@@ -472,7 +486,7 @@ export function ReportsPage() {
         return s + r.quantity_grams * costPerGram
       }, 0)
 
-      const txForService = txRevenue.filter(t => t.catalog_item_id === service.id)
+      const txForService = txByService.get(service.id) ?? []
       const serviceRevenueARS = txForService.reduce((s, t) => {
         const base = t.amount + (t.seña_amount ?? 0)
         return s + (t.currency === 'USD' ? base * usdRate : base)

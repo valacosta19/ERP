@@ -19,9 +19,10 @@ function escapeLikePattern(value: string) {
   return value.replace(/[\\%_]/g, match => `\\${match}`)
 }
 
-export function useTransactions(filters: TransactionFilters = {}) {
+export function useTransactions(filters: TransactionFilters = {}, options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['transactions', filters],
+    enabled: options.enabled ?? true,
     queryFn: async () => {
       type RawTx = Omit<Transaction, 'professionals' | 'subcategory'> & {
         subcategory: TransactionCategory | null

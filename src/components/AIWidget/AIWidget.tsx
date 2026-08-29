@@ -27,7 +27,7 @@ export function AIWidget() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const { data: snapshot, isLoading: snapshotLoading, error: snapshotError } = useBusinessSnapshot()
+  const { data: snapshot, isLoading: snapshotLoading, error: snapshotError } = useBusinessSnapshot(isOpen)
 
   useEffect(() => {
     if (isOpen) {

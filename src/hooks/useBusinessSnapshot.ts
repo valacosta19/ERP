@@ -75,9 +75,10 @@ function monthLabel(month: string) {
   return new Date(Number(y), Number(m) - 1).toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })
 }
 
-export function useBusinessSnapshot() {
+export function useBusinessSnapshot(enabled = true) {
   return useQuery<BusinessSnapshot>({
     queryKey: ['ai-snapshot'],
+    enabled,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const from90 = daysAgoLocal(90)

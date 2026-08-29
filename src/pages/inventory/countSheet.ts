@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabaseClient'
 import { parseNumberOrNull } from '../import/importLogic'
 import type { RecountLine } from '@/hooks/useInventoryRecount'
@@ -68,7 +67,9 @@ function buildCountRows(products: Product[], costs: Map<string, number>): CountS
   })
 }
 
-function buildWorkbook(rows: CountSheetRow[]): XLSX.WorkBook {
+type Xlsx = typeof import('xlsx')
+
+function buildWorkbook(XLSX: Xlsx, rows: CountSheetRow[]) {
   const ws = XLSX.utils.json_to_sheet(rows, { header: Object.values(COUNT_COLUMNS) as string[] })
   ws['!cols'] = [
     { wch: 38 }, { wch: 14 }, { wch: 34 }, { wch: 16 }, { wch: 10 },
@@ -80,8 +81,9 @@ function buildWorkbook(rows: CountSheetRow[]): XLSX.WorkBook {
 }
 
 export async function downloadCountSheet(products: Product[]): Promise<void> {
+  const XLSX = await import('xlsx')
   const costs = await fetchLastPurchaseCosts()
-  const wb = buildWorkbook(buildCountRows(products, costs))
+  const wb = buildWorkbook(XLSX, buildCountRows(products, costs))
   const today = todayLocal()
   XLSX.writeFile(wb, `conteo-inventario-${today}.xlsx`)
 }

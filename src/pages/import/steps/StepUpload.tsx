@@ -54,7 +54,7 @@ export function StepUpload({ onParsed }: Props) {
       {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
       <button
         type="button"
-        onClick={downloadSampleTemplate}
+        onClick={() => void downloadSampleTemplate()}
         className="text-sm text-[var(--color-accent)] underline underline-offset-2 hover:opacity-75 transition-opacity"
       >
         Descargar plantilla de ejemplo
