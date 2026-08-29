@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { fetchAllRows } from '@/lib/fetchAllRows'
 import { INVENTORY_PURCHASE_CATEGORY } from '@/lib/inventoryPurchaseCategory'
 import type { Currency } from '@/types'
+import { todayLocal } from '@/lib/dateRange'
 
 export type BalanceSheet = {
   cash: { method: string; currency: Currency; amount: number }[]
@@ -123,13 +124,14 @@ export function useInventoryValuation() {
   return useQuery({
     queryKey: ['reports', 'inventory-valuation'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('inventory_lots')
-        .select('product_id, remaining_quantity, unit_cost, products(name)')
-        .gt('remaining_quantity', 0)
-      if (error) throw new Error(error.message)
-
-      const lots = (data as unknown as RawLot[]) ?? []
+      const lots = await fetchAllRows<RawLot>((rangeFrom, rangeTo) =>
+        supabase
+          .from('inventory_lots')
+          .select('product_id, remaining_quantity, unit_cost, products(name)')
+          .gt('remaining_quantity', 0)
+          .order('id', { ascending: true })
+          .range(rangeFrom, rangeTo),
+      )
       const map = new Map<string, InventoryValuationRow>()
 
       for (const lot of lots) {
@@ -169,9 +171,12 @@ export function useBalanceSheet(asOfDate?: string) {
   return useQuery<BalanceSheet>({
     queryKey: ['reports', 'balance-sheet', asOfDate],
     queryFn: async () => {
-      const dateFilter = asOfDate ?? new Date().toISOString().slice(0, 10)
+      const dateFilter = asOfDate ?? todayLocal()
 
-      const [payments, receivablesRes, lotsRes, debtsRes] = await Promise.all([
+      type RawReceivable = { total_amount: number; collected_amount: number; currency: Currency }
+      type RawOpenLot = { remaining_quantity: number; unit_cost: number }
+      type RawDebt = { total_amount: number; paid_amount: number }
+      const [payments, receivableRows, lotRows, debtRows] = await Promise.all([
         fetchAllRows<RawPaymentWithTx>((rangeFrom, rangeTo) =>
           supabase
             .from('transaction_payments')
@@ -181,14 +186,16 @@ export function useBalanceSheet(asOfDate?: string) {
             .order('id', { ascending: true })
             .range(rangeFrom, rangeTo),
         ),
-        supabase.from('receivables').select('total_amount, collected_amount, currency'),
-        supabase.from('inventory_lots').select('remaining_quantity, unit_cost').gt('remaining_quantity', 0),
-        supabase.from('supplier_debts').select('total_amount, paid_amount'),
+        fetchAllRows<RawReceivable>((rangeFrom, rangeTo) =>
+          supabase.from('receivables').select('total_amount, collected_amount, currency').order('id', { ascending: true }).range(rangeFrom, rangeTo),
+        ),
+        fetchAllRows<RawOpenLot>((rangeFrom, rangeTo) =>
+          supabase.from('inventory_lots').select('remaining_quantity, unit_cost').gt('remaining_quantity', 0).order('id', { ascending: true }).range(rangeFrom, rangeTo),
+        ),
+        fetchAllRows<RawDebt>((rangeFrom, rangeTo) =>
+          supabase.from('supplier_debts').select('total_amount, paid_amount').order('id', { ascending: true }).range(rangeFrom, rangeTo),
+        ),
       ])
-
-      if (receivablesRes.error) throw new Error(receivablesRes.error.message)
-      if (lotsRes.error) throw new Error(lotsRes.error.message)
-      if (debtsRes.error) throw new Error(debtsRes.error.message)
 
       const cashMap = new Map<string, { method: string; currency: Currency; amount: number }>()
       for (const payment of payments) {
@@ -208,7 +215,7 @@ export function useBalanceSheet(asOfDate?: string) {
         .reduce((sum, balance) => sum + balance.amount, 0)
 
       const receivablesMap = new Map<Currency, number>([['ARS', 0], ['USD', 0], ['EUR', 0]])
-      for (const receivable of (receivablesRes.data ?? []) as { total_amount: number; collected_amount: number; currency: Currency }[]) {
+      for (const receivable of receivableRows) {
         receivablesMap.set(
           receivable.currency,
           (receivablesMap.get(receivable.currency) ?? 0)
@@ -220,10 +227,10 @@ export function useBalanceSheet(asOfDate?: string) {
         .filter(balance => Math.abs(balance.amount) > 0.001)
       const receivables = receivablesMap.get('ARS') ?? 0
 
-      const inventoryValue = ((lotsRes.data ?? []) as { remaining_quantity: number; unit_cost: number }[])
+      const inventoryValue = lotRows
         .reduce((s, l) => s + Number(l.remaining_quantity) * Number(l.unit_cost), 0)
 
-      const payables = ((debtsRes.data ?? []) as { total_amount: number; paid_amount: number }[])
+      const payables = debtRows
         .reduce((s, d) => s + (Number(d.total_amount) - Number(d.paid_amount)), 0)
 
       const totalAssets = totalCash + receivables + inventoryValue
@@ -262,8 +269,10 @@ function monthLabel(month: string) {
 export function useProfitReport(filters: { from?: string; to?: string; usdRate?: number } = {}) {
   return useQuery<ProfitReport>({
     queryKey: ['reports', 'profit', filters],
+    enabled: filters.usdRate != null,
     queryFn: async () => {
-      const usdRate = filters.usdRate ?? 1
+      const usdRate = filters.usdRate
+      if (usdRate == null) throw new Error('Cotización USD no disponible')
       const toARS = (amount: number, currency: string) =>
         currency === 'USD' ? amount * usdRate : amount
 
@@ -301,6 +310,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
       })
 
       const txs = allTxs.filter(tx => {
+        if (tx.currency === 'EUR') return false
         if (filters.from && tx.date < filters.from) return false
         if (filters.to && tx.date > filters.to) return false
         return true

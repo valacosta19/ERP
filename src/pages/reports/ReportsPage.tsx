@@ -25,7 +25,8 @@ import type { FinancialCategoryRow, InventoryValuationRow, ProfitMonthRow } from
 import type { CommissionDetailRow } from '@/hooks/useCommissionsReport'
 import type { Currency, ServiceRecipe, ServiceCostRow, Transaction } from '@/types'
 import { formatDate } from '@/lib/formatDate'
-import { currentMonthRange } from '@/lib/dateRange'
+import { currentMonthRange, todayLocal } from '@/lib/dateRange'
+import { formatMoney } from '@/lib/money'
 
 type Tab = 'financiero' | 'comisiones' | 'utilidad' | 'costos' | 'balance' | 'sueldos'
 type CommViewMode = 'detalle' | 'quincenal'
@@ -51,11 +52,8 @@ const CURRENCY_OPTIONS = [
   { value: 'EUR', label: 'EUR' },
 ]
 
-const CURRENCY_SYMBOL: Record<string, string> = { ARS: '$', USD: 'U$D', EUR: '€' }
-
 function fmtAmount(amount: number, currency?: string) {
-  const sym = currency ? (CURRENCY_SYMBOL[currency] ?? '$') : '$'
-  return `${sym}${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return formatMoney(amount, (currency as Currency | undefined) ?? 'ARS')
 }
 
 const financialColumns = [
@@ -180,7 +178,7 @@ export function ReportsPage() {
   const [settleTarget, setSettleTarget] = useState<{ id: string; name: string; gross: number; settled: number } | null>(null)
   const [profitFrom, setProfitFrom] = useState(() => currentMonthRange().from)
   const [profitTo, setProfitTo] = useState(() => currentMonthRange().to)
-  const [balanceDate, setBalanceDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [balanceDate, setBalanceDate] = useState(() => todayLocal())
   const [sueldoMonth, setSueldoMonth] = useState(() => currentMonthRange().from.slice(0, 7))
   const sueldoFrom = `${sueldoMonth}-01`
   const sueldoTo = (() => {
@@ -188,7 +186,7 @@ export function ReportsPage() {
     return `${sueldoMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
   })()
 
-  const { data: dolarBlue } = useQuery<{ venta: number; fechaActualizacion: string }>({
+  const dolarBlueQuery = useQuery<{ venta: number; fechaActualizacion: string }>({
     queryKey: ['dolar-blue'],
     queryFn: async () => {
       const res = await fetch('https://dolarapi.com/v1/dolares/blue')
@@ -197,6 +195,7 @@ export function ReportsPage() {
     },
     staleTime: 1000 * 60 * 30,
   })
+  const dolarBlue = dolarBlueQuery.data
 
   const financial = useFinancialReport({ from: from || undefined, to: to || undefined, currency: currency || undefined })
   const valuation = useInventoryValuation()
@@ -400,7 +399,8 @@ export function ReportsPage() {
 
 
   const serviceDeductionsByMonth = useMemo(() => {
-    const usdRate = dolarBlue?.venta ?? 1
+    const usdRate = dolarBlue?.venta
+    if (usdRate == null) return new Map<string, { commission: number; materials: number }>()
     const commRateByTx = new Map<string, number>()
     for (const tc of txCommissions) {
       commRateByTx.set(tc.transaction_id, (commRateByTx.get(tc.transaction_id) ?? 0) + tc.commission_rate)
@@ -451,9 +451,9 @@ export function ReportsPage() {
   }, [serviceDeductionsByMonth])
 
   const costRows = useMemo<ServiceCostRow[]>(() => {
+    const usdRate = dolarBlue?.venta
+    if (usdRate == null) return []
     const services = allCatalogItems.filter(ci => ci.name.toLowerCase() !== 'anticipo')
-
-    const usdRate = dolarBlue?.venta ?? 1
 
     const commissionRateByTx = new Map<string, number>()
     for (const tc of txCommissions) {
@@ -670,9 +670,14 @@ export function ReportsPage() {
                   onChange={e => setCommProfFilter(e.target.value)}
                   className="w-52"
                 />
+                {!dolarBlue && (
+                  <span className="text-xs self-end pb-1" style={{ color: 'var(--color-warning)' }}>
+                    {dolarBlueQuery.isError ? 'Cotización USD no disponible: el reporte no se calcula sin ella.' : 'Obteniendo cotización USD…'}
+                  </span>
+                )}
                 {dolarBlue && (
                   <span className="text-xs text-[var(--color-muted)] self-end pb-1">
-                    USD blue: ${dolarBlue.venta.toLocaleString('es-AR')}
+                    USD blue: ${dolarBlue.venta.toLocaleString('es-AR')} · EUR fuera del reporte
                   </span>
                 )}
               </div>
@@ -880,9 +885,14 @@ export function ReportsPage() {
                 <Input label="Desde" type="date" value={profitFrom} onChange={e => setProfitFrom(e.target.value)} className="w-40" />
                 <Input label="Hasta" type="date" value={profitTo} onChange={e => setProfitTo(e.target.value)} className="w-40" />
               </div>
-              {dolarBlue && (
+              {!dolarBlue && (
+                  <span className="text-xs self-end pb-1" style={{ color: 'var(--color-warning)' }}>
+                    {dolarBlueQuery.isError ? 'Cotización USD no disponible: el reporte no se calcula sin ella.' : 'Obteniendo cotización USD…'}
+                  </span>
+                )}
+                {dolarBlue && (
                 <span className="text-xs text-[var(--color-muted)] self-end pb-1">
-                  USD blue: ${dolarBlue.venta.toLocaleString('es-AR')} · {new Date(dolarBlue.fechaActualizacion).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}
+                  USD blue: ${dolarBlue.venta.toLocaleString('es-AR')} · {new Date(dolarBlue.fechaActualizacion).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })} · EUR fuera del reporte
                 </span>
               )}
             </div>
@@ -1240,8 +1250,8 @@ export function ReportsPage() {
           onClose={() => setSettleTarget(null)}
           hairdresserId={settleTarget.id}
           hairdresserName={settleTarget.name}
-          periodStart={commFrom || new Date().toISOString().slice(0, 10)}
-          periodEnd={commTo || new Date().toISOString().slice(0, 10)}
+          periodStart={commFrom || todayLocal()}
+          periodEnd={commTo || todayLocal()}
           grossAmount={settleTarget.gross}
           alreadySettled={settleTarget.settled}
         />

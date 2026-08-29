@@ -32,16 +32,19 @@ export function useDashboardStats() {
 
   const { data: thisMonth = [], isLoading: loadingMonth } = useQuery({
     queryKey: ['dashboard-current-month', currentMonthFrom],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('transactions')
-        .select(SELECT)
-        .is('voided_at', null)
-        .gte('date', currentMonthFrom)
-        .lte('date', currentMonthTo)
-      if (error) throw new Error(error.message)
-      return (data ?? []) as unknown as LeanTx[]
-    },
+    queryFn: () =>
+      fetchAllRows<LeanTx>(async (from, to) => {
+        const result = await supabase
+          .from('transactions')
+          .select(SELECT)
+          .is('voided_at', null)
+          .gte('date', currentMonthFrom)
+          .lte('date', currentMonthTo)
+          .order('date', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)
+        return result as { data: unknown; error: { message: string } | null }
+      }),
   })
 
   const { data: last6Months = [], isLoading: loadingChart } = useQuery({

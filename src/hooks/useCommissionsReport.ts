@@ -29,14 +29,16 @@ interface CommissionsFilters {
 export function useCommissionsReport(filters: CommissionsFilters = {}) {
   return useQuery({
     queryKey: ['reports', 'commissions', filters],
+    enabled: filters.usdRate != null,
     queryFn: async () => {
-      const usdRate = filters.usdRate ?? 1
+      const usdRate = filters.usdRate
+      if (usdRate == null) throw new Error('Cotización USD no disponible')
       const toARS = (amount: number, currency: string) =>
         currency === 'USD' ? amount * usdRate : amount
 
       let query = supabase
         .from('transaction_hairdressers')
-        .select('transaction_id, hairdresser_id, commission_rate, hairdressers(id, name), transactions(id, amount, seña_amount, date, currency, voided_at)')
+        .select('transaction_id, hairdresser_id, commission_rate, hairdressers(id, name), transactions!inner(id, amount, seña_amount, date, currency, voided_at)')
         .is('transactions.voided_at', null)
 
       if (filters.from) query = query.gte('transactions.date', filters.from)
@@ -51,7 +53,7 @@ export function useCommissionsReport(filters: CommissionsFilters = {}) {
       )
 
       return rows
-        .filter(row => row.hairdressers !== null && row.transactions !== null)
+        .filter(row => row.hairdressers !== null && row.transactions !== null && row.transactions.currency !== 'EUR')
         .map(row => {
           const tx = row.transactions!
           const amountARS = toARS(Number(tx.amount), tx.currency)
