@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, type DragEvent, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, Link, Ban, Zap, Download } from 'lucide-react'
+import { X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { currentMonthRange } from '@/lib/dateRange'
 import { TopBar } from '@/components/layout/TopBar'
@@ -12,6 +12,13 @@ import { Select } from '@/components/ui/Select'
 import { Table } from '@/components/ui/Table'
 import { Modal } from '@/components/ui/Modal'
 import { useTransactions, useUpdateTransaction, useVoidTransaction, usePaymentMethodBalances, useUnrefundedAnticipos } from '@/hooks/useTransactions'
+import { useReorderTransactions } from '@/hooks/useTransactionOrder'
+import {
+  useTransactionGroups,
+  useCreateTransactionGroup,
+  useDeleteTransactionGroup,
+  useRemoveGroupMember,
+} from '@/hooks/useTransactionGroups'
 import { useLockedPeriods } from '@/hooks/useLockedPeriods'
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useTransactionCategories } from '@/hooks/useTransactionCategories'
@@ -27,22 +34,27 @@ import {
   CURRENCY_SYMBOL,
   CURRENCY_OPTIONS,
   INSTRUMENT_OPTIONS,
+  getTxDirection,
   type TransactionDraft,
+  type DirectionInput,
 } from '@/components/transactions/transactionDraft'
-import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, Product } from '@/types'
+import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, Product, TransactionGroupWithMembers } from '@/types'
 
 const CURRENCY_FILTER_OPTIONS = [
   { value: '', label: 'Todas las monedas' },
   ...CURRENCY_OPTIONS,
 ]
 
-function getTxDirection(tx: Transaction): 'entrada' | 'salida' | 'transfer' {
-  if (tx.is_seña) return tx.description?.trim().toLowerCase() === 'anticipo' ? 'entrada' : 'salida'
-  const txType = tx.subcategory?.transaction_type
-  if (txType === 'income') return 'entrada'
-  if (txType === 'expense') return 'salida'
-  if (txType === 'transfer') return 'transfer'
-  return (tx.payments?.[0]?.type as 'entrada' | 'salida') ?? 'entrada'
+type TxRow =
+  | { kind: 'single'; id: string; date: string; tx: Transaction }
+  | { kind: 'group'; id: string; date: string; group: TransactionGroupWithMembers; visibleCount: number }
+
+function signedAmount(tx: DirectionInput & { amount: number }) {
+  return getTxDirection(tx) === 'salida' ? -tx.amount : tx.amount
+}
+
+function groupTotal(group: TransactionGroupWithMembers) {
+  return group.members.filter(m => !m.voided_at).reduce((sum, m) => sum + signedAmount(m), 0)
 }
 
 export function TransactionsPage() {
@@ -73,6 +85,20 @@ export function TransactionsPage() {
     to: to || undefined,
     currency: currencyFilter || undefined,
   })
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [overId, setOverId] = useState<string | null>(null)
+  const [movingId, setMovingId] = useState<string | null>(null)
+  const reorderTransactions = useReorderTransactions()
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [groupModalOpen, setGroupModalOpen] = useState(false)
+  const [groupLabel, setGroupLabel] = useState('')
+  const [groupError, setGroupError] = useState('')
+
+  const { data: txGroups = [] } = useTransactionGroups()
+  const createGroup = useCreateTransactionGroup()
+  const deleteGroup = useDeleteTransactionGroup()
+  const removeGroupMember = useRemoveGroupMember()
+
   const { data: paymentMethodsData = [] } = usePaymentMethods()
   const paymentMethodOptions = paymentMethodsData
     .filter(pm => pm.active)
@@ -114,6 +140,111 @@ export function TransactionsPage() {
   const filteredTransactions = paymentMethodFilter
     ? transactions.filter(tx => tx.payments?.some(p => p.payment_method.toLowerCase() === normalizedPaymentMethodFilter))
     : transactions
+
+  const groupById = new Map(txGroups.map(g => [g.id, g]))
+  const groupIdByTx = new Map<string, string>()
+  txGroups.forEach(g => g.members.forEach(m => groupIdByTx.set(m.id, g.id)))
+
+  const txById = new Map(transactions.map(tx => [tx.id, tx]))
+  const filteredIds = new Set(filteredTransactions.map(tx => tx.id))
+
+  const rows: TxRow[] = []
+  const seenGroups = new Set<string>()
+  for (const tx of filteredTransactions) {
+    const groupId = groupIdByTx.get(tx.id)
+    const group = groupId ? groupById.get(groupId) : undefined
+    if (!group) {
+      rows.push({ kind: 'single', id: tx.id, date: tx.date, tx })
+      continue
+    }
+    if (seenGroups.has(group.id)) continue
+    seenGroups.add(group.id)
+    rows.push({
+      kind: 'group',
+      id: `group:${group.id}`,
+      date: group.members.reduce((max, m) => (m.date > max ? m.date : max), tx.date),
+      group,
+      visibleCount: group.members.filter(m => filteredIds.has(m.id)).length,
+    })
+  }
+
+  const selectedTransactions = filteredTransactions.filter(tx => selected.has(tx.id))
+  const selectionCurrencies = new Set(selectedTransactions.map(tx => tx.currency))
+  const selectionTotal = selectedTransactions.reduce((sum, tx) => sum + signedAmount(tx), 0)
+
+  function toggleSelected(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function handleCreateGroup() {
+    if (selectedTransactions.length < 2) {
+      setGroupError('Elegí al menos dos transacciones.')
+      return
+    }
+    if (selectionCurrencies.size > 1) {
+      setGroupError('Todas las transacciones tienen que estar en la misma moneda: un total en monedas mezcladas no significa nada.')
+      return
+    }
+    if (selectedTransactions.some(tx => tx.voided_at)) {
+      setGroupError('No se puede agrupar una transacción anulada.')
+      return
+    }
+    if (!groupLabel.trim()) {
+      setGroupError('Poné un nombre al grupo.')
+      return
+    }
+    await createGroup.mutateAsync({
+      label: groupLabel.trim(),
+      currency: selectedTransactions[0].currency,
+      transactionIds: selectedTransactions.map(tx => tx.id),
+    })
+    setSelected(new Set())
+    setGroupLabel('')
+    setGroupError('')
+    setGroupModalOpen(false)
+  }
+  const draggedTransaction = dragId ? filteredTransactions.find(tx => tx.id === dragId) ?? null : null
+  const movingTransaction = movingId ? filteredTransactions.find(tx => tx.id === movingId) ?? null : null
+
+  function applyReorder(source: Transaction, target: Transaction) {
+    if (source.id === target.id || source.date !== target.date) return
+
+    const group = filteredTransactions.filter(tx => tx.date === source.date).map(tx => tx.id)
+    const fromIndex = group.indexOf(source.id)
+    const toIndex = group.indexOf(target.id)
+    if (fromIndex === -1 || toIndex === -1) return
+
+    group.splice(fromIndex, 1)
+    group.splice(toIndex, 0, source.id)
+    reorderTransactions.mutate({ date: source.date, orderedIds: group })
+  }
+
+  function handleReorderDrop(target: Transaction) {
+    const source = draggedTransaction
+    setDragId(null)
+    setOverId(null)
+    if (source) applyReorder(source, target)
+  }
+
+  function handleReorderPlace(target: Transaction) {
+    const source = movingTransaction
+    setMovingId(null)
+    if (source) applyReorder(source, target)
+  }
+
+  useEffect(() => {
+    if (!movingId) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMovingId(null)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [movingId])
 
   const totals = filteredTransactions
     .filter(tx => !tx.voided_at)
@@ -322,37 +453,177 @@ export function TransactionsPage() {
   }
 
 
+  function renderActions(tx: Transaction) {
+    if (tx.voided_at || isDateLocked(tx.date)) return null
+    return (
+      <>
+        <button
+          onClick={() => openEdit(tx)}
+          className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button
+          onClick={() => handleVoid(tx.id)}
+          title="Anular"
+          className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+        >
+          <Ban size={14} />
+        </button>
+      </>
+    )
+  }
+
+  function renderGroupDetail(group: TransactionGroupWithMembers) {
+    return (
+      <div className="flex flex-col divide-y divide-[var(--color-border)]">
+        {group.members.map(member => {
+          const full = txById.get(member.id)
+          const dir = getTxDirection(member)
+          const sym = CURRENCY_SYMBOL[member.currency]
+          const outOfFilter = !filteredIds.has(member.id)
+          return (
+            <div
+              key={member.id}
+              className="grid grid-cols-[7rem_1fr_10rem_9rem_6rem] items-center gap-3 py-2 text-sm"
+              style={member.voided_at ? { opacity: 0.5 } : undefined}
+            >
+              <span className="text-[var(--color-muted)] text-xs">{formatDate(member.date)}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[var(--color-text)]">{member.description || '—'}</span>
+                {member.voided_at && <Badge variant="danger">Anulada</Badge>}
+                {outOfFilter && <Badge variant="default">Fuera del filtro</Badge>}
+              </div>
+              <span className="text-[var(--color-muted)] text-xs">{member.subcategory?.name || '—'}</span>
+              <span
+                className="text-right font-semibold tabular-nums"
+                style={{ color: dir === 'entrada' ? 'var(--color-success)' : dir === 'salida' ? 'var(--color-danger)' : 'var(--color-muted)' }}
+              >
+                {dir === 'entrada' ? '+' : dir === 'salida' ? '-' : ''}{sym}{member.amount.toLocaleString('es-CO')}
+              </span>
+              <div className="flex items-center gap-1 justify-end">
+                {full && renderActions(full)}
+                <button
+                  onClick={() => removeGroupMember.mutate({ groupId: group.id, transactionId: member.id })}
+                  title="Quitar del grupo"
+                  className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+                >
+                  <Unlink size={14} />
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   const columns = [
+    {
+      key: 'drag',
+      header: '',
+      className: 'w-6 px-1!',
+      render: (row: TxRow) => row.kind !== 'single' ? null : (
+        <button
+          type="button"
+          draggable
+          onDragStart={e => {
+            e.dataTransfer.effectAllowed = 'move'
+            e.dataTransfer.setData('text/plain', row.tx.id)
+            setDragId(row.tx.id)
+          }}
+          onDragEnd={() => {
+            setDragId(null)
+            setOverId(null)
+          }}
+          onClick={() => setMovingId(current => (current === row.tx.id ? null : row.tx.id))}
+          title={movingId === row.tx.id ? 'Elegí la fila del mismo día donde colocarla (Esc para cancelar)' : 'Arrastrar para reordenar, o clic para moverla a otra página'}
+          className={`inline-flex cursor-grab active:cursor-grabbing ${movingId === row.tx.id ? 'text-[var(--color-accent)]' : 'text-[var(--color-muted)]'}`}
+        >
+          <GripVertical size={14} />
+        </button>
+      ),
+    },
+    {
+      key: 'select',
+      header: '',
+      className: 'w-8',
+      render: (row: TxRow) => row.kind !== 'single' || row.tx.voided_at ? null : (
+        <input
+          type="checkbox"
+          checked={selected.has(row.tx.id)}
+          onChange={() => toggleSelected(row.tx.id)}
+          aria-label={`Seleccionar ${row.tx.description ?? 'transacción'}`}
+          style={{ accentColor: 'var(--color-accent)' }}
+        />
+      ),
+    },
     {
       key: 'date',
       header: 'Fecha',
-      render: (tx: Transaction) => (
-        <span className="text-[var(--color-muted)]" style={tx.voided_at ? { opacity: 0.5 } : undefined}>{formatDate(tx.date)}</span>
-      ),
+      render: (row: TxRow) => {
+        if (row.kind === 'group') {
+          const dates = row.group.members.map(m => m.date)
+          const min = dates.reduce((a, b) => (a < b ? a : b), row.date)
+          return (
+            <div className="flex flex-col gap-0.5 text-[var(--color-muted)]">
+              <span>{formatDate(row.date)}</span>
+              {min !== row.date && <span className="text-xs">desde {formatDate(min)}</span>}
+            </div>
+          )
+        }
+        const tx = row.tx
+        return <span className="text-[var(--color-muted)]" style={tx.voided_at ? { opacity: 0.5 } : undefined}>{formatDate(tx.date)}</span>
+      },
     },
     {
       key: 'description',
       header: 'Descripción',
-      render: (tx: Transaction) => (
-        <div className="flex flex-col gap-0.5" style={tx.voided_at ? { opacity: 0.5 } : undefined}>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[var(--color-text)]">{tx.description || '—'}</span>
-            {tx.voided_at && <Badge variant="danger">Anulada</Badge>}
-            {tx.inventory_pending && !tx.voided_at && <Badge variant="warning">Sin descontar</Badge>}
-            {tx.is_seña && !tx.voided_at && tx.description?.trim().toLowerCase() === 'anticipo' && refundedAntipoIds.has(tx.id) && <Badge variant="warning">Devuelta</Badge>}
+      render: (row: TxRow) => {
+        if (row.kind === 'group') {
+          const activeCount = row.group.members.filter(m => !m.voided_at).length
+          return (
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <Layers size={14} className="text-[var(--color-muted)]" />
+                <span className="text-[var(--color-text)]">{row.group.label}</span>
+                <Badge variant="default">{activeCount} transacciones</Badge>
+              </div>
+              {row.visibleCount < row.group.members.length && (
+                <span className="text-xs text-[var(--color-muted)]">
+                  {row.visibleCount} de {row.group.members.length} en el filtro
+                </span>
+              )}
+            </div>
+          )
+        }
+        const tx = row.tx
+        return (
+          <div className="flex flex-col gap-0.5" style={tx.voided_at ? { opacity: 0.5 } : undefined}>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[var(--color-text)]">{tx.description || '—'}</span>
+              {tx.voided_at && <Badge variant="danger">Anulada</Badge>}
+              {tx.inventory_pending && !tx.voided_at && <Badge variant="warning">Sin descontar</Badge>}
+              {tx.is_seña && !tx.voided_at && tx.description?.trim().toLowerCase() === 'anticipo' && refundedAntipoIds.has(tx.id) && <Badge variant="warning">Devuelta</Badge>}
+            </div>
+            {tx.professionals && tx.professionals.length > 0 && (
+              <span className="text-xs text-[var(--color-muted)]">
+                {tx.professionals.map(h => h.name).join(', ')}
+              </span>
+            )}
           </div>
-          {tx.professionals && tx.professionals.length > 0 && (
-            <span className="text-xs text-[var(--color-muted)]">
-              {tx.professionals.map(h => h.name).join(', ')}
-            </span>
-          )}
-        </div>
-      ),
+        )
+      },
     },
     {
       key: 'category',
       header: 'Categoría',
-      render: (tx: Transaction) => {
+      render: (row: TxRow) => {
+        if (row.kind === 'group') {
+          const names = new Set(row.group.members.map(m => txCategories.find(c => c.id === m.subcategory?.parent_id)?.name ?? '—'))
+          return <span className="text-[var(--color-muted)] text-xs">{names.size === 1 ? [...names][0] : 'Varias'}</span>
+        }
+        const tx = row.tx
         const parent = tx.subcategory ? txCategories.find(c => c.id === tx.subcategory!.parent_id) : null
         return <span className="text-[var(--color-muted)] text-xs" style={tx.voided_at ? { opacity: 0.5 } : undefined}>{parent?.name || '—'}</span>
       },
@@ -360,39 +631,59 @@ export function TransactionsPage() {
     {
       key: 'subcategory',
       header: 'Subcategoría',
-      render: (tx: Transaction) => (
-        <span className="text-[var(--color-muted)] text-xs" style={tx.voided_at ? { opacity: 0.5 } : undefined}>{tx.subcategory?.name || '—'}</span>
-      ),
+      render: (row: TxRow) => {
+        if (row.kind === 'group') {
+          const names = new Set(row.group.members.map(m => m.subcategory?.name ?? '—'))
+          return <span className="text-[var(--color-muted)] text-xs">{names.size === 1 ? [...names][0] : 'Varias'}</span>
+        }
+        const tx = row.tx
+        return <span className="text-[var(--color-muted)] text-xs" style={tx.voided_at ? { opacity: 0.5 } : undefined}>{tx.subcategory?.name || '—'}</span>
+      },
     },
     {
       key: 'payments',
       header: 'Métodos',
-      render: (tx: Transaction) => (
-        <div className="flex flex-wrap gap-1" style={tx.voided_at ? { opacity: 0.5 } : undefined}>
-          {tx.payments && tx.payments.length > 0
-            ? tx.payments.map((p, i) => (
-                <Badge key={i} variant="default">{p.payment_method}</Badge>
-              ))
-            : <span className="text-[var(--color-muted)] text-xs">—</span>
-          }
-        </div>
-      ),
+      render: (row: TxRow) => {
+        const methods = row.kind === 'group'
+          ? [...new Set(row.group.members.flatMap(m => m.payments.map(p => p.payment_method)))]
+          : [...new Set((row.tx.payments ?? []).map(p => p.payment_method))]
+        return (
+          <div className="flex flex-wrap gap-1" style={row.kind === 'single' && row.tx.voided_at ? { opacity: 0.5 } : undefined}>
+            {methods.length > 0
+              ? methods.map(method => <Badge key={method} variant="default">{method}</Badge>)
+              : <span className="text-[var(--color-muted)] text-xs">—</span>
+            }
+          </div>
+        )
+      },
     },
     {
       key: 'seña_amount',
       header: 'Anticipo',
       className: 'text-right',
-      render: (tx: Transaction) => (
-        tx.seña_amount != null && tx.seña_amount > 0
+      render: (row: TxRow) => {
+        if (row.kind === 'group') return <span style={{ color: 'var(--color-muted)' }}>—</span>
+        const tx = row.tx
+        return tx.seña_amount != null && tx.seña_amount > 0
           ? <span className="tabular-nums text-xs" style={{ color: 'var(--color-muted)', ...(tx.voided_at ? { opacity: 0.5 } : {}) }}>${tx.seña_amount.toLocaleString('es-CO')}</span>
           : <span style={{ color: 'var(--color-muted)', ...(tx.voided_at ? { opacity: 0.5 } : {}) }}>—</span>
-      ),
+      },
     },
     {
       key: 'monto',
       header: 'Monto',
       className: 'text-right',
-      render: (tx: Transaction) => {
+      render: (row: TxRow) => {
+        if (row.kind === 'group') {
+          const total = groupTotal(row.group)
+          const sym = CURRENCY_SYMBOL[row.group.currency]
+          return (
+            <span className="font-semibold tabular-nums" style={{ color: total >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+              {total >= 0 ? '+' : '-'}{sym}{Math.abs(total).toLocaleString('es-CO')}
+            </span>
+          )
+        }
+        const tx = row.tx
         const dir = getTxDirection(tx)
         const sym = CURRENCY_SYMBOL[tx.currency]
         const voidedStyle = tx.voided_at ? { opacity: 0.5, textDecoration: 'line-through' as const } : undefined
@@ -405,25 +696,17 @@ export function TransactionsPage() {
       key: 'actions',
       header: '',
       className: 'w-20',
-      render: (tx: Transaction) => (
+      render: (row: TxRow) => (
         <div className="flex items-center gap-1 justify-end">
-          {!tx.voided_at && !isDateLocked(tx.date) && (
+          {row.kind === 'group' ? (
             <button
-              onClick={() => openEdit(tx)}
+              onClick={() => deleteGroup.mutate(row.group.id)}
+              title="Desagrupar"
               className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <Unlink size={14} />
             </button>
-          )}
-          {!tx.voided_at && !isDateLocked(tx.date) && (
-            <button
-              onClick={() => handleVoid(tx.id)}
-              title="Anular"
-              className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-            >
-              <Ban size={14} />
-            </button>
-          )}
+          ) : renderActions(row.tx)}
         </div>
       ),
     },
@@ -436,6 +719,16 @@ export function TransactionsPage() {
         subtitle={`${filteredTransactions.length} registros`}
         actions={
           <div className="flex gap-2">
+            {selected.size >= 2 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => { setGroupError(''); setGroupModalOpen(true) }}
+              >
+                <Layers size={14} />
+                Agrupar ({selected.size})
+              </Button>
+            )}
             <Button variant="secondary" size="sm" onClick={() => setReconcileOpen(true)}>
               <Link size={14} />
               Reconciliar productos
@@ -548,19 +841,60 @@ export function TransactionsPage() {
           ))}
         </div>
 
+        {movingTransaction && (
+          <div className="flex items-center justify-between gap-3 px-4 py-2 rounded-xl border border-[var(--color-accent)] bg-[var(--color-surface)]">
+            <span className="text-xs text-[var(--color-text)]">
+              Moviendo <strong>{movingTransaction.description || 'transacción'}</strong> — elegí la fila del {formatDate(movingTransaction.date)} donde colocarla. Podés cambiar de página.
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setMovingId(null)}>Cancelar</Button>
+          </div>
+        )}
+
         <div className="flex-1 min-h-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
           <Table
             columns={columns}
-            data={filteredTransactions}
+            data={rows}
             keyField="id"
             loading={isLoading}
             emptyMessage="No hay transacciones para los filtros seleccionados"
+            renderExpanded={(row: TxRow) => row.kind === 'group' ? renderGroupDetail(row.group) : null}
+            rowProps={(row: TxRow) => {
+              if (row.kind !== 'single') return {}
+              const tx = row.tx
+              const isDropTarget = draggedTransaction !== null && draggedTransaction.id !== tx.id && draggedTransaction.date === tx.date
+              const isPlaceTarget = movingTransaction !== null && movingTransaction.id !== tx.id && movingTransaction.date === tx.date
+              const outline = 'outline outline-2 -outline-offset-2 outline-[var(--color-accent)]'
+              return {
+                onDragOver: (e: DragEvent<HTMLTableRowElement>) => {
+                  if (!isDropTarget) return
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                  setOverId(tx.id)
+                },
+                onDragLeave: () => setOverId(current => (current === tx.id ? null : current)),
+                onDrop: (e: DragEvent<HTMLTableRowElement>) => {
+                  e.preventDefault()
+                  handleReorderDrop(tx)
+                },
+                onClick: isPlaceTarget
+                  ? (e: MouseEvent<HTMLTableRowElement>) => {
+                      if ((e.target as HTMLElement).closest('input, button, a, select, textarea')) return
+                      handleReorderPlace(tx)
+                    }
+                  : undefined,
+                className: [
+                  isDropTarget && overId === tx.id ? outline : '',
+                  movingTransaction?.id === tx.id ? `${outline} outline-dashed` : '',
+                  isPlaceTarget ? 'cursor-pointer hover:outline hover:outline-2 hover:-outline-offset-2 hover:outline-[var(--color-accent)]' : '',
+                ].filter(Boolean).join(' '),
+              }
+            }}
             appendRow={
               Object.keys(totals).length > 0 ? (
                 <>
                   {Object.entries(totals).map(([currency, { entrada, salida }]) => (
                     <tr key={currency} className="border-t-2 border-[var(--color-border)]" style={{ background: 'var(--color-bg)' }}>
-                      <td colSpan={6} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
+                      <td colSpan={columns.length - 1} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
                         Flujo neto del período {Object.keys(totals).length > 1 ? currency : ''}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -591,12 +925,20 @@ export function TransactionsPage() {
               value={editForm.date}
               onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
             />
-            <Select
-              label="Moneda"
-              options={CURRENCY_OPTIONS}
-              value={editForm.currency}
-              onChange={e => setEditForm(f => ({ ...f, currency: e.target.value as Currency }))}
-            />
+            <div>
+              <Select
+                label="Moneda"
+                options={CURRENCY_OPTIONS}
+                value={editForm.currency}
+                onChange={e => setEditForm(f => ({ ...f, currency: e.target.value as Currency }))}
+                disabled={editing != null && groupIdByTx.has(editing.id)}
+              />
+              {editing != null && groupIdByTx.has(editing.id) && (
+                <p style={{ marginTop: '6px', fontSize: '0.8125rem', color: 'var(--color-muted)' }}>
+                  Está en un grupo. Para cambiar la moneda hay que desagruparla primero.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -809,6 +1151,45 @@ export function TransactionsPage() {
             </Button>
             <Button onClick={handleUpdate} loading={updateTx.isPending}>
               Guardar cambios
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={groupModalOpen}
+        onClose={() => setGroupModalOpen(false)}
+        title="Agrupar transacciones"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-[var(--color-muted)]">
+            Las {selectedTransactions.length} transacciones se van a mostrar como una sola fila con el total.
+            Cada una conserva su categoría y su importe: agrupar no cambia ningún reporte ni ningún saldo.
+          </p>
+          <Input
+            label="Nombre del grupo"
+            value={groupLabel}
+            onChange={e => setGroupLabel(e.target.value)}
+            placeholder="Transferencia de Ana"
+          />
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="text-[var(--color-muted)]">Total del grupo</span>
+            <span
+              className="font-semibold tabular-nums"
+              style={{ color: selectionTotal >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}
+            >
+              {selectionTotal >= 0 ? '+' : '-'}
+              {CURRENCY_SYMBOL[selectedTransactions[0]?.currency ?? 'ARS']}
+              {Math.abs(selectionTotal).toLocaleString('es-CO')}
+            </span>
+          </div>
+          {groupError && <p className="text-xs text-[var(--color-danger)]">{groupError}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={() => setGroupModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateGroup} loading={createGroup.isPending}>
+              Agrupar
             </Button>
           </div>
         </div>

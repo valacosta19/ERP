@@ -251,6 +251,43 @@ export interface Database {
         }
         Relationships: []
       }
+      transaction_groups: {
+        Row: {
+          id: string
+          label: string
+          currency: 'ARS' | 'USD' | 'EUR'
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          label: string
+          currency: 'ARS' | 'USD' | 'EUR'
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          label?: string
+          currency?: 'ARS' | 'USD' | 'EUR'
+          created_by?: string | null
+        }
+        Relationships: []
+      }
+      transaction_group_members: {
+        Row: {
+          group_id: string
+          transaction_id: string
+          created_at: string
+        }
+        Insert: {
+          group_id: string
+          transaction_id: string
+          created_at?: string
+        }
+        Update: never
+        Relationships: []
+      }
       transaction_payments: {
         Row: {
           id: string
@@ -271,6 +308,21 @@ export interface Database {
           created_at?: string
         }
         Update: never
+        Relationships: []
+      }
+      transaction_display_order: {
+        Row: {
+          transaction_id: string
+          position: number
+        }
+        Insert: {
+          transaction_id: string
+          position: number
+        }
+        Update: {
+          transaction_id?: string
+          position?: number
+        }
         Relationships: []
       }
       transaction_hairdressers: {

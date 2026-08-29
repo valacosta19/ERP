@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import React, { useState, useRef, useEffect } from 'react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 
 interface Column<T> {
   key: string
@@ -17,6 +18,8 @@ interface TableProps<T> {
   prependRow?: React.ReactNode
   appendRow?: React.ReactNode
   pageSize?: number
+  rowProps?: (row: T) => React.HTMLAttributes<HTMLTableRowElement>
+  renderExpanded?: (row: T) => ReactNode
 }
 
 const ROW_HEIGHT = 45
@@ -59,11 +62,26 @@ function PageNavButton({ onClick, disabled, title, children }: { onClick: () => 
   )
 }
 
-export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow, pageSize }: TableProps<T>) {
+export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow, pageSize, rowProps, renderExpanded }: TableProps<T>) {
   const containerRef = useRef<HTMLDivElement>(null)
   const footRef = useRef<HTMLTableSectionElement>(null)
   const [autoPageSize, setAutoPageSize] = useState(pageSize ?? 25)
   const [page, setPage] = useState(1)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  function toggleExpanded(key: string) {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function goToPage(next: number) {
+    setExpanded(new Set())
+    setPage(next)
+  }
 
   useEffect(() => {
     if (pageSize !== undefined) return
@@ -87,13 +105,15 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
   const visible = data.slice((safePage - 1) * effectivePageSize, safePage * effectivePageSize)
   const rangeStart = data.length === 0 ? 0 : (safePage - 1) * effectivePageSize + 1
   const rangeEnd = Math.min(safePage * effectivePageSize, data.length)
+  const totalColumns = columns.length + (renderExpanded ? 1 : 0)
 
   return (
     <div ref={containerRef} className="data-table h-full flex flex-col">
-      <div className="data-table__scroll overflow-x-auto">
+      <div className="data-table__scroll overflow-auto">
         <table className="data-table__table w-full text-sm">
           <thead className="data-table__head">
             <tr className="data-table__head-row border-b border-[var(--color-border)]">
+              {renderExpanded && <th className="data-table__head-cell w-8 px-2 py-3" />}
               {columns.map(col => (
                 <th
                   key={col.key}
@@ -108,29 +128,60 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
             {prependRow}
             {loading ? (
               <tr className="data-table__loading">
-                <td colSpan={columns.length} className="px-4 py-12 text-center text-[var(--color-muted)]">
+                <td colSpan={totalColumns} className="px-4 py-12 text-center text-[var(--color-muted)]">
                   <span className="inline-block w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
                 </td>
               </tr>
             ) : data.length === 0 ? (
               <tr className="data-table__empty">
-                <td colSpan={columns.length} className="px-4 py-12 text-center text-[var(--color-muted)]">
+                <td colSpan={totalColumns} className="px-4 py-12 text-center text-[var(--color-muted)]">
                   {emptyMessage}
                 </td>
               </tr>
             ) : (
-              visible.map((row, i) => (
+              visible.map((row, i) => {
+                const { className: extraClassName, ...extraProps } = rowProps?.(row) ?? {}
+                const rowKey = String(row[keyField])
+                const expandedContent = renderExpanded ? renderExpanded(row) : null
+                const isOpen = expanded.has(rowKey)
+                const isLast = i === visible.length - 1
+                return (
+                <React.Fragment key={rowKey}>
                 <tr
-                  key={String(row[keyField])}
-                  className={`data-table__row border-b border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors ${i === visible.length - 1 ? 'border-b-0' : ''}`}
+                  {...extraProps}
+                  className={`data-table__row border-b border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors ${isLast && !isOpen ? 'border-b-0' : ''} ${extraClassName ?? ''}`}
                 >
+                  {renderExpanded && (
+                    <td className="data-table__cell data-table__cell--expander w-8 px-2 py-3">
+                      {expandedContent && (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(rowKey)}
+                          aria-expanded={isOpen}
+                          aria-label={isOpen ? 'Contraer detalle' : 'Ver detalle'}
+                          className="p-1 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+                        >
+                          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                      )}
+                    </td>
+                  )}
                   {columns.map(col => (
                     <td key={col.key} className={`data-table__cell px-4 py-3 text-[var(--color-text)] ${col.className || ''}`}>
                       {col.render ? col.render(row) : String((row as Record<string, unknown>)[col.key] ?? '')}
                     </td>
                   ))}
                 </tr>
-              ))
+                {isOpen && expandedContent && (
+                  <tr className={`data-table__row data-table__row--expanded border-b border-[var(--color-border)] ${isLast ? 'border-b-0' : ''}`}>
+                    <td colSpan={totalColumns} className="px-4 py-3" style={{ background: 'var(--color-bg)' }}>
+                      {expandedContent}
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
+                )
+              })
             )}
           </tbody>
           {appendRow && (
@@ -144,15 +195,15 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
         <div className="data-table__pagination flex items-center justify-between px-4 py-3 border-t border-[var(--color-border)] mt-auto">
           <span className="data-table__pagination-info text-xs text-[var(--color-muted)]">{rangeStart}–{rangeEnd} de {data.length}</span>
           <div className="data-table__pagination-nav flex items-center gap-1.5">
-            <PageNavButton onClick={() => setPage(1)} disabled={safePage === 1} title="Primera página">«</PageNavButton>
-            <PageNavButton onClick={() => setPage(p => p - 1)} disabled={safePage === 1} title="Anterior">‹</PageNavButton>
+            <PageNavButton onClick={() => goToPage(1)} disabled={safePage === 1} title="Primera página">«</PageNavButton>
+            <PageNavButton onClick={() => goToPage(safePage - 1)} disabled={safePage === 1} title="Anterior">‹</PageNavButton>
             {pageRange(safePage, totalPages).map((item, i) =>
               item === '…' ? (
                 <span key={`e-${i}`} className="data-table__pagination-ellipsis px-1.5 text-xs text-[var(--color-muted)]">…</span>
               ) : (
                 <button
                   key={item}
-                  onClick={() => setPage(item)}
+                  onClick={() => goToPage(item)}
                   aria-current={item === safePage ? 'page' : undefined}
                   className={
                     item === safePage
@@ -169,8 +220,8 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
                 </button>
               )
             )}
-            <PageNavButton onClick={() => setPage(p => p + 1)} disabled={safePage === totalPages} title="Siguiente">›</PageNavButton>
-            <PageNavButton onClick={() => setPage(totalPages)} disabled={safePage === totalPages} title="Última página">»</PageNavButton>
+            <PageNavButton onClick={() => goToPage(safePage + 1)} disabled={safePage === totalPages} title="Siguiente">›</PageNavButton>
+            <PageNavButton onClick={() => goToPage(totalPages)} disabled={safePage === totalPages} title="Última página">»</PageNavButton>
           </div>
         </div>
       )}

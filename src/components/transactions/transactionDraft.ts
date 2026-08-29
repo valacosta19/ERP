@@ -56,3 +56,19 @@ export const INSTRUMENT_OPTIONS: { value: string; label: string }[] = [
   { value: 'Transferencia', label: 'Transferencia' },
   { value: 'Tarjeta', label: 'Tarjeta' },
 ]
+
+export type DirectionInput = {
+  is_seña: boolean
+  description: string | null
+  subcategory?: { transaction_type: 'income' | 'expense' | 'transfer' | null } | null
+  payments?: { type: string }[] | null
+}
+
+export function getTxDirection(tx: DirectionInput): 'entrada' | 'salida' | 'transfer' {
+  if (tx.is_seña) return tx.description?.trim().toLowerCase() === 'anticipo' ? 'entrada' : 'salida'
+  const txType = tx.subcategory?.transaction_type
+  if (txType === 'income') return 'entrada'
+  if (txType === 'expense') return 'salida'
+  if (txType === 'transfer') return 'transfer'
+  return (tx.payments?.[0]?.type as 'entrada' | 'salida') ?? 'entrada'
+}

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 import { fetchAllRows } from '@/lib/fetchAllRows'
+import { fetchDisplayPositions, compareByDisplayOrder } from '@/lib/transactionOrder'
 import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, ProfessionalAssignment, TransactionCategory } from '@/types'
 
 interface TransactionFilters {
@@ -39,12 +40,15 @@ export function useTransactions(filters: TransactionFilters = {}) {
         return query.range(rangeFrom, rangeTo)
       })
 
-      return rows.map(tx => ({
+      const positions = await fetchDisplayPositions(rows.map(tx => tx.id))
+
+      return (rows.map(tx => ({
         ...tx,
+        display_position: positions.get(tx.id) ?? null,
         professionals: tx.transaction_hairdressers
           .filter(th => th.hairdressers !== null)
           .map(th => ({ ...th.hairdressers!, commission_rate: th.commission_rate })),
-      })) as Transaction[]
+      })) as Transaction[]).sort(compareByDisplayOrder)
     },
   })
 }
@@ -238,6 +242,7 @@ export function useUpdateTransaction() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['transaction-groups'] })
       qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
       qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
     },
@@ -254,6 +259,7 @@ export function useVoidTransaction() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['transaction-groups'] })
       qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
       qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
       qc.invalidateQueries({ queryKey: ['receivables'] })

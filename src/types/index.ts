@@ -65,9 +65,35 @@ export interface Transaction {
   refunds_anticipo_id: string | null
   product_id: string | null
   inventory_pending?: boolean
+  display_position?: number | null
   subcategory?: TransactionCategory
   payments?: TransactionPayment[]
   professionals?: ProfessionalAssignment[]
+}
+
+export interface TransactionGroup {
+  id: string
+  label: string
+  currency: Currency
+  created_at: string
+  created_by: string | null
+}
+
+export interface GroupMemberTransaction {
+  id: string
+  date: string
+  amount: number
+  currency: Currency
+  description: string | null
+  voided_at: string | null
+  is_seña: boolean
+  subcategory_id: string | null
+  subcategory: TransactionCategory | null
+  payments: Pick<TransactionPayment, 'payment_method' | 'type' | 'amount'>[]
+}
+
+export interface TransactionGroupWithMembers extends TransactionGroup {
+  members: GroupMemberTransaction[]
 }
 
 export interface Supplier {
