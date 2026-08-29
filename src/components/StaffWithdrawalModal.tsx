@@ -23,10 +23,17 @@ interface Props {
 type Preset = 'cost' | 'sale' | 'manual'
 
 export function StaffWithdrawalModal({ open, onClose, mode, initialProductId }: Props) {
-  const { data: products = [] } = useProducts()
-  const { data: professionals = [] } = useProfessionals()
-  const { data: paymentMethodsData = [] } = usePaymentMethods()
-  const { data: categories = [] } = useTransactionCategories()
+  const productsQuery = useProducts()
+  const professionalsQuery = useProfessionals()
+  const paymentMethodsQuery = usePaymentMethods()
+  const categoriesQuery = useTransactionCategories()
+  const products = useMemo(() => productsQuery.data ?? [], [productsQuery.data])
+  const professionals = useMemo(() => professionalsQuery.data ?? [], [professionalsQuery.data])
+  const paymentMethodsData = useMemo(() => paymentMethodsQuery.data ?? [], [paymentMethodsQuery.data])
+  const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data])
+  const listQueries = [productsQuery, professionalsQuery, paymentMethodsQuery, categoriesQuery]
+  const listsLoading = listQueries.some(q => q.isLoading)
+  const listsError = listQueries.find(q => q.error)?.error?.message ?? null
   const { submitTicket } = useFunnelSubmit()
 
   const [hairdresserId, setHairdresserId] = useState('')
@@ -191,7 +198,13 @@ export function StaffWithdrawalModal({ open, onClose, mode, initialProductId }: 
 
   return (
     <Modal open={open} onClose={onClose} title={title} size="lg">
+      {listsLoading ? (
+        <div className="py-8 text-center">
+          <span className="inline-block w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
       <div className="space-y-4">
+        {listsError && <p className="text-sm text-[var(--color-danger)]">{listsError}</p>}
         <p className="text-sm text-[var(--color-muted)]">
           {mode === 'withdrawal'
             ? 'El producto se descuenta del inventario y queda como deuda del empleado. No genera movimiento de caja ni banco.'
@@ -313,6 +326,7 @@ export function StaffWithdrawalModal({ open, onClose, mode, initialProductId }: 
           </Button>
         </div>
       </div>
+      )}
     </Modal>
   )
 }

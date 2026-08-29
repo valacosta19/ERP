@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertCircle, ArrowLeft, ArrowRight, Check, CloudOff, HandCoins, List, Loader2, RefreshCw, Users, X } from 'lucide-react'
 import { StaffWithdrawalModal } from '@/components/StaffWithdrawalModal'
@@ -25,6 +25,7 @@ import {
   paymentsTotal as paymentsTotalFn,
   hasServiceLine,
   isCartIncome,
+  newPaymentKey,
 } from '@/components/transactions/QuickFunnel/funnelTypes'
 import { buildTicket } from '@/components/transactions/QuickFunnel/buildTicket'
 import { useFunnelSubmit } from '@/components/transactions/QuickFunnel/funnelSubmit'
@@ -66,11 +67,19 @@ export function QuickFunnelPage() {
   const [closed, setClosed] = useState<{ summary: string; queued: boolean } | null>(null)
   const [staffModal, setStaffModal] = useState<'withdrawal' | 'advance' | null>(null)
 
-  const { data: categories = [] } = useTransactionCategories()
-  const { data: catalogItems = [] } = useCatalogItems()
-  const { data: products = [] } = useProducts()
-  const { data: professionals = [] } = useProfessionals()
-  const { data: paymentMethodsData = [] } = usePaymentMethods()
+  const categoriesQuery = useTransactionCategories()
+  const catalogItemsQuery = useCatalogItems()
+  const productsQuery = useProducts()
+  const professionalsQuery = useProfessionals()
+  const paymentMethodsQuery = usePaymentMethods()
+  const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data])
+  const catalogItems = useMemo(() => catalogItemsQuery.data ?? [], [catalogItemsQuery.data])
+  const products = useMemo(() => productsQuery.data ?? [], [productsQuery.data])
+  const professionals = useMemo(() => professionalsQuery.data ?? [], [professionalsQuery.data])
+  const paymentMethodsData = useMemo(() => paymentMethodsQuery.data ?? [], [paymentMethodsQuery.data])
+  const catalogQueries = [categoriesQuery, catalogItemsQuery, productsQuery, professionalsQuery, paymentMethodsQuery]
+  const catalogLoading = catalogQueries.some(q => q.isLoading)
+  const catalogError = catalogQueries.find(q => q.error)?.error?.message ?? null
   const { data: anticipoPresets = [] } = useAnticipoPresets()
   const { data: anticipoBalance } = useAnticipoBalance()
   const { submitTicket } = useFunnelSubmit()
@@ -194,6 +203,7 @@ export function QuickFunnelPage() {
 
   function goNext() {
     const idx = steps.indexOf(state.step)
+    if (catalogLoading) return
     if (!canAdvance(state.step)) {
       setError(advanceHint(state.step))
       return
@@ -207,7 +217,7 @@ export function QuickFunnelPage() {
         if (s.payments.length > 0) return { ...s, step: next }
         const method = s.type === 'income' ? (s.incomeMethod || cashMethod || paymentMethods[0]) : (cashMethod ?? paymentMethods[0])
         const total = chargeTotal(s)
-        return { ...s, step: next, payments: method && total > 0 ? [{ payment_method: method, amount: total, received: null }] : [] }
+        return { ...s, step: next, payments: method && total > 0 ? [{ key: newPaymentKey(), payment_method: method, amount: total, received: null }] : [] }
       })
       return
     }
@@ -264,24 +274,25 @@ export function QuickFunnelPage() {
     }
   }
 
-  // Keyboard: digits to pick type, Enter to advance (unless typing in a field).
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName
-      const inField = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA'
-      if (state.step === 'type' && !inField && /^[1-4]$/.test(e.key)) {
-        const map: FunnelType[] = ['income', 'expense', 'cost', 'transfer']
-        pickType(map[parseInt(e.key) - 1])
-        return
-      }
-      if (e.key === 'Enter' && !inField && state.step !== 'done') {
-        e.preventDefault()
-        goNext()
-      }
+  const onKeyRef = useRef<(e: KeyboardEvent) => void>(() => {})
+  onKeyRef.current = (e: KeyboardEvent) => {
+    const tag = (e.target as HTMLElement)?.tagName
+    const inField = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA'
+    if (state.step === 'type' && !inField && /^[1-4]$/.test(e.key)) {
+      const map: FunnelType[] = ['income', 'expense', 'cost', 'transfer']
+      pickType(map[parseInt(e.key) - 1])
+      return
     }
+    if (e.key === 'Enter' && !inField && state.step !== 'done') {
+      e.preventDefault()
+      goNext()
+    }
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => onKeyRef.current(e)
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  })
+  }, [])
 
   const activeSubcats = state.type && state.type !== 'income'
     ? categories.filter(c => {
@@ -389,7 +400,15 @@ export function QuickFunnelPage() {
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 min-h-0 flex flex-col">
           <div className="flex-1 min-h-0 overflow-y-auto p-7">
-            {state.step === 'type' && (
+            {catalogError && (
+              <div style={{ marginBottom: '16px', fontSize: '0.8125rem', color: 'var(--color-danger)', fontWeight: 500 }}>{catalogError}</div>
+            )}
+            {catalogLoading && state.step !== 'done' && (
+              <div className="flex items-center justify-center" style={{ minHeight: '40vh' }}>
+                <span className="inline-block w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+            {!catalogLoading && state.step === 'type' && (
               <>
                 <StepType value={state.type} onPick={pickType} />
                 <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid var(--color-border)' }}>
@@ -416,7 +435,7 @@ export function QuickFunnelPage() {
               </>
             )}
 
-            {state.step === 'detail' && state.type === 'income' && (
+            {!catalogLoading && state.step === 'detail' && state.type === 'income' && (
               <StepDetailIncome
                 catalogItems={catalogItems}
                 products={products}
@@ -429,7 +448,7 @@ export function QuickFunnelPage() {
                 productLabel={productLabel}
               />
             )}
-            {state.step === 'detail' && state.type && state.type !== 'income' && (
+            {!catalogLoading && state.step === 'detail' && state.type && state.type !== 'income' && (
               <StepDetailSimple
                 type={state.type}
                 subcategories={activeSubcats}
@@ -461,7 +480,7 @@ export function QuickFunnelPage() {
               />
             )}
 
-            {state.step === 'amount' && isCartIncome(state) && (
+            {!catalogLoading && state.step === 'amount' && isCartIncome(state) && (
               <StepAmount
                 mode="income"
                 lines={state.lines}
@@ -476,7 +495,7 @@ export function QuickFunnelPage() {
                 onPriceTier={setIncomePriceTier}
               />
             )}
-            {state.step === 'amount' && state.type === 'income' && state.incomeMode === 'simple' && (
+            {!catalogLoading && state.step === 'amount' && state.type === 'income' && state.incomeMode === 'simple' && (
               <StepAmount
                 mode="simple"
                 type="income"
@@ -492,7 +511,7 @@ export function QuickFunnelPage() {
                 methodLabel="Entra en"
               />
             )}
-            {state.step === 'amount' && state.type && state.type !== 'income' && (
+            {!catalogLoading && state.step === 'amount' && state.type && state.type !== 'income' && (
               <StepAmount
                 mode="simple"
                 type={state.type}
@@ -509,7 +528,7 @@ export function QuickFunnelPage() {
               />
             )}
 
-            {state.step === 'adjust' && (
+            {!catalogLoading && state.step === 'adjust' && (
               <StepAdjust
                 currency={state.currency}
                 gross={gross}
@@ -526,7 +545,7 @@ export function QuickFunnelPage() {
               />
             )}
 
-            {state.step === 'payment' && (
+            {!catalogLoading && state.step === 'payment' && (
               <StepPayment
                 currency={state.currency}
                 netToPay={netToPay}
@@ -570,14 +589,14 @@ export function QuickFunnelPage() {
                 {state.step !== 'type' && (
                   <button
                     onClick={goNext}
-                    disabled={submitting || !canAdvance(state.step)}
+                    disabled={submitting || catalogLoading || !canAdvance(state.step)}
                     className="flex items-center gap-2"
                     style={{
                       padding: '11px 22px', borderRadius: '11px', border: 'none',
-                      background: canAdvance(state.step) ? 'var(--color-accent)' : 'var(--color-border)',
-                      color: '#fff', cursor: canAdvance(state.step) && !submitting ? 'pointer' : 'not-allowed',
+                      background: !catalogLoading && canAdvance(state.step) ? 'var(--color-accent)' : 'var(--color-border)',
+                      color: '#fff', cursor: !catalogLoading && canAdvance(state.step) && !submitting ? 'pointer' : 'not-allowed',
                       fontSize: '0.9375rem', fontWeight: 700,
-                      boxShadow: canAdvance(state.step) ? '0 6px 18px -8px var(--color-accent)' : 'none',
+                      boxShadow: !catalogLoading && canAdvance(state.step) ? '0 6px 18px -8px var(--color-accent)' : 'none',
                       opacity: submitting ? 0.7 : 1,
                     }}
                   >

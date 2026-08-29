@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TicketPayload } from './funnelSubmit'
 import type { QueuedTicket } from './offlineQueue'
 import { readQueue, enqueueTicket, flushQueue, discardTicket, retryTicket } from './offlineQueue'
@@ -7,6 +7,12 @@ export function useFunnelQueue(submit: (payload: TicketPayload) => Promise<void>
   const [pending, setPending] = useState(() => readQueue().length)
   const [stuckTickets, setStuckTickets] = useState<QueuedTicket[]>(() => readQueue().filter(t => t.status === 'stuck'))
   const [syncing, setSyncing] = useState(false)
+  const submitRef = useRef(submit)
+  const syncingRef = useRef(false)
+
+  useEffect(() => {
+    submitRef.current = submit
+  }, [submit])
 
   const refresh = useCallback(() => {
     const q = readQueue()
@@ -15,15 +21,17 @@ export function useFunnelQueue(submit: (payload: TicketPayload) => Promise<void>
   }, [])
 
   const flush = useCallback(async () => {
-    if (syncing || readQueue().filter(t => t.status !== 'stuck').length === 0 || !navigator.onLine) return
+    if (syncingRef.current || readQueue().filter(t => t.status !== 'stuck').length === 0 || !navigator.onLine) return
+    syncingRef.current = true
     setSyncing(true)
     try {
-      await flushQueue(submit)
+      await flushQueue(payload => submitRef.current(payload))
     } finally {
+      syncingRef.current = false
       setSyncing(false)
       refresh()
     }
-  }, [submit, syncing, refresh])
+  }, [refresh])
 
   const enqueue = useCallback((payload: TicketPayload) => {
     enqueueTicket(payload)

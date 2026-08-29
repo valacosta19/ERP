@@ -14,7 +14,7 @@ function line(kind: CartLine['kind'], name: string, unitPrice: number): CartLine
 
 function cartState(lines: CartLine[], patch: Partial<FunnelState> = {}): FunnelState {
   const total = lines.reduce((s, l) => s + l.unitPrice * l.qty, 0)
-  return { ...makeEmptyFunnelState(), type: 'income', incomeMode: 'cart', lines, payments: [{ payment_method: 'Santander', amount: total, received: null }], ...patch }
+  return { ...makeEmptyFunnelState(), type: 'income', incomeMode: 'cart', lines, payments: [{ key: 'p1', payment_method: 'Santander', amount: total, received: null }], ...patch }
 }
 
 describe('buildTicket group_label', () => {
@@ -29,7 +29,7 @@ describe('buildTicket group_label', () => {
   })
 
   it('leaves the tip out of the label but keeps it as a unit', () => {
-    const state = cartState([line('service', 'Corte', 50000), line('product', 'Shampoo', 11000)], { tipEnabled: true, tipAmount: 2000, payments: [{ payment_method: 'Santander', amount: 63000, received: null }] })
+    const state = cartState([line('service', 'Corte', 50000), line('product', 'Shampoo', 11000)], { tipEnabled: true, tipAmount: 2000, payments: [{ key: 'p1', payment_method: 'Santander', amount: 63000, received: null }] })
     const ticket = buildTicket(state, ctx)
     expect(ticket.group_label).toBe('Corte + Shampoo')
     expect(ticket.units.map(u => u.kind)).toEqual(['service', 'product', 'tip'])
@@ -45,7 +45,7 @@ describe('buildTicket group_label', () => {
 
 describe('buildTicket anticipo', () => {
   it('records the seña on the first service line and reduces its charge', () => {
-    const state = cartState([line('product', 'Shampoo', 11000), line('service', 'Corte', 50000)], { anticipoAmount: 20000, payments: [{ payment_method: 'Santander', amount: 41000, received: null }] })
+    const state = cartState([line('product', 'Shampoo', 11000), line('service', 'Corte', 50000)], { anticipoAmount: 20000, payments: [{ key: 'p1', payment_method: 'Santander', amount: 41000, received: null }] })
     const ticket = buildTicket(state, ctx)
     expect(ticket.units[0].sena_amount).toBeNull()
     expect(ticket.units[1].sena_amount).toBe(20000)

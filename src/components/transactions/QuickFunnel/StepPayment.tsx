@@ -1,6 +1,6 @@
 import { X, Plus, Wallet } from 'lucide-react'
 import type { Currency } from '@/types'
-import type { FunnelPaymentRow } from './funnelTypes'
+import { type FunnelPaymentRow, newPaymentKey } from './funnelTypes'
 import { StepHeading, SectionLabel } from './funnelAtoms'
 import { money, funnelInput } from './funnelFormat'
 
@@ -30,15 +30,15 @@ export function StepPayment({
   const change = cashRow && cashRow.received != null ? cashRow.received - cashRow.amount : 0
 
   function payAllWith(method: string) {
-    onPayments([{ payment_method: method, amount: Math.max(0, totalToCharge), received: null }])
+    onPayments([{ key: newPaymentKey(), payment_method: method, amount: Math.max(0, totalToCharge), received: null }])
   }
   function addRow() {
     const used = new Set(payments.map(p => p.payment_method))
     const next = paymentMethods.find(m => !used.has(m)) ?? paymentMethods[0]
-    onPayments([...payments, { payment_method: next, amount: Math.max(0, remaining), received: null }])
+    onPayments([...payments, { key: newPaymentKey(), payment_method: next, amount: Math.max(0, remaining), received: null }])
   }
-  function update(i: number, patch: Partial<FunnelPaymentRow>) {
-    onPayments(payments.map((p, ii) => ii === i ? { ...p, ...patch } : p))
+  function update(key: string, patch: Partial<FunnelPaymentRow>) {
+    onPayments(payments.map(p => p.key === key ? { ...p, ...patch } : p))
   }
 
   return (
@@ -115,12 +115,12 @@ export function StepPayment({
           </div>
 
           <div className="space-y-2.5">
-            {payments.map((p, i) => (
-              <div key={i} style={{ border: '1.5px solid var(--color-border)', borderRadius: '13px', padding: '12px 14px', background: 'var(--color-surface)' }}>
+            {payments.map(p => (
+              <div key={p.key} style={{ border: '1.5px solid var(--color-border)', borderRadius: '13px', padding: '12px 14px', background: 'var(--color-surface)' }}>
                 <div className="flex items-center gap-2">
                   <select
                     value={p.payment_method}
-                    onChange={e => update(i, { payment_method: e.target.value, received: null })}
+                    onChange={e => update(p.key, { payment_method: e.target.value, received: null })}
                     style={{ ...funnelInput, padding: '9px 10px', flex: 1 }}
                   >
                     {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
@@ -130,14 +130,14 @@ export function StepPayment({
                     <input
                       type="number" min="0"
                       value={p.amount === 0 ? '' : String(p.amount)}
-                      onChange={e => update(i, { amount: parseFloat(e.target.value) || 0 })}
+                      onChange={e => update(p.key, { amount: parseFloat(e.target.value) || 0 })}
                       placeholder="0"
                       style={{ ...funnelInput, padding: '9px 12px 9px 24px', textAlign: 'right' }}
                       className="tabular-nums"
                     />
                   </div>
                   {payments.length > 1 && (
-                    <button type="button" onClick={() => onPayments(payments.filter((_, ii) => ii !== i))} style={iconBtn}>
+                    <button type="button" onClick={() => onPayments(payments.filter(r => r.key !== p.key))} style={iconBtn}>
                       <X size={15} />
                     </button>
                   )}
@@ -150,7 +150,7 @@ export function StepPayment({
                       <input
                         type="number" min="0"
                         value={p.received == null ? '' : String(p.received)}
-                        onChange={e => update(i, { received: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
+                        onChange={e => update(p.key, { received: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
                         placeholder={String(p.amount)}
                         style={{ ...funnelInput, padding: '8px 12px 8px 24px', textAlign: 'right' }}
                         className="tabular-nums"

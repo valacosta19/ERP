@@ -22,27 +22,20 @@ interface Props {
 }
 
 export function ReconcileModal({ open, onClose }: Props) {
-  const [rows, setRows] = useState<UnlinkedTx[]>([])
+  const [rows, setRows] = useState<UnlinkedTx[] | null>(null)
   const [mappings, setMappings] = useState<Record<string, string>>({})
-  const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
-  const { data: products = [] } = useProducts()
-  const { data: catalogItems = [] } = useCatalogItems()
-  const { data: txCategories = [] } = useTransactionCategories()
+  const { data: products = [], isLoading: productsLoading, error: productsError } = useProducts()
+  const { data: catalogItems = [], isLoading: catalogLoading, error: catalogError } = useCatalogItems()
+  const { data: txCategories = [], isLoading: categoriesLoading, error: categoriesError } = useTransactionCategories()
+  const listsLoading = productsLoading || catalogLoading || categoriesLoading
+  const listsError = (productsError ?? catalogError ?? categoriesError)?.message ?? null
   const queryClient = useQueryClient()
 
   const productoCatId = txCategories.find(c => c.name.toLowerCase() === 'producto')?.id ?? null
 
-  useEffect(() => {
-    if (!open) return
-    setMappings({})
-    setErrors([])
-    loadUnlinked()
-  }, [open])
-
-  async function loadUnlinked() {
-    setLoading(true)
+  async function fetchUnlinked(): Promise<UnlinkedTx[]> {
     const { data: incomeSubcats, error: subcatError } = await supabase
       .from('transaction_categories')
       .select('id')
@@ -55,9 +48,12 @@ export function ReconcileModal({ open, onClose }: Props) {
       .in('subcategory_id', (incomeSubcats ?? []).map(s => s.id))
       .order('date', { ascending: false })
     if (error) throw new Error(error.message)
-    const unlinked = ((data as unknown as (UnlinkedTx & { sale_items: { id: string }[] })[]) ?? [])
+    return ((data as unknown as (UnlinkedTx & { sale_items: { id: string }[] })[]) ?? [])
       .filter(t => t.sale_items.length === 0)
-      .map(({ sale_items: _si, ...t }) => ({ ...t, amount: Number(t.amount) }))
+      .map(t => ({ id: t.id, date: t.date, description: t.description, amount: Number(t.amount) }))
+  }
+
+  function applyUnlinked(unlinked: UnlinkedTx[]) {
     setRows(unlinked)
 
     const autoMappings: Record<string, string> = {}
@@ -70,8 +66,15 @@ export function ReconcileModal({ open, onClose }: Props) {
       if (matchedService) autoMappings[tx.id] = `service:${matchedService.id}`
     }
     setMappings(autoMappings)
-    setLoading(false)
   }
+
+  useEffect(() => {
+    if (!open || listsLoading) return
+    void fetchUnlinked().then(unlinked => {
+      setErrors([])
+      applyUnlinked(unlinked)
+    })
+  }, [open, listsLoading])
 
   async function handleRun() {
     const mapped = Object.entries(mappings).filter(([, val]) => val)
@@ -81,7 +84,8 @@ export function ReconcileModal({ open, onClose }: Props) {
     const errs: string[] = []
 
     for (const [txId, val] of mapped) {
-      const tx = rows.find(r => r.id === txId)!
+      const tx = rows?.find(r => r.id === txId)
+      if (!tx) continue
       const [kind] = val.split(':')
 
       if (kind === 'service') {
@@ -104,7 +108,7 @@ export function ReconcileModal({ open, onClose }: Props) {
     queryClient.invalidateQueries({ queryKey: ['transactions'] })
     queryClient.invalidateQueries({ queryKey: ['reports'] })
     queryClient.invalidateQueries({ queryKey: ['products'] })
-    await loadUnlinked()
+    applyUnlinked(await fetchUnlinked())
     setMappings({})
     setRunning(false)
   }
@@ -125,7 +129,9 @@ export function ReconcileModal({ open, onClose }: Props) {
 
   return (
     <Modal open={open} onClose={onClose} title="Reconciliar transacciones" size="xl">
-      {loading ? (
+      {listsError ? (
+        <div className="py-8 text-center text-sm text-[var(--color-danger)]">{listsError}</div>
+      ) : listsLoading || rows === null ? (
         <div className="py-8 text-center text-sm text-[var(--color-muted)]">Cargando...</div>
       ) : rows.length === 0 ? (
         <div className="py-8 text-center text-sm text-[var(--color-muted)]">

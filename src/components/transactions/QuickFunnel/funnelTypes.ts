@@ -17,10 +17,13 @@ export type CartLine = {
 }
 
 export type FunnelPaymentRow = {
+  key: string
   payment_method: string
   amount: number
   received: number | null
 }
+
+export const newPaymentKey = () => crypto.randomUUID()
 
 export type DiscountMode = 'none' | 'amount' | 'percent'
 
