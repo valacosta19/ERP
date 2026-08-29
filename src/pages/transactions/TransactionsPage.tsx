@@ -1,9 +1,10 @@
 import { useState, useEffect, type DragEvent, type MouseEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { currentMonthRange } from '@/lib/dateRange'
+import { readDateParam, readCurrencyParam } from '@/lib/transactionFilters'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -60,13 +61,30 @@ function groupTotal(group: TransactionGroupWithMembers) {
 export function TransactionsPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const [parentCategoryFilter, setParentCategoryFilter] = useState('')
-  const [currencyFilter, setCurrencyFilter] = useState<Currency | ''>('')
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState('')
-  const [from, setFrom] = useState(() => currentMonthRange().from)
-  const [to, setTo] = useState(() => currentMonthRange().to)
-  const [showVoided, setShowVoided] = useState(false)
-  const [pendingOnly, setPendingOnly] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const defaultRange = currentMonthRange()
+  const parentCategoryFilter = searchParams.get('cat') ?? ''
+  const currencyFilter = readCurrencyParam(searchParams)
+  const paymentMethodFilter = searchParams.get('method') ?? ''
+  const from = readDateParam(searchParams, 'from', defaultRange.from)
+  const to = readDateParam(searchParams, 'to', defaultRange.to)
+  const showVoided = searchParams.get('voided') === '1'
+  const pendingOnly = searchParams.get('pending') === '1'
+  const hasActiveFilters = ['cat', 'cur', 'method', 'from', 'to', 'voided', 'pending'].some(k => searchParams.has(k))
+
+  const setFilterParam = (key: string, value: string | null) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (value === null) next.delete(key)
+      else next.set(key, value)
+      return next
+    }, { replace: true })
+  }
+  const setDateParam = (key: 'from' | 'to', value: string) =>
+    setFilterParam(key, value === defaultRange[key] ? null : value)
+  const setFlagParam = (key: 'voided' | 'pending', checked: boolean) =>
+    setFilterParam(key, checked ? '1' : null)
+  const clearFilters = () => setSearchParams(new URLSearchParams(), { replace: true })
 
   const [modalOpen, setModalOpen] = useState(false)
   const [reconcileOpen, setReconcileOpen] = useState(false)
@@ -753,13 +771,13 @@ export function TransactionsPage() {
               ...parents.map(p => ({ value: p.id, label: p.name })),
             ]}
             value={parentCategoryFilter}
-            onChange={e => { setParentCategoryFilter(e.target.value) }}
+            onChange={e => setFilterParam('cat', e.target.value || null)}
             className="w-48"
           />
           <Select
             options={CURRENCY_FILTER_OPTIONS}
             value={currencyFilter}
-            onChange={e => setCurrencyFilter(e.target.value as Currency | '')}
+            onChange={e => setFilterParam('cur', e.target.value || null)}
             className="w-40"
           />
           <Select
@@ -768,20 +786,20 @@ export function TransactionsPage() {
               ...paymentMethodOptions,
             ]}
             value={paymentMethodFilter}
-            onChange={e => setPaymentMethodFilter(e.target.value)}
+            onChange={e => setFilterParam('method', e.target.value || null)}
             className="w-44"
           />
           <Input
             type="date"
             value={from}
-            onChange={e => setFrom(e.target.value)}
+            onChange={e => setDateParam('from', e.target.value)}
             placeholder="Desde"
             className="w-40"
           />
           <Input
             type="date"
             value={to}
-            onChange={e => setTo(e.target.value)}
+            onChange={e => setDateParam('to', e.target.value)}
             placeholder="Hasta"
             className="w-40"
           />
@@ -789,7 +807,7 @@ export function TransactionsPage() {
             <input
               type="checkbox"
               checked={showVoided}
-              onChange={e => setShowVoided(e.target.checked)}
+              onChange={e => setFlagParam('voided', e.target.checked)}
               style={{ accentColor: 'var(--color-accent)' }}
             />
             Mostrar anuladas
@@ -798,16 +816,16 @@ export function TransactionsPage() {
             <input
               type="checkbox"
               checked={pendingOnly}
-              onChange={e => setPendingOnly(e.target.checked)}
+              onChange={e => setFlagParam('pending', e.target.checked)}
               style={{ accentColor: 'var(--color-accent)' }}
             />
             Solo pendientes de descuento
           </label>
-          {(from || to || parentCategoryFilter || paymentMethodFilter || pendingOnly) && (
+          {hasActiveFilters && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => { setParentCategoryFilter(''); setFrom(''); setTo(''); setPaymentMethodFilter(''); setPendingOnly(false) }}
+              onClick={clearFilters}
             >
               Limpiar filtros
             </Button>
