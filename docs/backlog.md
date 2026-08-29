@@ -53,7 +53,7 @@ Features e iniciativas pendientes, ordenadas por prioridad.
 
 ## Seguridad / Producción
 
-- [ ] **Proteger API key de Gemini** — Mover la llamada a Gemini a una Supabase Edge Function que valide el JWT antes de llamar a la API. Actualmente `VITE_GEMINI_API_KEY` está expuesta en el bundle del cliente.
+- [x] **Proteger API key de Gemini** — Mover la llamada a Gemini a una Supabase Edge Function que valide el JWT antes de llamar a la API. Actualmente `VITE_GEMINI_API_KEY` está expuesta en el bundle del cliente. — resuelto: la clave vive como secret de la Edge Function `ask-gemini`.
 
 - [ ] **CI: gate de build** — GitHub Actions que ejecute `tsc -b && vite build + lint` en cada PR. Bloquear merge si falla.
 

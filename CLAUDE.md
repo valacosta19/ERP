@@ -46,7 +46,7 @@ Hooks in `src/hooks/`: one `useX` query + one hook per mutation (`useCreateX`, `
 All routes in `src/App.tsx`. Protected routes nested inside `AuthGuard > AppShell`.
 
 ### UI primitives
-`src/components/ui/`: Button, Input, Select, Modal, Badge, Table. Do not introduce third-party form or table libraries. Style with `var(--color-*)` CSS custom properties — never raw Tailwind color classes like `bg-green-500`.
+`src/components/ui/`: Button, Input, Select, Modal, Badge, Table, Toaster, ConfirmHost. Do not introduce third-party form or table libraries. Never use native `alert()`/`confirm()`: use `showToast()` (`src/lib/toast.ts`) and `confirmDialog()` (`src/lib/confirm.ts`); mutation errors already surface globally via the `MutationCache` in `App.tsx`. Style with `var(--color-*)` CSS custom properties — never raw Tailwind color classes like `bg-green-500`.
 
 ### Business logic
 - **FIFO**: Postgres RPC `consume_inventory_fifo` (SECURITY DEFINER). Call via `supabase.rpc(...)`. Never replicate in frontend.

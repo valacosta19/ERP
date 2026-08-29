@@ -80,6 +80,19 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 
 ---
 
+## Shell, auth y feedback global
+
+**Archivos:** `src/App.tsx`, `src/components/layout/AuthProvider.tsx`, `AuthContext.ts`, `AuthGuard.tsx`, `ErrorBoundary.tsx`, `src/components/ui/Toaster.tsx`, `ConfirmHost.tsx`, `src/lib/toast.ts`, `src/lib/confirm.ts`.
+
+**Invariantes (NO romper):**
+- **Una sola sesión.** `AuthProvider` se monta una vez sobre el router; `useAuth()` es un `useContext`. El perfil es `useQuery(['profile', user.id])`: un fallo al leerlo es un error visible con "Reintentar" en las rutas admin, nunca una degradación silenciosa a "no sos admin".
+- **Ningún error de escritura es silencioso.** `QueryClient` lleva un `MutationCache.onError` que muestra el mensaje en un toast; los `try/catch` locales sirven solo para lógica adicional. `mutations.retry = 0`: una RPC no idempotente nunca se reintenta sola.
+- **`refetchOnWindowFocus: false` por defecto.** Los reportes descargan tablas enteras; enfocar la pestaña no debe repetirlos. Opt-in por query si hace falta.
+- **Sin `alert()` ni `confirm()` nativos.** `showToast()` y `confirmDialog()` (promesa) con hosts globales en `App.tsx`.
+- **`ErrorBoundary` envuelve también el `AppShell`** (sidebar, widget IA, flush de la cola) y registra en consola; "Reintentar" remonta el subárbol.
+- **Rutas pesadas con `lazy()`**: Dashboard (recharts), Reportes, Ajustes, Pedidos, Importar, Fondos, Cuentas. `xlsx` se importa dinámicamente dentro de los handlers de exportar/importar. El chunk inicial queda por debajo del aviso de 500 kB.
+- **El widget IA no consulta hasta abrirse** (`useBusinessSnapshot(isOpen)`): nueve consultas menos por carga de página.
+
 ## Carga Rápida (QuickFunnel)
 
 **Qué hace:** Flujo simplificado multi-paso para registrar rápidamente una transacción de servicio o gasto desde el mostrador. Soporta modo offline con cola persistente en localStorage.
@@ -333,13 +346,14 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 **Archivos:**
 - `src/components/AIWidget/AIWidget.tsx`
 - `src/hooks/useBusinessSnapshot.ts` (253 líneas) — 9 queries paralelas en `Promise.all`
-- `src/lib/gemini.ts` — cliente Gemini API
+- `src/lib/gemini.ts` — cliente que invoca la Edge Function `ask-gemini`
+- `supabase/functions/ask-gemini/index.ts` — Edge Function autenticada que reenvía la consulta a Gemini
 - `src/lib/buildSystemPrompt.ts` — construye el system prompt con el snapshot
 
 **Datos:** Todas las tablas principales (snapshot de solo lectura).
 
 **Invariantes:**
-- **`VITE_GEMINI_API_KEY`** se expone en el bundle del cliente — es una deuda de seguridad conocida (ver `docs/backlog.md`). No agregar otras API keys al bundle.
+- La API key de Gemini vive únicamente como secret de la Edge Function (`supabase secrets set GEMINI_API_KEY=...`); el cliente nunca la conoce. No agregar API keys al bundle (`VITE_*`).
 - El snapshot se invalida cada 5 min (`staleTime: 5 * 60 * 1000`). No reducir este TTL sin medir el costo en llamadas a Supabase.
 
 ---
