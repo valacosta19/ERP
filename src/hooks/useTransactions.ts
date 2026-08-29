@@ -264,6 +264,8 @@ export function useVoidTransaction() {
       qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
       qc.invalidateQueries({ queryKey: ['receivables'] })
       qc.invalidateQueries({ queryKey: ['staff-receivables'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      qc.invalidateQueries({ queryKey: ['inventory_lots'] })
     },
   })
 }
