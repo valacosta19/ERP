@@ -41,6 +41,7 @@ esperado_funciones(nombre, migracion) AS (VALUES
   ('apply_inventory_recount','065_inventory_recount.sql'),
   ('assert_transaction_is_not_commission_payout','075_atomic_void_transactions.sql'),
   ('check_transaction_period_not_locked','033_locked_periods.sql'),
+  ('period_is_locked','089_db_integrity_audit.sql'),
   ('compute_period_snapshots','063_period_balance_snapshots.sql'),
   ('consume_inventory_fifo','001_initial_schema.sql'),
   ('create_funnel_unit','059_funnel_idempotency.sql'),
@@ -65,6 +66,25 @@ esperado_funciones(nombre, migracion) AS (VALUES
   ('suggest_reorder_quantity','020_reorder_suggestion.sql'),
   ('update_reserve_movement','076_link_mirror_transactions.sql'),
   ('void_transaction','075_atomic_void_transactions.sql')
+),
+esperado_policies(tabla, nombre, migracion) AS (VALUES
+  ('transactions','transactions_update_own','089_db_integrity_audit.sql'),
+  ('transaction_payments','own or admin delete transaction_payments','089_db_integrity_audit.sql'),
+  ('transaction_hairdressers','own or admin delete transaction_hairdressers','089_db_integrity_audit.sql'),
+  ('transaction_groups','authenticated read transaction_groups','086_transaction_groups.sql'),
+  ('transaction_group_members','authenticated read transaction_group_members','086_transaction_groups.sql')
+),
+esperado_indices(nombre, migracion) AS (VALUES
+  ('idx_transaction_payments_transaction','089_db_integrity_audit.sql'),
+  ('idx_transaction_hairdressers_transaction','089_db_integrity_audit.sql'),
+  ('idx_transactions_active','089_db_integrity_audit.sql'),
+  ('idx_transaction_group_members_transaction','089_db_integrity_audit.sql'),
+  ('idx_inventory_movements_lot','089_db_integrity_audit.sql'),
+  ('idx_inventory_movements_reference','089_db_integrity_audit.sql'),
+  ('idx_sale_items_lot','089_db_integrity_audit.sql'),
+  ('idx_receivable_collections_receivable','089_db_integrity_audit.sql'),
+  ('idx_supplier_debt_payments_debt','089_db_integrity_audit.sql'),
+  ('idx_transaction_group_members_group','086_transaction_groups.sql')
 ),
 esperado_triggers(nombre, migracion) AS (VALUES
   ('commission_payout_receivables_ars_only','074_receivable_currency.sql'),
@@ -129,6 +149,20 @@ UNION ALL
 SELECT 'FUNCION', e.nombre, e.migracion FROM esperado_funciones e
 WHERE NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
                   WHERE n.nspname='public' AND p.proname=e.nombre)
+UNION ALL
+SELECT 'POLICY', e.tabla || '.' || e.nombre, e.migracion FROM esperado_policies e
+WHERE NOT EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname='public' AND p.tablename=e.tabla AND p.policyname=e.nombre)
+UNION ALL
+SELECT 'INDICE', e.nombre, e.migracion FROM esperado_indices e
+WHERE NOT EXISTS (SELECT 1 FROM pg_indexes i WHERE i.schemaname='public' AND i.indexname=e.nombre)
+UNION ALL
+SELECT 'POLICY_ABIERTA', p.tablename || '.' || p.policyname, 'debe estar scoped (089)' FROM pg_policies p
+WHERE p.schemaname='public' AND p.tablename='transactions' AND p.policyname='authenticated users can void transactions'
+UNION ALL
+SELECT 'RPC_ANON', p.proname, 'REVOKE pendiente (089)' FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+WHERE n.nspname='public' AND p.prosecdef
+  AND p.proname IN ('consume_inventory_fifo','create_sale','receive_purchase_order','create_staff_receivable','create_staff_advance','suggest_reorder_quantity','create_funnel_unit')
+  AND has_function_privilege('anon', p.oid, 'EXECUTE')
 UNION ALL
 SELECT 'TRIGGER', e.nombre, e.migracion FROM esperado_triggers e
 WHERE NOT EXISTS (SELECT 1 FROM pg_trigger t WHERE NOT t.tgisinternal AND t.tgname=e.nombre)
