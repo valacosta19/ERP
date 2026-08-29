@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
+import { createTransactionGroup } from '@/hooks/useTransactionGroups'
 import type { Currency } from '@/types'
 
 export type TicketUnit = {
@@ -27,7 +28,27 @@ export type TicketUnit = {
 export type TicketPayload = {
   date: string
   currency: Currency
+  group_label: string | null
   units: TicketUnit[]
+}
+
+function unitError(message: string, index: number, total: number): Error {
+  if (total <= 1) return new Error(message)
+  const suffix = index > 0 ? ' — lo ya grabado no se duplica al reintentar' : ''
+  return new Error(`Unidad ${index + 1} de ${total}: ${message}${suffix}`)
+}
+
+async function ensureTicketGroup(payload: TicketPayload, transactionIds: string[]): Promise<void> {
+  if (!payload.group_label || transactionIds.length < 2) return
+
+  const { count, error } = await supabase
+    .from('transaction_group_members')
+    .select('transaction_id', { count: 'exact', head: true })
+    .in('transaction_id', transactionIds)
+  if (error) throw new Error(error.message)
+  if ((count ?? 0) > 0) return
+
+  await createTransactionGroup({ label: payload.group_label, currency: payload.currency, transactionIds })
 }
 
 export function useFunnelSubmit() {
@@ -35,8 +56,10 @@ export function useFunnelSubmit() {
 
   async function submitTicket(payload: TicketPayload): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser()
+    const total = payload.units.length
+    const transactionIds: string[] = []
 
-    for (const unit of payload.units) {
+    for (const [index, unit] of payload.units.entries()) {
       if (unit.kind === 'staff_advance') {
         const { error } = await supabase.rpc('create_staff_advance', {
           p_client_uuid: unit.client_uuid,
@@ -49,7 +72,7 @@ export function useFunnelSubmit() {
           p_notes: unit.notes ?? null,
           p_created_by: user?.id ?? null,
         })
-        if (error) throw new Error(error.message)
+        if (error) throw unitError(error.message, index, total)
         continue
       }
 
@@ -64,11 +87,11 @@ export function useFunnelSubmit() {
           p_notes: unit.notes ?? null,
           p_created_by: user?.id ?? null,
         })
-        if (error) throw new Error(error.message)
+        if (error) throw unitError(error.message, index, total)
         continue
       }
 
-      const { error } = await supabase.rpc('create_funnel_unit', {
+      const { data, error } = await supabase.rpc('create_funnel_unit', {
         p_client_uuid: unit.client_uuid,
         p_date: payload.date,
         p_transaction_type: unit.transaction_type,
@@ -89,10 +112,14 @@ export function useFunnelSubmit() {
         p_sena_amount: unit.sena_amount,
         p_created_by: user?.id ?? null,
       })
-      if (error) throw new Error(error.message)
+      if (error) throw unitError(error.message, index, total)
+      transactionIds.push((data as { transaction_id: string }).transaction_id)
     }
 
+    await ensureTicketGroup(payload, transactionIds)
+
     qc.invalidateQueries({ queryKey: ['transactions'] })
+    qc.invalidateQueries({ queryKey: ['transaction-groups'] })
     qc.invalidateQueries({ queryKey: ['payment-method-balances'] })
     qc.invalidateQueries({ queryKey: ['unrefunded-anticipos'] })
     qc.invalidateQueries({ queryKey: ['transaction-recipe-costs'] })

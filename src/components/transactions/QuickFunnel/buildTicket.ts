@@ -34,6 +34,14 @@ function allocate(chargeBases: number[], amount: number, total: number): number[
   return out
 }
 
+const GROUP_LABEL_MAX_NAMES = 3
+
+function groupLabel(names: string[]): string {
+  const shown = names.slice(0, GROUP_LABEL_MAX_NAMES).join(' + ')
+  const rest = names.length - GROUP_LABEL_MAX_NAMES
+  return rest > 0 ? `${shown} + ${rest} más` : shown
+}
+
 export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayload {
   const base = { date: state.date, currency: state.currency }
 
@@ -112,7 +120,7 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
       })
     }
 
-    return { ...base, units }
+    return { ...base, group_label: groupLabel(state.lines.map(l => l.name)), units }
   }
 
   // expense / cost / transfer / otros ingresos — single simple unit, one payment method.
@@ -123,6 +131,7 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
   const inventoryFunded = subcat?.deducts_inventory === true && !!state.simpleProductId
   return {
     ...base,
+    group_label: null,
     units: [
       {
         client_uuid: crypto.randomUUID(),

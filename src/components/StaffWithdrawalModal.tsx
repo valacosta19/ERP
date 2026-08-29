@@ -108,6 +108,7 @@ export function StaffWithdrawalModal({ open, onClose, mode, initialProductId }: 
       payload = {
         date,
         currency: 'ARS',
+        group_label: null,
         units: [{
           client_uuid: crypto.randomUUID(),
           kind: 'staff_withdrawal',
@@ -138,6 +139,7 @@ export function StaffWithdrawalModal({ open, onClose, mode, initialProductId }: 
       payload = {
         date,
         currency: advanceCurrency,
+        group_label: null,
         units: [{
           client_uuid: crypto.randomUUID(),
           kind: 'staff_advance',
