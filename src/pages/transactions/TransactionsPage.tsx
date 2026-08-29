@@ -831,7 +831,13 @@ export function TransactionsPage() {
               <Download size={14} />
               Exportar CSV
             </Button>
-            <Button onClick={() => navigate('/transactions/cargar')} size="sm">
+            <Button
+              onClick={() => {
+                const back = searchParams.toString()
+                navigate({ pathname: '/transactions/cargar', search: back ? `back=${encodeURIComponent(back)}` : '' })
+              }}
+              size="sm"
+            >
               <Zap size={14} />
               Nueva transacción
             </Button>

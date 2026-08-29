@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertCircle, ArrowLeft, ArrowRight, Check, CloudOff, HandCoins, List, Loader2, RefreshCw, Users, X } from 'lucide-react'
 import { StaffWithdrawalModal } from '@/components/StaffWithdrawalModal'
 import { TopBar } from '@/components/layout/TopBar'
@@ -54,6 +54,12 @@ const nextKey = () => `l${++lineSeq}`
 
 export function QuickFunnelPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const listSearch = searchParams.get('back') ?? ''
+
+  const goToList = useCallback(() => {
+    navigate({ pathname: '/transactions', search: listSearch })
+  }, [navigate, listSearch])
   const [state, setState] = useState<FunnelState>(makeEmptyFunnelState)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -210,7 +216,7 @@ export function QuickFunnelPage() {
 
   function goBack() {
     const idx = steps.indexOf(state.step)
-    if (idx <= 0) { navigate('/transactions'); return }
+    if (idx <= 0) { goToList(); return }
     setError('')
     setState(s => ({ ...s, step: steps[idx - 1] }))
   }
@@ -333,7 +339,7 @@ export function QuickFunnelPage() {
               </button>
             )}
             <button
-              onClick={() => navigate('/transactions')}
+              onClick={goToList}
               className="flex items-center gap-1.5"
               style={{ fontSize: '0.875rem', color: 'var(--color-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
             >
@@ -545,7 +551,7 @@ export function QuickFunnelPage() {
             )}
 
             {state.step === 'done' && (
-              <DoneScreen summary={closed?.summary ?? ''} queued={closed?.queued ?? false} onAnother={reset} onList={() => navigate('/transactions')} />
+              <DoneScreen summary={closed?.summary ?? ''} queued={closed?.queued ?? false} onAnother={reset} onList={goToList} />
             )}
           </div>
 
