@@ -693,7 +693,6 @@ export function TransactionsPage() {
           return (
             <div className="flex flex-col gap-0.5">
               <div className="flex items-center gap-1.5">
-                <Layers size={14} className="text-[var(--color-muted)]" />
                 <span className="text-[var(--color-text)]">{row.group.label}</span>
                 <Badge variant="default">{activeCount} transacciones</Badge>
               </div>
