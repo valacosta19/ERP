@@ -7,7 +7,7 @@ const MEMBER_SELECT = `
   *,
   members:transaction_group_members(
     transaction:transactions(
-      id, date, amount, currency, description, voided_at, is_seña, subcategory_id,
+      id, date, amount, currency, description, voided_at, is_seña, seña_amount, subcategory_id,
       subcategory:transaction_categories!subcategory_id(id, name, parent_id, transaction_type, deducts_inventory, created_at),
       payments:transaction_payments(payment_method, type, amount)
     )

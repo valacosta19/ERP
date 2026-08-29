@@ -87,6 +87,7 @@ export interface GroupMemberTransaction {
   description: string | null
   voided_at: string | null
   is_seña: boolean
+  seña_amount: number | null
   subcategory_id: string | null
   subcategory: TransactionCategory | null
   payments: Pick<TransactionPayment, 'payment_method' | 'type' | 'amount'>[]

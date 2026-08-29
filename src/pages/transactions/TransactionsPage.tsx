@@ -64,8 +64,12 @@ function groupTotals(group: TransactionGroupWithMembers) {
     .filter(m => !m.voided_at)
     .reduce(
       (acc, m) => {
-        if (m.is_seña) acc.señas += signedAmount(m)
-        else acc.services += signedAmount(m)
+        if (m.is_seña) {
+          acc.señas += signedAmount(m)
+        } else {
+          acc.services += signedAmount(m)
+          acc.señas += m.seña_amount ?? 0
+        }
         return acc
       },
       { señas: 0, services: 0 },
