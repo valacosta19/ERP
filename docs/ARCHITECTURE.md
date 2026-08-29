@@ -46,6 +46,10 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 **Invariantes (NO romper):**
 - **Soft-delete only.** Nunca borrar una transacción. Void = setear `voided_at` + insertar en `user_action_logs`. `useVoidTransaction` ya hace ambos.
 - **`amount = 0` solo con `seña_amount > 0`** (mig. `087`): un servicio cubierto íntegramente por el anticipo se graba sin pagos y se contabiliza por la seña.
+- **El saldo de anticipos se calcula por subcategoría real.** `useAnticipoBalance` suma `Anticipo de señas`, resta `Devolución anticipo` y resta `seña_amount` de las transacciones con `is_seña = false`; `Anticipo de sueldos` no entra. Si falta la subcategoría de señas el hook falla en vez de devolver un saldo parcial. Pagina con `fetchAllRows` (desde junio 2026 ya hay más de 1000 filas).
+- **Toda mutación contable invalida vía `invalidateAccounting(qc)`** (`src/lib/invalidateAccounting.ts`): transacciones, grupos, saldos por método, anticipos, reportes y dashboard. No enumerar claves a mano en cada hook; pasar solo las extra del módulo.
+- **"Hoy" es siempre local.** `todayLocal()` / `daysAgoLocal()` en `src/lib/dateRange.ts`; nunca `new Date().toISOString().slice(0, 10)` (en UTC−3 devuelve mañana después de las 21:00).
+- **Dinero se formatea con `formatMoney`** (`src/lib/money.ts`): una sola locale y decimales solo cuando hay centavos.
 - **`is_seña = true` son anticipos puros.** Se excluyen de revenue, profit y reportes de costos. Solo entran al resultado cuando la transacción final los referencia via `seña_amount`. Verificar exclusión en `useReports.ts` línea ~320.
 - **`transaction_payments` es el origen del balance.** El campo `transactions.amount` es suma derivada de `transaction_payments.amount`. Los balances por método de pago (`usePaymentMethodBalances`) leen `transaction_payments`, no `transactions.amount`.
 - **`payment_method` es una FK contra `payment_methods.name`** (mig. `082`), con `ON UPDATE CASCADE`: renombrar una cuenta en Ajustes propaga a sus pagos, y no se puede borrar una cuenta con pagos. No escribir nombres de cuenta literales ni centinelas: un gasto costeado desde el stock no lleva fila de pago, lleva `payments: []` (`buildTicket.ts:139`). El catálogo es único sin distinguir mayúsculas.
@@ -239,6 +243,8 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - API externa: `dolarapi.com` (tipo de cambio dólar blue, cacheado 30 min) — `src/lib/`
 
 **Invariantes (NO romper):**
+- **Los reportes con conversión exigen cotización.** `useProfitReport` y `useCommissionsReport` tienen `enabled: usdRate != null` y lanzan si falta: nunca suman USD 1:1. Las transacciones en EUR quedan fuera de esos dos reportes y la UI lo indica junto a la cotización.
+- **Filtros sobre embeds con `!inner`.** Un `.gte('transactions.date', …)` sobre `transactions(...)` sin `!inner` no reduce filas, solo anula el embed; combinado con el tope de 1000 filas devuelve un subconjunto arbitrario. Toda consulta que filtre por columnas del embed usa `transactions!inner(...)` y `fetchAllRows`.
 - **Señas excluidas de revenue/profit/costos.** Transacciones con `is_seña = true` son anticipos puros. Solo impactan el resultado cuando la transacción final suma `seña_amount`. Toda query de reporte debe filtrar `is_seña = false` o manejar explícitamente este campo.
 - **Costos fijos usan historial append-only.** Cada mes se usa la tasa de `fixed_cost_rates` con el `effective_from` más reciente ≤ a ese mes. No leer `fixed_costs.monthly_amount` directamente para períodos históricos.
 - **Costo de materiales (`tab Costos`)** viene de `transaction_recipe_costs` (snapshot al momento de la transacción), no de `service_recipes` actuales. Cambiar las recetas no recalcula historial.
