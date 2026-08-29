@@ -16,6 +16,7 @@ import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useReorderSuggestion } from '@/hooks/useReorderSuggestion'
 import type { PurchaseOrder, PurchaseOrderItem } from '@/types'
 import { todayLocal } from '@/lib/dateRange'
+import { confirmDialog } from '@/lib/confirm'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Borrador',
@@ -482,7 +483,7 @@ export function PurchaseOrdersPage() {
   }
 
   async function handleCancel(id: string) {
-    if (!confirm('¿Cancelar este pedido?')) return
+    if (!(await confirmDialog({ message: '¿Cancelar este pedido?', danger: true }))) return
     await cancelPO.mutateAsync(id)
   }
 

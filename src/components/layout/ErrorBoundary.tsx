@@ -1,5 +1,5 @@
 import { Component } from 'react'
-import type { ReactNode } from 'react'
+import type { ErrorInfo, ReactNode } from 'react'
 
 interface Props {
   children: ReactNode
@@ -8,23 +8,26 @@ interface Props {
 interface State {
   hasError: boolean
   message: string
+  attempt: number
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props)
-    this.state = { hasError: false, message: '' }
+    this.state = { hasError: false, message: '', attempt: 0 }
   }
 
-  static getDerivedStateFromError(error: unknown): State {
+  static getDerivedStateFromError(error: unknown): Partial<State> {
     const message = error instanceof Error ? error.message : 'Error inesperado'
     return { hasError: true, message }
   }
 
-  componentDidCatch() {}
+  componentDidCatch(error: unknown, info: ErrorInfo) {
+    console.error('[ErrorBoundary]', error, info.componentStack)
+  }
 
   handleRetry = () => {
-    this.setState({ hasError: false, message: '' })
+    this.setState(prev => ({ hasError: false, message: '', attempt: prev.attempt + 1 }))
   }
 
   render() {
@@ -42,6 +45,6 @@ export class ErrorBoundary extends Component<Props, State> {
         </div>
       )
     }
-    return this.props.children
+    return <div key={this.state.attempt} className="contents">{this.props.children}</div>
   }
 }

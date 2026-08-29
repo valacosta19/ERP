@@ -5,15 +5,18 @@ import { Sidebar } from './Sidebar'
 import { AIWidget } from '@/components/AIWidget/AIWidget'
 import { useFunnelSubmit } from '@/components/transactions/QuickFunnel/funnelSubmit'
 import { flushQueue } from '@/components/transactions/QuickFunnel/offlineQueue'
+import { showToast } from '@/lib/toast'
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { submitTicket } = useFunnelSubmit()
   const submitRef = useRef(submitTicket)
-  submitRef.current = submitTicket
+  useEffect(() => {
+    submitRef.current = submitTicket
+  }, [submitTicket])
 
   useEffect(() => {
-    const doFlush = () => void flushQueue(submitRef.current).catch(() => {})
+    const doFlush = () => void flushQueue(payload => submitRef.current(payload)).catch((e: Error) => showToast(`Cola offline: ${e.message}`))
     doFlush()
     window.addEventListener('online', doFlush)
     const id = setInterval(doFlush, 20_000)

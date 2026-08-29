@@ -17,6 +17,7 @@ import { useProducts } from '@/hooks/useProducts'
 import { useLockedPeriods, useLockPeriod, useUnlockPeriod } from '@/hooks/useLockedPeriods'
 import type { LockedPeriod } from '@/hooks/useLockedPeriods'
 import type { Professional, PaymentMethodConfig, FixedCost, Product, FixedCostRate } from '@/types'
+import { confirmDialog } from '@/lib/confirm'
 
 function DraftInput({
   inputRef,
@@ -430,7 +431,7 @@ export function SettingsPage() {
   }
 
   async function handleCatDelete(id: string) {
-    if (!confirm('¿Eliminar esta categoría? Las transacciones asociadas quedarán sin categoría.')) return
+    if (!(await confirmDialog({ message: '¿Eliminar esta categoría? Las transacciones asociadas quedarán sin categoría.', danger: true }))) return
     await deleteCat.mutateAsync(id)
   }
 
@@ -462,7 +463,7 @@ export function SettingsPage() {
   }
 
   async function handleHdDelete(id: string) {
-    if (!confirm('¿Eliminar este profesional?')) return
+    if (!(await confirmDialog({ message: '¿Eliminar este profesional?', danger: true }))) return
     await deleteHd.mutateAsync(id)
   }
 
@@ -494,7 +495,7 @@ export function SettingsPage() {
   }
 
   async function handlePmDelete(id: string) {
-    if (!confirm('¿Eliminar este método de pago?')) return
+    if (!(await confirmDialog({ message: '¿Eliminar este método de pago?', danger: true }))) return
     await deletePm.mutateAsync(id)
   }
 
@@ -523,7 +524,7 @@ export function SettingsPage() {
   }
 
   async function handlePresetDelete(id: string) {
-    if (!confirm('¿Eliminar este monto de anticipo?')) return
+    if (!(await confirmDialog({ message: '¿Eliminar este monto de anticipo?', danger: true }))) return
     await deletePreset.mutateAsync(id)
   }
 
@@ -567,7 +568,7 @@ export function SettingsPage() {
   }
 
   async function handleCatalogItemDelete(id: string) {
-    if (!confirm('¿Eliminar este item del catálogo?')) return
+    if (!(await confirmDialog({ message: '¿Eliminar este item del catálogo?', danger: true }))) return
     await deleteCatalogItem.mutateAsync(id)
   }
 
@@ -631,7 +632,7 @@ export function SettingsPage() {
   }
 
   async function handleFcDelete(id: string) {
-    if (!confirm('¿Eliminar este gasto fijo?')) return
+    if (!(await confirmDialog({ message: '¿Eliminar este gasto fijo?', danger: true }))) return
     await deleteFc.mutateAsync(id)
   }
 

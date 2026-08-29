@@ -12,6 +12,7 @@ import { useReserveMovements, useCreateReserveMovement, useUpdateReserveMovement
 import type { ReserveMovement } from '@/types'
 import { todayLocal } from '@/lib/dateRange'
 import { formatMoney } from '@/lib/money'
+import { showToast } from '@/lib/toast'
 
 function fmtAmount(amount: number) {
   return formatMoney(amount)
@@ -485,7 +486,7 @@ export function FondosPage() {
                     onClick={() => {
                       const bal = reserveBalances.get(r.id) ?? 0
                       if (bal !== 0) {
-                        alert(`No podés eliminar "${r.name}" porque tiene saldo de ${fmtAmount(bal)}. Transferí el saldo a la cuenta principal primero.`)
+                        showToast(`No podés eliminar "${r.name}" porque tiene saldo de ${fmtAmount(bal)}. Transferí el saldo a la cuenta principal primero.`, 'warning')
                         return
                       }
                       deleteReserve.mutate(r.id)

@@ -6,6 +6,7 @@ import { Table } from '@/components/ui/Table'
 import { InlineEditCell } from '@/components/ui/InlineEditCell'
 import { useSuppliers, useCreateSupplier, useUpdateSupplier, useDeleteSupplier } from '@/hooks/useSuppliers'
 import type { Supplier } from '@/types'
+import { confirmDialog } from '@/lib/confirm'
 
 const EMPTY_DRAFT = { name: '', contact: '', phone: '', email: '', notes: '' }
 
@@ -102,7 +103,7 @@ export function SuppliersPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('¿Eliminar este proveedor?')) return
+    if (!(await confirmDialog({ message: '¿Eliminar este proveedor?', danger: true }))) return
     await deleteSupplier.mutateAsync(id)
   }
 

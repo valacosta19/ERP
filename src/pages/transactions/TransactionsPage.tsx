@@ -40,6 +40,8 @@ import {
   type DirectionInput,
 } from '@/components/transactions/transactionDraft'
 import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, Product, TransactionGroupWithMembers } from '@/types'
+import { confirmDialog } from '@/lib/confirm'
+import { showToast } from '@/lib/toast'
 
 const FLUSH_DELAY_MS = 450
 const SEARCH_DEBOUNCE_MS = 300
@@ -550,10 +552,10 @@ export function TransactionsPage() {
   async function handleVoid(id: string) {
     const tx = transactions.find(t => t.id === id)
     if (tx && isDateLocked(tx.date)) {
-      alert('El período de esa transacción está cerrado. No se pueden anular transacciones en períodos cerrados.')
+      showToast('El período de esa transacción está cerrado. No se pueden anular transacciones en períodos cerrados.', 'warning')
       return
     }
-    if (!confirm('¿Anular esta transacción? La acción quedará registrada.')) return
+    if (!(await confirmDialog({ message: '¿Anular esta transacción? La acción quedará registrada.', danger: true }))) return
     await voidTx.mutateAsync(id)
   }
 
