@@ -9,6 +9,7 @@ import { useUpdateInventoryLot } from '@/hooks/useUpdateInventoryLot'
 import { useCreateInventoryLot } from '@/hooks/useCreateInventoryLot'
 import { useCreateInventoryMovement } from '@/hooks/useCreateInventoryMovement'
 import type { Product, InventoryLot } from '@/types'
+import { todayLocal } from '@/lib/dateRange'
 
 interface LotDrawerProps {
   product: Product | null
@@ -63,7 +64,7 @@ function EditableCell({
 
 type NewLotForm = { received_date: string; initial_quantity: string; unit_cost: string; notes: string }
 
-const EMPTY_FORM: NewLotForm = { received_date: new Date().toISOString().slice(0, 10), initial_quantity: '', unit_cost: '', notes: '' }
+const EMPTY_FORM: NewLotForm = { received_date: todayLocal(), initial_quantity: '', unit_cost: '', notes: '' }
 
 export function LotDrawer({ product, onClose }: LotDrawerProps) {
   const { data: lots = [], isLoading } = useInventoryLots(product?.id ?? null)

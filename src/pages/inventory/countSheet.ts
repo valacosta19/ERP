@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { parseNumberOrNull } from '../import/importLogic'
 import type { RecountLine } from '@/hooks/useInventoryRecount'
 import type { Product } from '@/types'
+import { todayLocal } from '@/lib/dateRange'
 
 export const COUNT_SHEET_NAME = 'Conteo'
 
@@ -81,7 +82,7 @@ function buildWorkbook(rows: CountSheetRow[]): XLSX.WorkBook {
 export async function downloadCountSheet(products: Product[]): Promise<void> {
   const costs = await fetchLastPurchaseCosts()
   const wb = buildWorkbook(buildCountRows(products, costs))
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayLocal()
   XLSX.writeFile(wb, `conteo-inventario-${today}.xlsx`)
 }
 

@@ -15,6 +15,7 @@ import { useProducts } from '@/hooks/useProducts'
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useReorderSuggestion } from '@/hooks/useReorderSuggestion'
 import type { PurchaseOrder, PurchaseOrderItem } from '@/types'
+import { todayLocal } from '@/lib/dateRange'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Borrador',
@@ -262,10 +263,10 @@ export function PurchaseOrdersPage() {
   const [receiveLines, setReceiveLines] = useState<ReceiveLine[]>([])
   const [paymentMode, setPaymentMode] = useState<'immediate' | 'deferred' | 'none'>('none')
   const [paymentMethod, setPaymentMethod] = useState('')
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10))
+  const [paymentDate, setPaymentDate] = useState(todayLocal())
   const [dueDate, setDueDate] = useState('')
 
-  const [form, setForm] = useState({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '', discount_pct: '', discount_amount: '' })
+  const [form, setForm] = useState({ supplier_id: '', order_date: todayLocal(), shipping_cost: '', discount_pct: '', discount_amount: '' })
   const [lines, setLines] = useState<LineItem[]>([{ ...EMPTY_LINE }])
   const [formError, setFormError] = useState('')
   const [showHidden, setShowHidden] = useState(false)
@@ -341,7 +342,7 @@ export function PurchaseOrdersPage() {
       }
     }
     setDraftRestored(false)
-    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '', discount_pct: '', discount_amount: '' })
+    setForm({ supplier_id: '', order_date: todayLocal(), shipping_cost: '', discount_pct: '', discount_amount: '' })
     setLines(productIds.length > 0
       ? productIds.map(id => ({ product_id: id, quantity: '', unit_cost: '' }))
       : [{ ...EMPTY_LINE }]
@@ -354,7 +355,7 @@ export function PurchaseOrdersPage() {
   function discardDraft() {
     localStorage.removeItem(DRAFT_KEY)
     setDraftRestored(false)
-    setForm({ supplier_id: '', order_date: new Date().toISOString().slice(0, 10), shipping_cost: '', discount_pct: '', discount_amount: '' })
+    setForm({ supplier_id: '', order_date: todayLocal(), shipping_cost: '', discount_pct: '', discount_amount: '' })
     setLines([{ ...EMPTY_LINE }])
     setFormError('')
   }
@@ -447,7 +448,7 @@ export function PurchaseOrdersPage() {
     )
     setPaymentMode('none')
     setPaymentMethod(paymentMethods.find(m => m.active)?.name ?? '')
-    setPaymentDate(new Date().toISOString().slice(0, 10))
+    setPaymentDate(todayLocal())
     setDueDate('')
     setReceiveOpen(true)
   }

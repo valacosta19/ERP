@@ -11,6 +11,7 @@ import { useFunnelSubmit } from '@/components/transactions/QuickFunnel/funnelSub
 import { enqueueTicket } from '@/components/transactions/QuickFunnel/offlineQueue'
 import type { Currency } from '@/types'
 import type { TicketPayload } from '@/components/transactions/QuickFunnel/funnelSubmit'
+import { todayLocal } from '@/lib/dateRange'
 
 interface Props {
   open: boolean
@@ -29,7 +30,7 @@ export function StaffWithdrawalModal({ open, onClose, mode, initialProductId }: 
   const { submitTicket } = useFunnelSubmit()
 
   const [hairdresserId, setHairdresserId] = useState('')
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => todayLocal())
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -46,7 +47,7 @@ export function StaffWithdrawalModal({ open, onClose, mode, initialProductId }: 
   useEffect(() => {
     if (!open) return
     setHairdresserId('')
-    setDate(new Date().toISOString().slice(0, 10))
+    setDate(todayLocal())
     setNotes('')
     setError(null)
     setLoading(false)

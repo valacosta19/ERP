@@ -17,6 +17,7 @@ import {
 } from '@/hooks/useInventoryRecount'
 import { parseWorkbook } from '../import/importLogic'
 import { COUNT_SHEET_NAME, parseCountSheet } from './countSheet'
+import { todayLocal } from '@/lib/dateRange'
 
 interface Props {
   open: boolean
@@ -134,7 +135,7 @@ export function RecountModal({ open, onClose }: Props) {
   const [rowErrors, setRowErrors] = useState<string[]>([])
   const [preview, setPreview] = useState<RecountPreview | null>(null)
   const [clientUuid, setClientUuid] = useState('')
-  const [cutoffDate, setCutoffDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [cutoffDate, setCutoffDate] = useState(() => todayLocal())
   const [applied, setApplied] = useState<RecountTotals | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [parsing, setParsing] = useState(false)

@@ -1,5 +1,6 @@
 import type { Currency } from '@/types'
 import type { PaymentRow } from '@/hooks/useTransactions'
+import { todayLocal } from '@/lib/dateRange'
 
 export function makeEmptyPayment(defaultMethod = 'Efectivo'): PaymentRow {
   return { payment_method: defaultMethod, instrument: null, amount: 0 }
@@ -23,7 +24,7 @@ export type TransactionDraft = {
 }
 
 export const EMPTY_DRAFT: TransactionDraft = {
-  date: new Date().toISOString().slice(0, 10),
+  date: todayLocal(),
   currency: 'ARS',
   category_parent_id: '',
   subcategory_id: '',

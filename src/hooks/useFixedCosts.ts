@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 import type { FixedCost, FixedCostRate } from '@/types'
+import { todayLocal } from '@/lib/dateRange'
 
 export function useFixedCosts() {
   return useQuery({
@@ -72,7 +73,7 @@ export function useAddFixedCostRate() {
         .select()
         .single()
       if (error) throw new Error(error.message)
-      const today = new Date().toISOString().slice(0, 10)
+      const today = todayLocal()
       if (payload.effective_from <= today) {
         const { error: updateErr } = await supabase
           .from('fixed_costs')

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { supabase } from '@/lib/supabaseClient'
 import { ENTITY_LABELS, parseNumberOrNull } from '../importLogic'
 import type { ParsedSheet, EntityType, SheetAssignments, ColumnMappings, ImportResult } from '../importTypes'
+import { todayLocal } from '@/lib/dateRange'
 
 interface Props {
   sheets: ParsedSheet[]
@@ -136,7 +137,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               const initial_quantity = parseNum(getVal(row, m, 'initial_quantity'))
               if (unit_cost > 0 || initial_quantity > 0) {
                 const rawDate = getVal(row, m, 'received_date')
-                const received_date = rawDate ? parseDate(rawDate) : new Date().toISOString().slice(0, 10)
+                const received_date = rawDate ? parseDate(rawDate) : todayLocal()
                 const qty = initial_quantity > 0 ? initial_quantity : 0
                 const { error: lotError } = await supabase.from('inventory_lots').insert({
                   product_id: data.id,
