@@ -30,7 +30,15 @@ export interface Professional {
   id: string
   name: string
   active: boolean
-  commission_rates: number[]
+  role_id: string | null
+  created_at: string
+}
+
+export interface StaffRole {
+  id: string
+  name: string
+  assigns_services: boolean
+  earns_commission: boolean
   created_at: string
 }
 
@@ -222,6 +230,12 @@ export interface FixedCostRate {
   monthly_amount: number
   effective_from: string
   created_at: string
+}
+
+export interface HairdresserService {
+  hairdresser_id: string
+  catalog_item_id: string
+  commission_rate: number
 }
 
 export interface ServiceRecipe {

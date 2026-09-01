@@ -325,7 +325,8 @@ function ARTab() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
-  const [createForm, setCreateForm] = useState({ debtor_name: '', concept: '', total_amount: '', currency: 'ARS' as Currency, due_date: '', notes: '' })
+  const [createUuid, setCreateUuid] = useState('')
+  const [createForm, setCreateForm] = useState({ debtor_name: '', concept: '', total_amount: '', currency: 'ARS' as Currency, due_date: '', notes: '', payout_method: '', payout_date: todayLocal() })
   const [createError, setCreateError] = useState('')
 
   const [collectModal, setCollectModal] = useState<{ receivable: Receivable; clientUuid: string } | null>(null)
@@ -335,8 +336,9 @@ function ARTab() {
   const activePaymentMethods = paymentMethods.filter(m => m.active)
 
   function openCreate() {
-    setCreateForm({ debtor_name: '', concept: '', total_amount: '', currency: 'ARS', due_date: '', notes: '' })
+    setCreateForm({ debtor_name: '', concept: '', total_amount: '', currency: 'ARS', due_date: '', notes: '', payout_method: '', payout_date: todayLocal() })
     setCreateError('')
+    setCreateUuid(crypto.randomUUID())
     setCreateOpen(true)
   }
 
@@ -345,6 +347,7 @@ function ARTab() {
     if (!createForm.concept.trim()) { setCreateError('El concepto es obligatorio.'); return }
     const amount = parseFloat(createForm.total_amount)
     if (!amount || amount <= 0) { setCreateError('Ingresá un monto válido.'); return }
+    if (createForm.payout_method && !createForm.payout_date) { setCreateError('Ingresá la fecha de la salida de dinero.'); return }
     await createReceivable.mutateAsync({
       debtor_name: createForm.debtor_name.trim(),
       concept: createForm.concept.trim(),
@@ -352,6 +355,9 @@ function ARTab() {
       currency: createForm.currency,
       due_date: createForm.due_date || null,
       notes: createForm.notes || null,
+      payout: createForm.payout_method
+        ? { payment_method: createForm.payout_method, date: createForm.payout_date, client_uuid: createUuid }
+        : null,
     })
     setCreateOpen(false)
   }
@@ -558,6 +564,23 @@ function ARTab() {
             onChange={e => setCreateForm(f => ({ ...f, total_amount: e.target.value }))}
             prefix={CURRENCY_SYMBOL[createForm.currency]}
           />
+          <Select
+            label="Salida de dinero (opcional)"
+            options={[
+              { value: '', label: 'No salió dinero de ninguna cuenta' },
+              ...activePaymentMethods.map(m => ({ value: m.name, label: `Sale de ${m.name}` })),
+            ]}
+            value={createForm.payout_method}
+            onChange={e => setCreateForm(f => ({ ...f, payout_method: e.target.value }))}
+          />
+          {createForm.payout_method && (
+            <Input
+              label="Fecha de la salida"
+              type="date"
+              value={createForm.payout_date}
+              onChange={e => setCreateForm(f => ({ ...f, payout_date: e.target.value }))}
+            />
+          )}
           <Input
             label="Fecha de vencimiento (opcional)"
             type="date"

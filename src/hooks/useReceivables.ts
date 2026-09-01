@@ -27,6 +27,7 @@ interface CreateReceivablePayload {
   currency?: Currency
   due_date: string | null
   notes?: string | null
+  payout?: { payment_method: string; date: string; client_uuid: string } | null
 }
 
 export function useCreateReceivable() {
@@ -34,6 +35,24 @@ export function useCreateReceivable() {
   return useMutation({
     mutationFn: async (payload: CreateReceivablePayload) => {
       const { data: { user } } = await supabase.auth.getUser()
+
+      if (payload.payout) {
+        const { data, error } = await supabase.rpc('create_receivable_with_payout', {
+          p_client_uuid: payload.payout.client_uuid,
+          p_debtor_name: payload.debtor_name,
+          p_concept: payload.concept,
+          p_amount: payload.total_amount,
+          p_currency: payload.currency ?? 'ARS',
+          p_payment_method: payload.payout.payment_method,
+          p_date: payload.payout.date,
+          p_due_date: payload.due_date,
+          p_notes: payload.notes ?? null,
+          p_created_by: user?.id ?? null,
+        })
+        if (error) throw new Error(error.message)
+        return data as string
+      }
+
       const { data, error } = await supabase
         .from('receivables')
         .insert({
@@ -51,7 +70,7 @@ export function useCreateReceivable() {
       if (error) throw new Error(error.message)
       return data
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['receivables'] }),
+    onSuccess: () => invalidateAccounting(qc, [['receivables']]),
   })
 }
 

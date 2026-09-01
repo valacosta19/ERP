@@ -234,6 +234,7 @@ export interface Database {
           name: string
           active: boolean
           commission_rates: number[]
+          role_id: string | null
           created_at: string
         }
         Insert: {
@@ -241,6 +242,7 @@ export interface Database {
           name: string
           active?: boolean
           commission_rates?: number[]
+          role_id?: string | null
           created_at?: string
         }
         Update: {
@@ -248,6 +250,46 @@ export interface Database {
           name?: string
           active?: boolean
           commission_rates?: number[]
+          role_id?: string | null
+        }
+        Relationships: []
+      }
+      staff_roles: {
+        Row: {
+          id: string
+          name: string
+          assigns_services: boolean
+          earns_commission: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          assigns_services?: boolean
+          earns_commission?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          assigns_services?: boolean
+          earns_commission?: boolean
+        }
+        Relationships: []
+      }
+      hairdresser_services: {
+        Row: {
+          hairdresser_id: string
+          catalog_item_id: string
+          commission_rate: number
+        }
+        Insert: {
+          hairdresser_id: string
+          catalog_item_id: string
+          commission_rate: number
+        }
+        Update: {
+          commission_rate?: number
         }
         Relationships: []
       }
@@ -1092,6 +1134,21 @@ export interface Database {
           p_product_id: string
           p_quantity: number
           p_value_amount: number
+          p_due_date: string | null
+          p_notes: string | null
+          p_created_by: string | null
+        }
+        Returns: string
+      }
+      create_receivable_with_payout: {
+        Args: {
+          p_client_uuid: string | null
+          p_debtor_name: string
+          p_concept: string
+          p_amount: number
+          p_currency: string
+          p_payment_method: string
+          p_date: string
           p_due_date: string | null
           p_notes: string | null
           p_created_by: string | null
