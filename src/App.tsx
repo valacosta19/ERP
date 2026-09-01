@@ -21,6 +21,7 @@ const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then(m =
 const PurchaseOrdersPage = lazy(() => import('@/pages/purchase-orders/PurchaseOrdersPage').then(m => ({ default: m.PurchaseOrdersPage })))
 const FondosPage = lazy(() => import('@/pages/fondos/FondosPage').then(m => ({ default: m.FondosPage })))
 const CuentasPage = lazy(() => import('@/pages/cuentas/CuentasPage').then(m => ({ default: m.CuentasPage })))
+const RecipesPage = lazy(() => import('@/pages/recipes/RecipesPage').then(m => ({ default: m.RecipesPage })))
 
 function RouteFallback() {
   return (
@@ -100,6 +101,14 @@ export default function App() {
               element={
                 <AuthGuard requireAdmin>
                   <ErrorBoundary><CuentasPage /></ErrorBoundary>
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/recetas"
+              element={
+                <AuthGuard requireAdmin>
+                  <ErrorBoundary><RecipesPage /></ErrorBoundary>
                 </AuthGuard>
               }
             />

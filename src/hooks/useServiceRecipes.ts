@@ -1,6 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
+import { fetchAllRows } from '@/lib/fetchAllRows'
 import type { ServiceRecipe } from '@/types'
+
+export function useAllServiceRecipes() {
+  return useQuery<ServiceRecipe[]>({
+    queryKey: ['service-recipes-all'],
+    queryFn: async () =>
+      fetchAllRows<ServiceRecipe>((rangeFrom, rangeTo) =>
+        supabase.from('service_recipes').select('*').order('id', { ascending: true }).range(rangeFrom, rangeTo),
+      ),
+  })
+}
 
 export function useServiceRecipes(catalogItemId: string | null) {
   return useQuery({

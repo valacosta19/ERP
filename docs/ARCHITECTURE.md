@@ -157,12 +157,13 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - **FIFO solo en Postgres.** El RPC `consume_inventory_fifo` es la única forma de descontar stock. Nunca restar `remaining_quantity` directamente desde el frontend.
 - **Todo cambio a `remaining_quantity` genera un movimiento.** `useUpdateInventoryLot` inserta en `inventory_movements` con el delta. Si se edita el lote por otra vía, igual debe insertarse la fila de movimiento.
 - **`unit_cost` es read-only si el lote tiene `sale_items`.** `LotDrawer` verifica esto antes de permitir edición. No omitir esta validación en cambios al drawer.
-- **`products_with_stock` debe recrearse con DROP + CREATE** al agregar columnas — `CREATE OR REPLACE` no reordena columnas y puede romper queries por posición.
+- **`products_with_stock` debe recrearse con DROP + CREATE** al agregar columnas — `CREATE OR REPLACE` no reordena columnas y puede romper queries por posición. Al recrearla hay que volver a poner `security_invoker = true` (`089`).
+- **`products_with_stock` cae al último lote cuando no hay stock.** `min_cost`/`max_cost` son el rango de los lotes con existencias; si no queda ninguno, ambos valen el `unit_cost` del último lote recibido (`091`). Solo son nulos si el producto nunca tuvo un lote. Toda fórmula de costo por gramo pasa por `getCostPerGram` (`src/lib/recipeCost.ts`); no reimplementarla.
 - **Registrar un servicio NO descuenta inventario.** `service_recipes` solo sirve para calcular el costo teórico. El descuento físico de productos usados en un servicio se registra manualmente como transacción "Consumos y cortesías" (`deducts_inventory = true`), que llama `consume_inventory_fifo` en `TransactionsPage`.
 - **`consume_inventory_fifo` se llama desde `TransactionsPage.tsx` línea ~228** cuando la categoría de gasto tiene `deducts_inventory = true`.
 - **El recuento físico nunca borra ni recostea lotes viejos.** `apply_inventory_recount` solo lleva `remaining_quantity` a 0 con un movimiento `adjustment` por lote y abre un lote nuevo fechado en el corte. No toca `unit_cost` de los lotes existentes, porque el costo histórico de cada venta vive en `sale_items.unit_cost` y `sale_items.lot_id` es `NOT NULL` sin `ON DELETE`: borrar lotes exigiría borrar el historial de ventas y destruiría la utilidad de los meses cerrados.
 - **El recuento no crea `transactions`.** La merma impacta solo inventario (Valoración y Balance), nunca la utilidad del mes. Se consulta en el historial de recuentos de la pestaña Valoración. Si se quiere llevar a resultado, se registra a mano como gasto en `Consumos y cortesías`.
-- **El costo de material histórico se congeló hasta abril 2026.** `066_backfill_recipe_cost_snapshots.sql` escribió las filas faltantes de `transaction_recipe_costs` para los servicios de marzo/abril 2026, que no las tenían, usando los costos vigentes antes del recuento. Sin eso, cambiar costos reescribía la pestaña Costos de esos meses (el fallback de `serviceDeductionsByMonth` lee `min_cost`/`max_cost` en vivo, sin filtro de fecha). Cualquier backfill futuro de este tipo debe correr **antes** de tocar costos, nunca después.
+- **El costo de material histórico se congeló hasta abril 2026.** `066_backfill_recipe_cost_snapshots.sql` escribió las filas faltantes de `transaction_recipe_costs` para los servicios de marzo/abril 2026, que no las tenían, usando los costos vigentes antes del recuento. Sin eso, cambiar costos reescribía la pestaña Costos de esos meses (el fallback de `serviceDeductionsByMonth` lee `min_cost`/`max_cost` en vivo, sin filtro de fecha). Cualquier backfill futuro de este tipo debe correr **antes** de tocar costos, nunca después. `092_backfill_zero_recipe_cost_snapshots.sql` es la única excepción: reescribe solo las fotos que quedaron en 0 por falta de stock (bug de la vista, no costo real) con el costo del último lote a la fecha de cada transacción.
 - **En la planilla de conteo, celda vacía ≠ 0.** Vacío significa "no contado" y el producto queda intacto; `0` lleva el stock a cero. `parseCountSheet` usa `parseNumberOrNull` para distinguirlos — no usar un parser que devuelva 0 para vacío.
 - **Toda query que alimente un informe tiene que paginar con `fetchAllRows`.** Supabase corta en 1000 filas por request, en silencio: no hay error, simplemente faltan filas. En `transaction_recipe_costs` eso hacía que transacciones con foto de costo guardada parecieran no tenerla, cayeran al costo en vivo y un recuento de inventario moviera la utilidad de meses cerrados. Siempre con un `ORDER BY` de clave única para que la paginación sea determinística. Ojo: un backfill que inserte filas puede cruzar el umbral y destapar el bug de golpe.
 - **El SKU se genera en la DB, no en el navegador.** El trigger garantiza unicidad entre inserts concurrentes y entre el importador y los formularios. No reintroducir generación client-side.
@@ -266,6 +267,25 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - **Costo de materiales (`tab Costos`)** viene de `transaction_recipe_costs` (snapshot al momento de la transacción), no de `service_recipes` actuales. Cambiar las recetas no recalcula historial.
 - **Conversión multimoneda**: USD→ARS vía dólar blue. EUR→ARS no está implementada aún. No asumir que todas las transacciones son ARS.
 - **Transacciones anuladas excluidas.** Todas las queries de reportes filtran `.is('voided_at', null)`.
+
+---
+
+## Recetas (`/recetas`)
+
+**Qué hace:** Página admin con dos tabs: **Recetas** (una tarjeta por familia de servicio con las tallas corto/mediano/largo en columnas, gramos y costo por insumo, total de materiales y % sobre precio; cada tarjeta tiene modo edición para gramos por talla, alta/baja de insumos y horas, con guardado por talla) e **Insumos** (productos usados en alguna receta: envase editable en línea, último costo, costo por gramo, stock y servicios que lo usan, expandible; cada servicio abre su familia en edición).
+
+**Archivos:**
+- `src/pages/recipes/RecipesPage.tsx`
+- `src/lib/serviceFamilies.ts` — `splitServiceName` / `groupServiceFamilies` (con tests)
+- `src/lib/recipeCost.ts` — `getCostPerGram` / `getAvgUnitCost` (con tests)
+- `src/hooks/useServiceRecipes.ts` — `useAllServiceRecipes` (clave `['service-recipes-all']`, paginado con `fetchAllRows`)
+
+**Datos:** `catalog_items`, `service_recipes`, vista `products_with_stock`. La edición del envase usa `useUpdateProduct` (mismo campo `unit_size` que Inventario).
+
+**Invariantes (NO romper):**
+- **La familia se deduce del nombre.** Un servicio pertenece a la familia `X` si se llama `X corto`, `X mediano` o `X largo` (sufijo final, sin distinguir mayúsculas); sin sufijo es talla única. `anticipo` y `Seña` quedan fuera. No hay columna de familia en la DB: si se renombra un servicio rompiendo el patrón, deja de agruparse.
+- **Guardar una familia escribe solo las tallas que cambiaron.** Cada talla es un `catalog_item` distinto: al guardar se compara la receta de cada columna con la actual y solo las distintas pasan por `useUpsertServiceRecipes` (borrado + inserción de esa talla); las horas van por `useUpdateCatalogItemHours`. Una sola familia en edición a la vez. El editor de Ajustes › Costos sigue existiendo y usa los mismos hooks.
+- **Un solo cálculo de costo por gramo.** `getCostPerGram` es el que usan Ajustes, Reportes y esta página. La foto en `useCreateTransaction` y el RPC `create_funnel_unit` replican la misma fórmula en su capa.
 
 ---
 

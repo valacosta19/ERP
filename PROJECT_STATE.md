@@ -11,7 +11,7 @@ ERP para peluquería. Reemplaza Excel. Núcleo: costeo **FIFO** estricto — cad
 ---
 
 ## Fase actual
-**Phase 29** — 🚧 Auditoría de producción: A contable ✅ · B integridad DB ✅ (mig. `089`/`090` aplicadas) · C carga/UX ✅ (pendiente validar)
+**Phase 30** — 🚧 Recetas e insumos: página `/recetas` ✅ · costo de material con último lote (mig. `091`) y corrección de fotos en 0 (mig. `092`) — pendiente aplicar migraciones y validar. Fase 29 sigue pendiente de validar.
 
 > Actualizar esta sección al arrancar cada fase nueva.
 
@@ -50,6 +50,7 @@ ERP para peluquería. Reemplaza Excel. Núcleo: costeo **FIFO** estricto — cad
 | 27 | Soporte offline para Carga Rápida: RPC atómico `create_funnel_unit` (idempotente vía `client_uuid`), cola offline con estados pending/stuck. Tab "Sueldos" en Reportes |
 | 29 | Auditoría de producción. Fase C: `AuthProvider` único, toasts globales para errores de mutación, `confirmDialog` en vez de `confirm()`, `refetchOnWindowFocus` off, widget IA gated, cola offline con refs, Carga Rápida con estado de carga, Gemini detrás de la Edge Function `ask-gemini`, rutas `lazy` + `xlsx` dinámico. Fase B (mig. `089`): cierre de período `SECURITY DEFINER` con guarda de DELETE, policies scoped de UPDATE/DELETE, `REVOKE anon` en 7 RPCs, 9 índices, `products_with_stock` con `security_invoker`, drift check con policies/índices. Fase A: saldo de anticipos por subcategoría real, `fetchAllRows` + `!inner` en reportes/snapshot/dashboard, cotización USD obligatoria y EUR excluido en Utilidad/Comisiones, `invalidateAccounting`, fechas locales (`todayLocal`), `formatMoney` único |
 | 28 | Adelantos de sueldo + retiros de producto desde Carga Rápida (offline-capable): RPCs idempotentes `create_staff_advance` / `create_staff_receivable` (mig. 061), dispatcher multi-kind en `funnelSubmit`, flush global en AppShell, `StaffWithdrawalModal` unificado con prop `mode`. Picker de producto obligatorio para subcategorías con `deducts_inventory` en Carga Rápida. Agrupación de transacciones para conciliación: `transaction_groups` + `transaction_group_members` (mig. `086`), fila única con el total y detalle expandible en `/transactions`; la Carga Rápida agrupa sola las unidades de un carrito. `amount = 0` admitido solo con seña (mig. `087`) |
+| 30 | Página `/recetas` (admin): tarjetas por familia de servicio con tallas en columnas, gramos, costo y total por talla; tab Insumos con envase editable, costo por gramo y servicios que usan cada producto. `products_with_stock` cae al costo del último lote cuando no hay stock (mig. `091`, restaura el fallback perdido en `026`) y backfill de las fotos de `transaction_recipe_costs` que quedaron en 0 (mig. `092`). Recetas actualizadas desde el Excel de costos (datos, sin migración) |
 
 ---
 

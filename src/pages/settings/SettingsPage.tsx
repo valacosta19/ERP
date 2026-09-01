@@ -16,8 +16,9 @@ import { useServiceRecipes, useUpsertServiceRecipes } from '@/hooks/useServiceRe
 import { useProducts } from '@/hooks/useProducts'
 import { useLockedPeriods, useLockPeriod, useUnlockPeriod } from '@/hooks/useLockedPeriods'
 import type { LockedPeriod } from '@/hooks/useLockedPeriods'
-import type { Professional, PaymentMethodConfig, FixedCost, Product, FixedCostRate } from '@/types'
+import type { Professional, PaymentMethodConfig, FixedCost, FixedCostRate } from '@/types'
 import { confirmDialog } from '@/lib/confirm'
+import { getCostPerGram } from '@/lib/recipeCost'
 
 function DraftInput({
   inputRef,
@@ -692,14 +693,6 @@ export function SettingsPage() {
     if (!selectedServiceId) return
     const parsed = hoursInput !== '' ? parseFloat(hoursInput) : null
     await updateCatalogItemHours.mutateAsync({ id: selectedServiceId, hours: isNaN(parsed as number) ? null : parsed })
-  }
-
-  function getAvgCostPerGram(product: Product): number | null {
-    if (!product.unit_size) return null
-    const min = product.min_cost ?? 0
-    const max = product.max_cost ?? min
-    const avg = (min + max) / 2
-    return avg / product.unit_size
   }
 
   const TAB_LABELS: Record<SettingsTab, string> = {
@@ -1436,7 +1429,7 @@ export function SettingsPage() {
                       )}
                       {recipeLines.map((line, idx) => {
                         const product = products.find(p => p.id === line.product_id)
-                        const cpg = product ? getAvgCostPerGram(product) : null
+                        const cpg = product ? getCostPerGram(product) : null
                         const qty = parseFloat(line.quantity_grams) || 0
                         const lineCost = cpg != null ? cpg * qty : null
                         return (
@@ -1493,7 +1486,7 @@ export function SettingsPage() {
                         <span className="font-semibold text-[var(--color-text)]">
                           ${recipeLines.reduce((s, line) => {
                             const product = products.find(p => p.id === line.product_id)
-                            const cpg = product ? getAvgCostPerGram(product) : null
+                            const cpg = product ? getCostPerGram(product) : null
                             const qty = parseFloat(line.quantity_grams) || 0
                             return s + (cpg != null ? cpg * qty : 0)
                           }, 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

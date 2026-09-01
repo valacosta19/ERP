@@ -16,6 +16,7 @@ import { useFixedCosts } from '@/hooks/useFixedCosts'
 import { useProducts } from '@/hooks/useProducts'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useTransactionRecipeCosts } from '@/hooks/useTransactionRecipeCosts'
+import { useAllServiceRecipes } from '@/hooks/useServiceRecipes'
 import { useInventoryRecounts } from '@/hooks/useInventoryRecount'
 import { supabase } from '@/lib/supabaseClient'
 import { fetchAllRows } from '@/lib/fetchAllRows'
@@ -27,6 +28,7 @@ import type { Currency, ServiceRecipe, ServiceCostRow, Transaction } from '@/typ
 import { formatDate } from '@/lib/formatDate'
 import { currentMonthRange, todayLocal } from '@/lib/dateRange'
 import { formatMoney } from '@/lib/money'
+import { getCostPerGram } from '@/lib/recipeCost'
 
 type Tab = 'financiero' | 'comisiones' | 'utilidad' | 'costos' | 'balance' | 'sueldos'
 type CommViewMode = 'detalle' | 'quincenal'
@@ -343,14 +345,7 @@ export function ReportsPage() {
   const { data: allCatalogItems = [] } = useCatalogItems()
   const { data: txRecipeCosts = [] } = useTransactionRecipeCosts()
 
-  const { data: allRecipes = [] } = useQuery<ServiceRecipe[]>({
-    queryKey: ['service-recipes-all'],
-    queryFn: async () => {
-      return fetchAllRows<ServiceRecipe>((rangeFrom, rangeTo) =>
-        supabase.from('service_recipes').select('*').order('id', { ascending: true }).range(rangeFrom, rangeTo),
-      )
-    },
-  })
+  const { data: allRecipes = [] } = useAllServiceRecipes()
 
   const { data: txRevenue = [] } = useQuery<{ id: string; catalog_item_id: string; amount: number; seña_amount: number | null; currency: string; date: string }[]>({
     queryKey: ['tx-revenue-by-catalog-item'],
@@ -430,10 +425,9 @@ export function ReportsPage() {
       } else {
         for (const recipe of (recipesByService.get(tx.catalog_item_id) ?? [])) {
           const product = productMap.get(recipe.product_id)
-          if (!product?.unit_size) continue
-          const min = product.min_cost ?? 0
-          const max = product.max_cost ?? min
-          row.materials += recipe.quantity_grams * ((min + max) / 2) / product.unit_size
+          const costPerGram = product ? getCostPerGram(product) : null
+          if (costPerGram == null) continue
+          row.materials += recipe.quantity_grams * costPerGram
         }
       }
     }
@@ -478,12 +472,8 @@ export function ReportsPage() {
       const recipes = recipesByService.get(service.id) ?? []
       const materialCost = recipes.reduce((s, r) => {
         const product = productById.get(r.product_id)
-        if (!product?.unit_size) return s
-        const min = product.min_cost ?? 0
-        const max = product.max_cost ?? min
-        const avg = (min + max) / 2
-        const costPerGram = avg / product.unit_size
-        return s + r.quantity_grams * costPerGram
+        const costPerGram = product ? getCostPerGram(product) : null
+        return costPerGram == null ? s : s + r.quantity_grams * costPerGram
       }, 0)
 
       const txForService = txByService.get(service.id) ?? []

@@ -12,6 +12,7 @@ import {
   LogOut,
   PiggyBank,
   BookOpen,
+  FlaskConical,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
   { to: '/purchase-orders', icon: <ShoppingCart size={18} />, label: 'Pedidos' },
   { to: '/suppliers', icon: <Truck size={18} />, label: 'Proveedores' },
   { to: '/reports', icon: <BarChart2 size={18} />, label: 'Reportes' },
+  { to: '/recetas', icon: <FlaskConical size={18} />, label: 'Recetas', adminOnly: true },
   { to: '/fondos', icon: <PiggyBank size={18} />, label: 'Fondos', adminOnly: true },
   { to: '/cuentas', icon: <BookOpen size={18} />, label: 'Cuentas', adminOnly: true },
   { to: '/import', icon: <FileSpreadsheet size={18} />, label: 'Importar', adminOnly: true },
