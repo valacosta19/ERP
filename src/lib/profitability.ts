@@ -23,33 +23,26 @@ export function fixedCostPerHour(fixedCosts: Pick<FixedCost, 'active' | 'monthly
 export interface ProfitInputs {
   price: number
   materials: number
-  hours: number | null
   commissionPct: number
-  fixedCostPerHour: number
 }
 
 export interface ServiceProfit {
   commission: number
-  fixed: number
   grossMargin: number
   grossPct: number
-  netMargin: number
-  netPct: number
 }
 
 export function computeServiceProfit(i: ProfitInputs): ServiceProfit {
   const commission = i.price * (i.commissionPct / 100)
-  const fixed = (i.hours ?? 0) * i.fixedCostPerHour
   const grossMargin = i.price - i.materials - commission
-  const netMargin = grossMargin - fixed
-  const pct = (value: number) => (i.price > 0 ? (value / i.price) * 100 : 0)
-  return { commission, fixed, grossMargin, grossPct: pct(grossMargin), netMargin, netPct: pct(netMargin) }
+  const grossPct = i.price > 0 ? (grossMargin / i.price) * 100 : 0
+  return { commission, grossMargin, grossPct }
 }
 
-export function suggestedPrice(materials: number, fixed: number, commissionPct: number, targetPct: number): number | null {
+export function suggestedPrice(materials: number, commissionPct: number, targetPct: number): number | null {
   const remaining = 1 - commissionPct / 100 - targetPct / 100
   if (remaining <= 0) return null
-  return (materials + fixed) / remaining
+  return materials / remaining
 }
 
 export function marginColor(pct: number): string {

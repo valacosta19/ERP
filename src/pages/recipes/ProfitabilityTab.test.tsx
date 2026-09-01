@@ -66,15 +66,14 @@ beforeEach(() => {
 })
 
 describe('ProfitabilityTab', () => {
-  it('uses the assigned professional with most services as default team and sums fixed cost by hours', () => {
+  it('uses the assigned professional with most services as default team and shows the fixed cost per hour as reference', () => {
     renderTab()
     const corte = rowOf('Corto')
     expect(within(corte).getByText('Eury 40%')).toBeTruthy()
     expect(within(corte).getByText('$20.000')).toBeTruthy()
     expect(within(corte).getByText('$100')).toBeTruthy()
-    expect(within(corte).getByText('$1.500')).toBeTruthy()
-    expect(within(corte).getByText('$28.400')).toBeTruthy()
-    expect(within(corte).getByText('56,8%')).toBeTruthy()
+    expect(within(corte).getByText('$29.900')).toBeTruthy()
+    expect(within(corte).getByText('59,8%')).toBeTruthy()
     expect(screen.getByText('$1.000')).toBeTruthy()
   })
 
@@ -99,27 +98,30 @@ describe('ProfitabilityTab', () => {
   it('suggests a price for the target margin and applies it after confirmation', async () => {
     renderTab()
     const corte = rowOf('Corto')
-    expect(within(corte).getByText('$10.700')).toBeTruthy()
+    expect(within(corte).getByText('$700')).toBeTruthy()
     await act(async () => { fireEvent.click(within(corte).getByText('Aplicar')) })
     expect(confirmDialog).toHaveBeenCalledTimes(1)
-    expect(updatePrice).toHaveBeenCalledWith({ id: 'corte-corto', price: 10700 })
+    expect(updatePrice).toHaveBeenCalledWith({ id: 'corte-corto', price: 700 })
   })
 
-  it('switches the price by payment method and the fixed cost by hours per month', () => {
+  it('switches the price by payment method and the reference fixed cost by hours per month without touching margins', () => {
     renderTab()
     fireEvent.click(screen.getByRole('button', { name: 'Tarjeta' }))
     expect(within(rowOf('Corto')).getByText('$55.000')).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Horas trabajadas por mes'), { target: { value: '320' } })
-    expect(within(rowOf('Corto')).getByText('$750')).toBeTruthy()
     expect(screen.getByText('$500')).toBeTruthy()
+    expect(within(rowOf('Corto')).getByText('$32.900')).toBeTruthy()
   })
 
-  it('projects the monthly margin from services sold and opens the recipe from the breakdown', () => {
+  it('projects the monthly margin, closes the month against fixed costs and opens the recipe from the breakdown', () => {
     const onEditFamily = vi.fn()
     renderTab(onEditFamily)
     const corte = rowOf('Corto')
     expect(within(corte).getByText('2')).toBeTruthy()
-    expect(within(corte).getByText('$56.800')).toBeTruthy()
+    expect(within(corte).getByText('$59.800')).toBeTruthy()
+    expect(screen.getByText('$160.000')).toBeTruthy()
+    expect(screen.getByText('$-100.200')).toBeTruthy()
+    expect(screen.getByText('No rentable: el margen bruto no cubre los fijos')).toBeTruthy()
     fireEvent.click(within(corte).getByLabelText('Ver desglose'))
     fireEvent.click(screen.getByText('Editar receta'))
     expect(onEditFamily).toHaveBeenCalledWith('Corte')
