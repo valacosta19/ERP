@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Select } from '@/components/ui/Select'
 import { InlineEditCell } from '@/components/ui/InlineEditCell'
 import { useTransactionCategories, useCreateTransactionCategory, useUpdateTransactionCategory, useDeleteTransactionCategory } from '@/hooks/useTransactionCategories'
+import { useStaffRoles } from '@/hooks/useStaffRoles'
 import { useProfessionals, useCreateProfessional, useUpdateProfessional, useDeleteProfessional } from '@/hooks/useProfessionals'
 import { useCatalogItems, useCreateCatalogItem, useUpdateCatalogItem, useDeleteCatalogItem, useUpdateCatalogItemHours } from '@/hooks/useCatalogItems'
 import { usePaymentMethods, useCreatePaymentMethod, useUpdatePaymentMethod, useDeletePaymentMethod } from '@/hooks/usePaymentMethods'
@@ -19,6 +20,8 @@ import type { LockedPeriod } from '@/hooks/useLockedPeriods'
 import type { Professional, PaymentMethodConfig, FixedCost, FixedCostRate } from '@/types'
 import { confirmDialog } from '@/lib/confirm'
 import { getCostPerGram } from '@/lib/recipeCost'
+import { StaffRolesSection } from './StaffRolesSection'
+import { ProfessionalServicesSection } from './ProfessionalServicesSection'
 
 function DraftInput({
   inputRef,
@@ -172,53 +175,6 @@ function BusinessNameCard({ name, onSave }: { name: string; onSave: (v: string) 
   )
 }
 
-function CommissionRatesEditor({ rates, onChange }: { rates: number[]; onChange: (rates: number[]) => void }) {
-  const [draft, setDraft] = useState('')
-
-  function addRate() {
-    const v = parseFloat(draft)
-    if (!v || v <= 0 || v > 100 || rates.includes(v)) { setDraft(''); return }
-    onChange([...rates, v].sort((a, b) => a - b))
-    setDraft('')
-  }
-
-  return (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      <span className="text-xs text-[var(--color-muted)]">Comisiones</span>
-      {rates.map(r => (
-        <span
-          key={r}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"
-          style={{ background: 'var(--color-accent-light)', color: 'var(--color-accent)' }}
-        >
-          {r}%
-          <button
-            onClick={() => onChange(rates.filter(x => x !== r))}
-            className="hover:text-[var(--color-danger)]"
-            title="Quitar"
-          >
-            <X size={11} />
-          </button>
-        </span>
-      ))}
-      <span className="relative inline-flex items-center">
-        <input
-          type="number"
-          min="1"
-          max="100"
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') addRate() }}
-          onBlur={addRate}
-          placeholder="+"
-          className="w-14 text-right pr-5 pl-2 py-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
-        />
-        <span className="absolute right-2 text-xs text-[var(--color-muted)] pointer-events-none">%</span>
-      </span>
-    </div>
-  )
-}
-
 const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 function PeriodLockList({
@@ -323,6 +279,7 @@ export function SettingsPage() {
   const parentCategories = txCategories.filter(c => c.parent_id === null)
 
   const { data: professionals = [], isLoading: hdsLoading } = useProfessionals()
+  const { data: staffRoles = [] } = useStaffRoles()
   const createHd = useCreateProfessional()
   const updateHd = useUpdateProfessional()
   const deleteHd = useDeleteProfessional()
@@ -887,10 +844,16 @@ export function SettingsPage() {
                     />
                   </div>
                   <div className="flex items-center gap-2">
-                    <CommissionRatesEditor
-                      rates={hd.commission_rates ?? []}
-                      onChange={rates => void updateHd.mutateAsync({ id: hd.id, commission_rates: rates })}
-                    />
+                    <select
+                      value={hd.role_id ?? ''}
+                      onChange={e => void updateHd.mutateAsync({ id: hd.id, role_id: e.target.value || null })}
+                      className="px-2 py-1 text-xs rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                    >
+                      <option value="">Sin rol</option>
+                      {staffRoles.map(role => (
+                        <option key={role.id} value={role.id}>{role.name}</option>
+                      ))}
+                    </select>
                     <button
                       onClick={() => handleHdToggleActive(hd)}
                       className="px-2 py-1 rounded-lg text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
@@ -950,6 +913,10 @@ export function SettingsPage() {
             </div>
           </section>
         )}
+
+        {!hdsLoading && <StaffRolesSection />}
+
+        {!hdsLoading && <ProfessionalServicesSection />}
 
         <section>
           <div className="flex items-center justify-between mb-3">

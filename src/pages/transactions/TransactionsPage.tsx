@@ -24,6 +24,7 @@ import { useLockedPeriods } from '@/hooks/useLockedPeriods'
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { useProfessionals } from '@/hooks/useProfessionals'
+import { useHairdresserServices } from '@/hooks/useHairdresserServices'
 import { useProducts } from '@/hooks/useProducts'
 import { supabase } from '@/lib/supabaseClient'
 import { ReconcileModal } from './ReconcileModal'
@@ -150,6 +151,9 @@ export function TransactionsPage() {
     .map(pm => ({ value: pm.name, label: pm.name }))
 
   const activeProfessionals = professionals.filter(h => h.active)
+  const { data: assignments = [] } = useHairdresserServices()
+  const assignedRate = (hairdresserId: string, catalogItemId: string | null | undefined) =>
+    assignments.find(a => a.hairdresser_id === hairdresserId && a.catalog_item_id === catalogItemId)?.commission_rate
 
   function isDateLocked(date: string) {
     const d = new Date(date + 'T00:00:00')
@@ -1209,7 +1213,7 @@ export function TransactionsPage() {
                 {activeProfessionals.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setEditForm(f => ({ ...f, professionals: [...f.professionals, { id: activeProfessionals[0].id, commission_rate: 0 }] }))}
+                    onClick={() => setEditForm(f => ({ ...f, professionals: [...f.professionals, { id: activeProfessionals[0].id, commission_rate: assignedRate(activeProfessionals[0].id, f.catalog_item_id) ?? 0 }] }))}
                     className="text-xs text-[var(--color-accent)] hover:underline"
                   >
                     + Agregar profesional
@@ -1223,7 +1227,7 @@ export function TransactionsPage() {
                       <Select
                         options={activeProfessionals.map(h => ({ value: h.id, label: h.name }))}
                         value={pa.id}
-                        onChange={e => setEditForm(f => ({ ...f, professionals: f.professionals.map((p, ii) => ii === i ? { ...p, id: e.target.value } : p) }))}
+                        onChange={e => setEditForm(f => ({ ...f, professionals: f.professionals.map((p, ii) => ii === i ? { ...p, id: e.target.value, commission_rate: assignedRate(e.target.value, f.catalog_item_id) ?? p.commission_rate } : p) }))}
                       />
                     </div>
                     <div className="w-24">

@@ -29,6 +29,7 @@ import { formatDate } from '@/lib/formatDate'
 import { currentMonthRange, todayLocal } from '@/lib/dateRange'
 import { formatMoney } from '@/lib/money'
 import { getCostPerGram } from '@/lib/recipeCost'
+import { marginColor } from '@/lib/profitability'
 
 type Tab = 'financiero' | 'comisiones' | 'utilidad' | 'costos' | 'balance' | 'sueldos'
 type CommViewMode = 'detalle' | 'quincenal'
@@ -503,12 +504,6 @@ export function ReportsPage() {
       return { service, materialCost, commissionCost: avgCommissionCost, totalCost, salePrice, margin, marginPct, hasWarning }
     })
   }, [allCatalogItems, allRecipes, products, txRevenue, txCommissions, dolarBlue])
-
-  function marginColor(pct: number): string {
-    if (pct > 30) return 'var(--color-success)'
-    if (pct >= 10) return 'var(--color-warning)'
-    return 'var(--color-danger)'
-  }
 
   return (
     <div className="animate-fade-in flex-1 min-h-0 flex flex-col">

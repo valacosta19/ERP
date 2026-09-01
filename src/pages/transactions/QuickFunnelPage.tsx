@@ -7,6 +7,7 @@ import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useProducts } from '@/hooks/useProducts'
 import { useProfessionals } from '@/hooks/useProfessionals'
+import { useHairdresserServices } from '@/hooks/useHairdresserServices'
 import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import { useAnticipoPresets } from '@/hooks/useAnticipoPresets'
 import { useAnticipoBalance } from '@/hooks/useAnticipoBalance'
@@ -76,6 +77,7 @@ export function QuickFunnelPage() {
   const catalogItems = useMemo(() => catalogItemsQuery.data ?? [], [catalogItemsQuery.data])
   const products = useMemo(() => productsQuery.data ?? [], [productsQuery.data])
   const professionals = useMemo(() => professionalsQuery.data ?? [], [professionalsQuery.data])
+  const { data: assignments = [] } = useHairdresserServices()
   const paymentMethodsData = useMemo(() => paymentMethodsQuery.data ?? [], [paymentMethodsQuery.data])
   const catalogQueries = [categoriesQuery, catalogItemsQuery, productsQuery, professionalsQuery, paymentMethodsQuery]
   const catalogLoading = catalogQueries.some(q => q.isLoading)
@@ -486,6 +488,7 @@ export function QuickFunnelPage() {
                 lines={state.lines}
                 currency={state.currency}
                 professionals={professionals}
+                assignments={assignments}
                 onUnitPrice={setUnitPrice}
                 onLineProfessionals={setLineProfs}
                 paymentMethods={paymentMethods}

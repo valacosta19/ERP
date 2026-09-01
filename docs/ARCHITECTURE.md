@@ -221,7 +221,7 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - `src/components/StaffWithdrawalModal.tsx` — modal unificado con prop `mode: 'withdrawal' | 'advance'`. Submitea via pipeline offline (no llama RPCs directamente).
 
 **Datos:**
-- Tablas: `hairdressers`, `transaction_hairdressers`, `receivables` (con `hairdresser_id + product_id`), `receivable_collections`, `commission_settlement_periods`, `commission_payouts`, `transactions`
+- Tablas: `hairdressers`, `hairdresser_services` (profesional × servicio × `commission_rate`, mig. `093`), `transaction_hairdressers`, `receivables` (con `hairdresser_id + product_id`), `receivable_collections`, `commission_settlement_periods`, `commission_payouts`, `transactions`
 - RPC: `create_staff_receivable(p_client_uuid, hairdresser_id, product_id, quantity, value_amount, ...)` — idempotente por `client_uuid`. Registra retiro de producto, inserta `inventory_movements`, NO crea `transactions`.
 - RPC: `create_staff_advance(p_client_uuid, hairdresser_id, amount, currency, payment_method, ...)` — idempotente por `client_uuid`. Crea una `transactions` (Movimiento/transfer, salida de caja) + un `receivable` contra el empleado. No toca inventario.
 - RPC: `record_partial_commission_payout(client_uuid, hairdresser_id, period_start, period_end, installment_amount, ...)` — calcula la comisión autoritativa desde transacciones ARS, registra una cuota, sus compensaciones y el egreso neto en una sola transacción atómica e idempotente.
@@ -241,7 +241,8 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - **Un pago neto exige categoría de gasto.** Las cuotas cubiertas solo con retiros/adelantos pueden omitirla porque no crean una transacción.
 - **Las tablas de liquidación son de escritura exclusiva del RPC.** `authenticated` conserva `SELECT`, pero no `INSERT`, `UPDATE` ni `DELETE`; RLS sola no debe ser la barrera contra saltarse los controles atómicos.
 - **Las comisiones en moneda extranjera no se liquidan hasta tener cotización persistida.** El reporte usa una cotización externa en vivo, que no es evidencia contable autoritativa para un RPC.
-- **Tasa de comisión por profesional.** Almacenada en `transaction_hairdressers.commission_rate` (libre por transacción). Default array en `hairdressers.commission_rates` (migración `056`).
+- **Tasa de comisión por profesional.** Almacenada en `transaction_hairdressers.commission_rate` (libre por transacción). La columna `hairdressers.commission_rates` (migración `056`) ya no la usa la app: los presets fueron reemplazados por `hairdresser_services`.
+- **La asignación profesional → servicio solo propone.** `hairdresser_services` dice qué profesionales pueden hacer cada servicio y con qué %; son alternativas, no un equipo fijo. En Carga Rápida las asignadas aparecen primero y un toque carga a esa profesional con su % (nada se precarga); en Transacciones, elegir una profesional propone su %. La comisión efectiva es siempre la fila de `transaction_hairdressers`: reportes y liquidación no leen `hairdresser_services`. `src/lib/commissions.ts` (`assignedProfessionalsFor`, `teamCommissionFor`) es el único lector.
 
 ---
 
@@ -272,20 +273,25 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 
 ## Recetas (`/recetas`)
 
-**Qué hace:** Página admin con dos tabs: **Recetas** (una tarjeta por familia de servicio con las tallas corto/mediano/largo en columnas, gramos y costo por insumo, total de materiales y % sobre precio; cada tarjeta tiene modo edición para gramos por talla, alta/baja de insumos y horas, con guardado por talla) e **Insumos** (productos usados en alguna receta: envase editable en línea, último costo, costo por gramo, stock y servicios que lo usan, expandible; cada servicio abre su familia en edición).
+**Qué hace:** Página admin con tres tabs: **Recetas** (una tarjeta por familia de servicio con las tallas corto/mediano/largo en columnas, gramos y costo por insumo, total de materiales y % sobre precio; cada tarjeta tiene modo edición para gramos por talla, alta/baja de insumos y horas, con guardado por talla), **Insumos** (productos usados en alguna receta: envase editable en línea, último costo, costo por gramo, stock y servicios que lo usan, expandible; cada servicio abre su familia en edición) y **Rentabilidad** (simulador: precio por método de cobro, % de comisión con presets por profesional, costo fijo por hora = fijos activos ÷ horas/mes editables, margen objetivo; por servicio muestra insumos, comisión, fijos por horas, margen neto, precio sugerido con "Aplicar", servicios/mes y margen mensual proyectado, con barra de composición del precio y desglose expandible).
 
 **Archivos:**
-- `src/pages/recipes/RecipesPage.tsx`
+- `src/pages/recipes/RecipesPage.tsx`, `src/pages/recipes/ProfitabilityTab.tsx`
 - `src/lib/serviceFamilies.ts` — `splitServiceName` / `groupServiceFamilies` (con tests)
-- `src/lib/recipeCost.ts` — `getCostPerGram` / `getAvgUnitCost` (con tests)
+- `src/lib/recipeCost.ts` — `getCostPerGram` / `getAvgUnitCost` / `materialCostByService` (con tests)
+- `src/lib/profitability.ts` — `priceFor`, `fixedCostPerHour`, `computeServiceProfit`, `suggestedPrice`, `marginColor` (con tests)
 - `src/hooks/useServiceRecipes.ts` — `useAllServiceRecipes` (clave `['service-recipes-all']`, paginado con `fetchAllRows`)
+- `src/hooks/useServiceSales.ts` — `useServiceSalesByMonth(from, to, months)`: conteo de transacciones de ingreso por `catalog_item_id` en un rango (`!inner` + `fetchAllRows`)
 
-**Datos:** `catalog_items`, `service_recipes`, vista `products_with_stock`. La edición del envase usa `useUpdateProduct` (mismo campo `unit_size` que Inventario).
+**Datos:** `catalog_items`, `service_recipes`, `fixed_costs`, `hairdressers.commission_rates`, `transactions`, vista `products_with_stock`. La edición del envase usa `useUpdateProduct` (mismo campo `unit_size` que Inventario); "Aplicar" precio sugerido usa `useUpdateCatalogItem` sobre el precio del método elegido, con `confirmDialog`.
+
+**Fórmulas (Rentabilidad):** comisión = precio × % donde % es la suma de los % de las profesionales marcadas en el "equipo" del panel que tienen el servicio asignado (`hairdresser_services`; por defecto la de más asignaciones) o, si ninguna marcada lo hace, el % de respaldo del panel; fijos = horas × (Σ fijos activos ÷ horas/mes); margen bruto = precio − insumos − comisión; margen neto = bruto − fijos; precio sugerido = (insumos + fijos) ÷ (1 − comisión% − objetivo%), redondeado a 100, nulo si comisión + objetivo ≥ 100 %. Servicios/mes = transacciones de los últimos 3 meses cerrados ÷ 3.
 
 **Invariantes (NO romper):**
 - **La familia se deduce del nombre.** Un servicio pertenece a la familia `X` si se llama `X corto`, `X mediano` o `X largo` (sufijo final, sin distinguir mayúsculas); sin sufijo es talla única. `anticipo` y `Seña` quedan fuera. No hay columna de familia en la DB: si se renombra un servicio rompiendo el patrón, deja de agruparse.
 - **Guardar una familia escribe solo las tallas que cambiaron.** Cada talla es un `catalog_item` distinto: al guardar se compara la receta de cada columna con la actual y solo las distintas pasan por `useUpsertServiceRecipes` (borrado + inserción de esa talla); las horas van por `useUpdateCatalogItemHours`. Una sola familia en edición a la vez. El editor de Ajustes › Costos sigue existiendo y usa los mismos hooks.
 - **Un solo cálculo de costo por gramo.** `getCostPerGram` es el que usan Ajustes, Reportes y esta página. La foto en `useCreateTransaction` y el RPC `create_funnel_unit` replican la misma fórmula en su capa.
+- **El simulador de Rentabilidad no persiste el escenario ni usa historial.** Comisión, horas/mes y margen objetivo viven en el estado de la vista; los costos fijos son los activos de hoy (no `fixed_cost_rates` por mes). Reportes › Costos sigue siendo el margen bruto histórico con la comisión real cobrada: son dos preguntas distintas y no deben unificarse.
 
 ---
 
@@ -347,8 +353,9 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - `src/hooks/useFixedCosts.ts`
 - `src/hooks/useServiceRecipes.ts`
 - `src/hooks/useLockedPeriods.ts`
+- `src/pages/settings/ProfessionalServicesSection.tsx` + `src/hooks/useHairdresserServices.ts` — matriz "Servicios por profesional" (Operaciones): una fila por familia de servicio (el % aplica a todas sus tallas), columnas por profesional activa, celda = % de comisión editable en línea (vacío = no lo realiza). Sin totales: las asignadas son alternativas
 
-**Datos:** `transaction_categories`, `payment_methods`, `catalog_items`, `hairdressers`, `fixed_costs`, `fixed_cost_rates`, `service_recipes`, `locked_periods`, `user_action_logs`
+**Datos:** `transaction_categories`, `payment_methods`, `catalog_items`, `hairdressers`, `hairdresser_services`, `fixed_costs`, `fixed_cost_rates`, `service_recipes`, `locked_periods`, `user_action_logs`
 
 **Invariantes (NO romper):**
 - **Costos fijos son append-only en `fixed_cost_rates`.** Editar un costo fijo inserta una nueva fila con `effective_from = today`, no sobreescribe el histórico. `useFixedCosts` debe respetar este patrón.

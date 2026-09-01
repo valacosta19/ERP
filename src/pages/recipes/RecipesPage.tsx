@@ -12,11 +12,13 @@ import { useAllServiceRecipes, useUpsertServiceRecipes } from '@/hooks/useServic
 import { getAvgUnitCost, getCostPerGram } from '@/lib/recipeCost'
 import { groupServiceFamilies, SIZE_LABELS, type ServiceFamily } from '@/lib/serviceFamilies'
 import { formatMoney } from '@/lib/money'
+import { showToast } from '@/lib/toast'
 import type { CatalogItem, Product, ServiceRecipe } from '@/types'
+import { ProfitabilityTab } from './ProfitabilityTab'
 
-type Tab = 'recetas' | 'insumos'
+type Tab = 'recetas' | 'insumos' | 'rentabilidad'
 
-const TAB_LABELS: Record<Tab, string> = { recetas: 'Recetas', insumos: 'Insumos' }
+const TAB_LABELS: Record<Tab, string> = { recetas: 'Recetas', insumos: 'Insumos', rentabilidad: 'Rentabilidad' }
 
 function fmtGrams(value: number) {
   return value.toLocaleString('es-AR', { maximumFractionDigits: 1 })
@@ -492,7 +494,10 @@ export function RecipesPage() {
 
   async function saveUnitSize(product: Product, value: string) {
     const parsed = value === '' ? null : Number(value)
-    if (parsed != null && (isNaN(parsed) || parsed <= 0)) throw new Error('El tamaño del envase debe ser un número mayor a 0.')
+    if (parsed != null && (isNaN(parsed) || parsed <= 0)) {
+      showToast('El tamaño del envase debe ser un número mayor a 0.')
+      return
+    }
     await updateProduct.mutateAsync({
       id: product.id,
       name: product.name,
@@ -568,7 +573,7 @@ export function RecipesPage() {
 
   return (
     <div className="recipes-page flex flex-col h-full">
-      <TopBar title="Recetas" subtitle="Qué insumos lleva cada servicio y cuánto cuestan" />
+      <TopBar title="Recetas" subtitle="Recetas, insumos y rentabilidad de cada servicio" />
       <div className="flex gap-0 border-b border-[var(--color-border)] px-6 shrink-0 bg-[var(--color-surface)]">
         {(Object.keys(TAB_LABELS) as Tab[]).map(tab => (
           <button
@@ -659,6 +664,15 @@ export function RecipesPage() {
               </section>
             )}
           </>
+        )}
+
+        {activeTab === 'rentabilidad' && (
+          <ProfitabilityTab
+            families={familyViews.map(v => v.family)}
+            recipes={recipes}
+            productById={productById}
+            onEditFamily={openFamily}
+          />
         )}
 
         {activeTab === 'insumos' && (

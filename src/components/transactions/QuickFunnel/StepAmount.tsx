@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Pencil, Check, X } from 'lucide-react'
-import type { Currency, Professional } from '@/types'
+import type { Currency, HairdresserService, Professional } from '@/types'
 import type { CartLine, FunnelType } from './funnelTypes'
 import { lineGross } from './funnelTypes'
 import { StepHeading, SectionLabel } from './funnelAtoms'
+import { useStaffRoles } from '@/hooks/useStaffRoles'
 import { money, funnelInput } from './funnelFormat'
 
 export type PriceTier = 'cash' | 'transfer' | 'card'
@@ -19,6 +20,7 @@ type IncomeProps = {
   lines: CartLine[]
   currency: Currency
   professionals: Professional[]
+  assignments: HairdresserService[]
   onUnitPrice: (key: string, price: number) => void
   onLineProfessionals: (key: string, profs: { id: string; commission_rate: number }[]) => void
   paymentMethods: string[]
@@ -49,9 +51,19 @@ export function StepAmount(props: IncomeProps | SimpleProps) {
   return <SimpleAmount {...props} />
 }
 
-function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfessionals, paymentMethods, selectedMethod, onMethod, priceTier, onPriceTier }: IncomeProps) {
+function IncomeAmount({ lines, currency, professionals, assignments, onUnitPrice, onLineProfessionals, paymentMethods, selectedMethod, onMethod, priceTier, onPriceTier }: IncomeProps) {
   const [editing, setEditing] = useState<string | null>(null)
-  const activeProfs = professionals.filter(p => p.active)
+  const { data: staffRoles = [] } = useStaffRoles()
+  const roleById = new Map(staffRoles.map(r => [r.id, r]))
+  const activeProfs = professionals.filter(p => {
+    if (!p.active) return false
+    const role = p.role_id != null ? roleById.get(p.role_id) : undefined
+    return role == null || role.assigns_services
+  })
+  const earnsCommission = (prof: Professional) => {
+    const role = prof.role_id != null ? roleById.get(prof.role_id) : undefined
+    return role == null || role.earns_commission
+  }
 
   function removeProf(line: CartLine, id: string) {
     onLineProfessionals(line.key, line.professionals.filter(p => p.id !== id))
@@ -154,13 +166,20 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
               </div>
             </div>
 
-            {line.kind === 'service' && activeProfs.length > 0 && (
+            {line.kind === 'service' && activeProfs.length > 0 && (() => {
+              const serviceRate = (profId: string) =>
+                assignments.find(a => a.hairdresser_id === profId && a.catalog_item_id === line.catalogItemId)?.commission_rate
+              return (
               <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px dashed var(--color-border)' }}>
-                <SectionLabel>Profesionales — tocá la comisión que aplica</SectionLabel>
+                <SectionLabel>Profesionales — tocá quién lo hizo; la comisión asignada se carga sola</SectionLabel>
                 <div className="flex flex-wrap gap-2" style={{ marginTop: '10px' }}>
-                  {activeProfs.map(prof => {
+                  {[...activeProfs]
+                    .sort((a, b) => Number(serviceRate(b.id) != null) - Number(serviceRate(a.id) != null))
+                    .map(prof => {
                     const assigned = line.professionals.find(p => p.id === prof.id)
-                    const rates = prof.commission_rates ?? []
+                    const assignedRate = earnsCommission(prof) ? serviceRate(prof.id) : undefined
+                    const rates = assignedRate != null ? [assignedRate] : []
+                    const showFreeInput = earnsCommission(prof) && assigned != null && !rates.includes(assigned.commission_rate)
                     return (
                       <div
                         key={prof.id}
@@ -173,11 +192,11 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
                       >
                         <button
                           type="button"
-                          onClick={() => assigned ? removeProf(line, prof.id) : rates.length === 0 ? assignRate(line, prof, 0) : undefined}
-                          title={assigned ? 'Quitar' : undefined}
+                          onClick={() => assigned ? removeProf(line, prof.id) : assignedRate != null ? assignRate(line, prof, assignedRate) : rates.length === 0 ? assignRate(line, prof, 0) : undefined}
+                          title={assigned ? 'Quitar' : assignedRate != null ? `Asignada a este servicio al ${assignedRate}%` : undefined}
                           style={{
                             display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 12px', border: 'none',
-                            background: 'transparent', cursor: assigned || rates.length === 0 ? 'pointer' : 'default',
+                            background: 'transparent', cursor: assigned || assignedRate != null || rates.length === 0 ? 'pointer' : 'default',
                             fontSize: '0.875rem', fontWeight: 600,
                             color: assigned ? 'var(--color-accent)' : 'var(--color-text)',
                           }}
@@ -194,7 +213,7 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
                           {prof.name}
                           {assigned && <X size={13} />}
                         </button>
-                        {rates.length > 0 ? (
+                        {rates.length > 0 && (
                           <span className="flex items-center" style={{ borderLeft: assigned ? '1.5px solid var(--color-accent)' : '1.5px solid var(--color-border)' }}>
                             {rates.map(r => {
                               const isActive = assigned?.commission_rate === r
@@ -203,7 +222,9 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
                                   key={r}
                                   type="button"
                                   onClick={() => assignRate(line, prof, r)}
+                                  title={r === assignedRate ? 'Asignada a este servicio' : undefined}
                                   style={{
+                                    textDecoration: r === assignedRate && !isActive ? 'underline' : 'none',
                                     padding: '8px 11px', border: 'none', cursor: 'pointer',
                                     fontSize: '0.8125rem', fontWeight: 700,
                                     background: isActive ? 'var(--color-accent)' : 'transparent',
@@ -215,7 +236,8 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
                               )
                             })}
                           </span>
-                        ) : assigned && (
+                        )}
+                        {showFreeInput && assigned && (
                           <span className="flex items-center" style={{ borderLeft: '1.5px solid var(--color-accent)', paddingRight: '8px' }}>
                             <input
                               type="number"
@@ -234,7 +256,7 @@ function IncomeAmount({ lines, currency, professionals, onUnitPrice, onLineProfe
                   })}
                 </div>
               </div>
-            )}
+            )})()}
           </div>
         ))}
       </div>
