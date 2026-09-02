@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { todayLocal, daysAgoLocal, formatLocalDate, currentMonthRange } from './dateRange'
+import { todayLocal, daysAgoLocal, formatLocalDate, currentMonthRange, monthRange, previousMonthsRange } from './dateRange'
 
 afterEach(() => vi.useRealTimers())
 
@@ -31,5 +31,19 @@ describe('currentMonthRange', () => {
 describe('formatLocalDate', () => {
   it('zero-pads month and day', () => {
     expect(formatLocalDate(new Date(2026, 0, 5))).toBe('2026-01-05')
+  })
+})
+
+describe('monthRange', () => {
+  it('spans the given month', () => {
+    expect(monthRange('2026-02')).toEqual({ from: '2026-02-01', to: '2026-02-28' })
+    expect(monthRange('2026-12')).toEqual({ from: '2026-12-01', to: '2026-12-31' })
+  })
+})
+
+describe('previousMonthsRange', () => {
+  it('spans the closed months before the given one, across the year boundary', () => {
+    expect(previousMonthsRange('2026-09', 3)).toEqual({ from: '2026-06-01', to: '2026-08-31' })
+    expect(previousMonthsRange('2026-01', 3)).toEqual({ from: '2025-10-01', to: '2025-12-31' })
   })
 })

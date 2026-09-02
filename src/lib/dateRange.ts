@@ -18,3 +18,13 @@ export function currentMonthRange(): { from: string; to: string } {
   const month = now.getMonth()
   return { from: formatLocalDate(new Date(year, month, 1)), to: formatLocalDate(new Date(year, month + 1, 0)) }
 }
+
+export function monthRange(ym: string): { from: string; to: string } {
+  const [year, month] = ym.split('-').map(Number)
+  return { from: formatLocalDate(new Date(year, month - 1, 1)), to: formatLocalDate(new Date(year, month, 0)) }
+}
+
+export function previousMonthsRange(ym: string, months: number): { from: string; to: string } {
+  const [year, month] = ym.split('-').map(Number)
+  return { from: formatLocalDate(new Date(year, month - 1 - months, 1)), to: formatLocalDate(new Date(year, month - 1, 0)) }
+}

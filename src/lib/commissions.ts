@@ -21,15 +21,3 @@ export function assignedProfessionalsFor(
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'es'))
 }
-
-export function teamCommissionFor(
-  serviceId: string,
-  teamIds: Iterable<string>,
-  assignments: HairdresserService[],
-  professionals: Professional[],
-): { pct: number; members: AssignedProfessional[] } | null {
-  const team = new Set(teamIds)
-  const members = assignedProfessionalsFor(serviceId, assignments, professionals).filter(p => team.has(p.id))
-  if (members.length === 0) return null
-  return { pct: members.reduce((s, p) => s + p.commission_rate, 0), members }
-}

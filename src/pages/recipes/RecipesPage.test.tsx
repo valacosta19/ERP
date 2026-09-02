@@ -22,10 +22,12 @@ vi.mock('@/hooks/useServiceRecipes', () => ({
   useAllServiceRecipes: () => ({ data: recipes, isLoading: false }),
   useUpsertServiceRecipes: () => ({ mutateAsync: upsertRecipes, isPending: false }),
 }))
-vi.mock('@/hooks/useFixedCosts', () => ({ useFixedCosts: () => ({ data: [] }) }))
+vi.mock('@/hooks/useFixedCosts', () => ({ useFixedCosts: () => ({ data: [] }), useAllFixedCostRates: () => ({ data: [] }) }))
 vi.mock('@/hooks/useProfessionals', () => ({ useProfessionals: () => ({ data: [] }) }))
-vi.mock('@/hooks/useHairdresserServices', () => ({ useHairdresserServices: () => ({ data: [] }) }))
-vi.mock('@/hooks/useServiceSales', () => ({ useServiceSalesByMonth: () => ({ data: undefined }) }))
+vi.mock('@/hooks/useDolarBlue', () => ({ useDolarBlue: () => ({ data: undefined, isError: false }) }))
+vi.mock('@/hooks/useServiceSalesDetail', () => ({ useServiceSalesDetail: () => ({ data: [] }) }))
+vi.mock('@/hooks/useTransactionRecipeCosts', () => ({ useTransactionRecipeCosts: () => ({ data: [] }) }))
+vi.mock('@/hooks/useReports', () => ({ useProfitReport: () => ({ data: undefined }) }))
 
 import { RecipesPage } from './RecipesPage'
 

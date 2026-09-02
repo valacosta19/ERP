@@ -13,6 +13,7 @@ import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { useCommissionPayouts, useStaffReceivables } from '@/hooks/useStaffReceivables'
 import { SettleCommissionModal } from '@/components/SettleCommissionModal'
 import { useFixedCosts } from '@/hooks/useFixedCosts'
+import { useDolarBlue } from '@/hooks/useDolarBlue'
 import { useProducts } from '@/hooks/useProducts'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
 import { useTransactionRecipeCosts } from '@/hooks/useTransactionRecipeCosts'
@@ -189,15 +190,7 @@ export function ReportsPage() {
     return `${sueldoMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
   })()
 
-  const dolarBlueQuery = useQuery<{ venta: number; fechaActualizacion: string }>({
-    queryKey: ['dolar-blue'],
-    queryFn: async () => {
-      const res = await fetch('https://dolarapi.com/v1/dolares/blue')
-      if (!res.ok) throw new Error('No se pudo obtener el dólar blue')
-      return res.json()
-    },
-    staleTime: 1000 * 60 * 30,
-  })
+  const dolarBlueQuery = useDolarBlue()
   const dolarBlue = dolarBlueQuery.data
 
   const financial = useFinancialReport({ from: from || undefined, to: to || undefined, currency: currency || undefined })

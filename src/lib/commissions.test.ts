@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { assignedProfessionalsFor, teamCommissionFor } from './commissions'
+import { assignedProfessionalsFor } from './commissions'
 import type { HairdresserService, Professional } from '@/types'
 
 function prof(id: string, name: string, active = true): Professional {
@@ -25,24 +25,5 @@ describe('assignedProfessionalsFor', () => {
   })
   it('returns an empty list without assignments', () => {
     expect(assignedProfessionalsFor('nada', assignments, professionals)).toEqual([])
-  })
-})
-
-describe('teamCommissionFor', () => {
-  it('sums the rates of the team members assigned to the service', () => {
-    expect(teamCommissionFor('corte', ['e', 'f'], assignments, professionals)).toEqual({
-      pct: 47,
-      members: [
-        { id: 'e', name: 'Eury', commission_rate: 40 },
-        { id: 'f', name: 'Fabiana', commission_rate: 7 },
-      ],
-    })
-  })
-  it('ignores team members not assigned to the service', () => {
-    expect(teamCommissionFor('color', ['e', 'f'], assignments, professionals)?.pct).toBe(45)
-  })
-  it('is null when nobody in the team does the service', () => {
-    expect(teamCommissionFor('color', ['f', 'l'], assignments, professionals)).toBeNull()
-    expect(teamCommissionFor('corte', [], assignments, professionals)).toBeNull()
   })
 })

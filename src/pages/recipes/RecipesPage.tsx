@@ -667,12 +667,7 @@ export function RecipesPage() {
         )}
 
         {activeTab === 'rentabilidad' && (
-          <ProfitabilityTab
-            families={familyViews.map(v => v.family)}
-            recipes={recipes}
-            productById={productById}
-            onEditFamily={openFamily}
-          />
+          <ProfitabilityTab families={familyViews.map(v => v.family)} recipes={recipes} productById={productById} />
         )}
 
         {activeTab === 'insumos' && (
