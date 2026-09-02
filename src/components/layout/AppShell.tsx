@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Menu, Scissors } from 'lucide-react'
 import { Sidebar } from './Sidebar'
-import { AIWidget } from '@/components/AIWidget/AIWidget'
 import { useFunnelSubmit } from '@/components/transactions/QuickFunnel/funnelSubmit'
 import { flushQueue } from '@/components/transactions/QuickFunnel/offlineQueue'
 import { showToast } from '@/lib/toast'
@@ -57,7 +56,6 @@ export function AppShell() {
         </div>
         <Outlet />
       </main>
-      <AIWidget />
     </div>
   )
 }
