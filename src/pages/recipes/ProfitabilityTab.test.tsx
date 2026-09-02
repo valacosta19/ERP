@@ -85,14 +85,16 @@ describe('ProfitabilityTab', () => {
     expect(within(corte).getByText('$23.500')).toBeTruthy()
   })
 
-  it('falls back to the panel rate for services nobody in the team does', () => {
+  it('leaves services nobody in the team does without margin and out of the summary', () => {
     renderTab()
     const color = rowOf('Largo')
-    expect(within(color).getByText('nadie del equipo · 0%')).toBeTruthy()
-    fireEvent.change(screen.getByLabelText('Comisión % para servicios sin profesional asignada'), { target: { value: '50' } })
-    expect(within(rowOf('Largo')).getByText('nadie del equipo · 50%')).toBeTruthy()
-    expect(within(rowOf('Largo')).getAllByText('$50.000')).toHaveLength(2)
-    expect(screen.getByText(/1 servicio no lo hace nadie/)).toBeTruthy()
+    expect(within(color).getByText('nadie del equipo')).toBeTruthy()
+    expect(within(color).getAllByText('—')).toHaveLength(5)
+    expect(within(color).queryByText('$100.000', { selector: 'span' })).toBeNull()
+    expect(screen.getByText(/1 servicio no lo hace nadie del equipo marcado: sin margen/)).toBeTruthy()
+    expect(screen.getByText('de 1')).toBeTruthy()
+    fireEvent.click(within(color).getByLabelText('Ver desglose'))
+    expect(screen.getByText('sin calcular: nadie del equipo hace este servicio')).toBeTruthy()
   })
 
   it('suggests a price for the target margin and applies it after confirmation', async () => {

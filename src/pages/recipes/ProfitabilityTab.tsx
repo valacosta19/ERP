@@ -56,12 +56,13 @@ interface ServiceRow {
   materials: number
   hasRecipe: boolean
   assigned: AssignedProfessional[]
-  commissionPct: number
-  profit: ServiceProfit
+  profit: ServiceProfit | null
   suggested: number | null
   salesPerMonth: number | null
   monthlyMargin: number | null
 }
+
+type ComputedRow = ServiceRow & { profit: ServiceProfit }
 
 interface ProfitabilityTabProps {
   families: ServiceFamily[]
@@ -72,7 +73,6 @@ interface ProfitabilityTabProps {
 
 export function ProfitabilityTab({ families, recipes, productById, onEditFamily }: ProfitabilityTabProps) {
   const [method, setMethod] = useState<PriceMethod>('cash')
-  const [commissionInput, setCommissionInput] = useState('')
   const [hoursPerMonthInput, setHoursPerMonthInput] = useState(String(DEFAULT_HOURS_PER_MONTH))
   const [targetInput, setTargetInput] = useState(String(DEFAULT_TARGET_PCT))
   const [sortByMargin, setSortByMargin] = useState(false)
@@ -104,7 +104,6 @@ export function ProfitabilityTab({ families, recipes, productById, onEditFamily 
   const { data: sales } = useServiceSalesByMonth(salesRange.from, salesRange.to, SALES_MONTHS)
   const updateCatalogItem = useUpdateCatalogItem()
 
-  const commissionPct = Math.max(0, parseFloat(commissionInput) || 0)
   const hoursPerMonth = parseFloat(hoursPerMonthInput) || 0
   const targetPct = Math.max(0, parseFloat(targetInput) || 0)
   const perHour = useMemo(() => fixedCostPerHour(fixedCosts, hoursPerMonth), [fixedCosts, hoursPerMonth])
@@ -129,9 +128,8 @@ export function ProfitabilityTab({ families, recipes, productById, onEditFamily 
         const materials = materialsByService.get(col.item.id) ?? 0
         const teamResult = teamCommissionFor(col.item.id, team, assignments, professionals)
         const assigned = teamResult?.members ?? []
-        const rowPct = teamResult?.pct ?? commissionPct
-        const profit = computeServiceProfit({ price, materials, commissionPct: rowPct })
-        const suggestedRaw = suggestedPrice(materials, rowPct, targetPct)
+        const profit = teamResult ? computeServiceProfit({ price, materials, commissionPct: teamResult.pct }) : null
+        const suggestedRaw = teamResult ? suggestedPrice(materials, teamResult.pct, targetPct) : null
         const count = sales?.countByService.get(col.item.id)
         const salesPerMonth = count != null ? count / SALES_MONTHS : null
         result.push({
@@ -142,18 +140,17 @@ export function ProfitabilityTab({ families, recipes, productById, onEditFamily 
           materials,
           hasRecipe: (recipesByService.get(col.item.id)?.length ?? 0) > 0,
           assigned,
-          commissionPct: rowPct,
           profit,
           suggested: suggestedRaw == null ? null : roundPrice(suggestedRaw),
           salesPerMonth,
-          monthlyMargin: salesPerMonth == null ? null : profit.grossMargin * salesPerMonth,
+          monthlyMargin: salesPerMonth == null || profit == null ? null : profit.grossMargin * salesPerMonth,
         })
       }
     }
-    return sortByMargin ? [...result].sort((a, b) => a.profit.grossPct - b.profit.grossPct) : result
-  }, [families, method, materialsByService, commissionPct, targetPct, sales, recipesByService, sortByMargin, assignments, professionals, team])
+    return sortByMargin ? [...result].sort((a, b) => (a.profit?.grossPct ?? Infinity) - (b.profit?.grossPct ?? Infinity)) : result
+  }, [families, method, materialsByService, targetPct, sales, recipesByService, sortByMargin, assignments, professionals, team])
 
-  const priced = rows.filter(r => r.price > 0)
+  const priced = rows.filter((r): r is ComputedRow => r.profit != null && r.price > 0)
   const withSales = priced.filter(r => r.salesPerMonth != null && r.salesPerMonth > 0)
   const avgGrossPct =
     withSales.length > 0
@@ -231,24 +228,10 @@ export function ProfitabilityTab({ families, recipes, productById, onEditFamily 
                 )
               })}
             </div>
-            <div className="relative inline-block">
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="1"
-                value={commissionInput}
-                onChange={e => setCommissionInput(e.target.value)}
-                placeholder="0"
-                aria-label="Comisión % para servicios sin profesional asignada"
-                className="w-20 pr-6 pl-2 py-1.5 text-sm text-right rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)] tabular-nums"
-              />
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--color-muted)]">%</span>
-            </div>
             <p className="text-xs mt-1" style={{ color: unassigned > 0 ? 'var(--color-warning)' : 'var(--color-muted)' }}>
               {unassigned === 0
                 ? 'Cada servicio suma el % de las marcadas que lo tienen asignado'
-                : `% de respaldo: ${unassigned} ${unassigned === 1 ? 'servicio no lo hace nadie' : 'servicios no los hace nadie'} del equipo marcado`}
+                : `${unassigned} ${unassigned === 1 ? 'servicio no lo hace nadie' : 'servicios no los hace nadie'} del equipo marcado: sin margen`}
             </p>
           </div>
           <div>
@@ -284,8 +267,8 @@ export function ProfitabilityTab({ families, recipes, productById, onEditFamily 
               />
               <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--color-muted)]">%</span>
             </div>
-            {commissionPct + targetPct >= 100 && (
-              <p className="text-xs text-[var(--color-danger)] mt-1">Comisión + objetivo no puede llegar al 100 %</p>
+            {targetPct >= 100 && (
+              <p className="text-xs text-[var(--color-danger)] mt-1">El objetivo no puede llegar al 100 %</p>
             )}
           </div>
         </div>
@@ -349,7 +332,7 @@ export function ProfitabilityTab({ families, recipes, productById, onEditFamily 
               {rows.map((row, i) => {
                 const showFamilyHeader = !sortByMargin && rows[i - 1]?.family !== row.family
                 const isOpen = expanded.has(row.item.id)
-                const color = marginColor(row.profit.grossPct)
+                const color = row.profit ? marginColor(row.profit.grossPct) : 'var(--color-muted)'
                 const delta = row.suggested != null && row.price > 0 ? ((row.suggested - row.price) / row.price) * 100 : null
                 return (
                   <FragmentRows key={row.item.id}>
@@ -379,21 +362,25 @@ export function ProfitabilityTab({ families, recipes, productById, onEditFamily 
                             <span title="Sin receta: insumos en 0" className="text-[var(--color-warning)] inline-flex"><AlertTriangle size={12} /></span>
                           )}
                         </div>
-                        <CompositionBar row={row} />
+                        {row.profit && <CompositionBar row={row} profit={row.profit} />}
                       </td>
                       <Td>{formatMoney(row.price)}</Td>
                       <Td muted>{formatMoney(row.materials)}</Td>
                       <Td muted>
-                        {formatMoney(row.profit.commission)}
-                        <span className="block text-[10px]" style={{ color: row.assigned.length === 0 ? 'var(--color-warning)' : undefined }}>
-                          {row.assigned.length === 0
-                            ? `nadie del equipo · ${fmtNum(row.commissionPct)}%`
-                            : row.assigned.map(p => `${p.name} ${fmtNum(p.commission_rate)}%`).join(' · ')}
+                        {row.profit ? formatMoney(row.profit.commission) : '—'}
+                        <span className="block text-[10px]" style={{ color: row.profit ? undefined : 'var(--color-warning)' }}>
+                          {row.profit ? row.assigned.map(p => `${p.name} ${fmtNum(p.commission_rate)}%`).join(' · ') : 'nadie del equipo'}
                         </span>
                       </Td>
                       <td className="px-3 pt-3 pb-1 text-right align-top tabular-nums">
-                        <span className="font-semibold" style={{ color }}>{formatMoney(row.profit.grossMargin)}</span>
-                        <span className="block text-xs" style={{ color }}>{fmtPct(row.profit.grossPct)}</span>
+                        {row.profit ? (
+                          <>
+                            <span className="font-semibold" style={{ color }}>{formatMoney(row.profit.grossMargin)}</span>
+                            <span className="block text-xs" style={{ color }}>{fmtPct(row.profit.grossPct)}</span>
+                          </>
+                        ) : (
+                          <span className="text-[var(--color-muted)]">—</span>
+                        )}
                       </td>
                       <td className="px-3 pt-3 pb-1 text-right align-top tabular-nums">
                         {row.suggested == null ? (
@@ -488,30 +475,27 @@ function LegendSwatch({ color, label }: { color: string; label: string }) {
   )
 }
 
-function CompositionBar({ row }: { row: ServiceRow }) {
-  const costs = row.materials + row.profit.commission
+function CompositionBar({ row, profit }: { row: ServiceRow; profit: ServiceProfit }) {
+  const costs = row.materials + profit.commission
   const base = Math.max(row.price, costs)
   if (base <= 0) return null
   const w = (v: number) => `${Math.max(0, (v / base) * 100)}%`
-  const deficit = row.profit.grossMargin < 0 ? -row.profit.grossMargin : 0
+  const deficit = profit.grossMargin < 0 ? -profit.grossMargin : 0
   return (
     <div className="mt-1.5 h-1.5 w-full max-w-xs flex rounded-full overflow-hidden bg-[var(--color-border)]" aria-hidden="true">
       <span style={{ width: w(row.materials), background: 'var(--color-warning)' }} />
-      <span style={{ width: w(row.profit.commission), background: 'var(--color-accent)' }} />
+      <span style={{ width: w(profit.commission), background: 'var(--color-accent)' }} />
       {deficit > 0 ? (
         <span style={{ width: w(deficit), background: 'var(--color-danger)' }} />
       ) : (
-        <span style={{ width: w(row.profit.grossMargin), background: 'var(--color-success)' }} />
+        <span style={{ width: w(profit.grossMargin), background: 'var(--color-success)' }} />
       )}
     </div>
   )
 }
 
 function Breakdown({ row, recipes, productById, onEdit }: { row: ServiceRow; recipes: ServiceRecipe[]; productById: Map<string, Product>; onEdit: () => void }) {
-  const commissionLines =
-    row.assigned.length === 0
-      ? [{ label: `Comisión (% de respaldo, ${fmtNum(row.commissionPct)}%)`, value: -row.profit.commission, sign: '−' }]
-      : row.assigned.map(p => ({ label: `Comisión ${p.name} (${fmtNum(p.commission_rate)}%)`, value: -(row.price * p.commission_rate) / 100, sign: '−' }))
+  const commissionLines = row.assigned.map(p => ({ label: `Comisión ${p.name} (${fmtNum(p.commission_rate)}%)`, value: -(row.price * p.commission_rate) / 100, sign: '−' }))
   const lines = [
     { label: 'Precio', value: row.price, sign: '' },
     { label: 'Insumos', value: -row.materials, sign: '−' },
@@ -530,7 +514,11 @@ function Breakdown({ row, recipes, productById, onEdit }: { row: ServiceRow; rec
           ))}
           <div className="flex justify-between gap-4 border-t border-[var(--color-border)] pt-1">
             <dt className="text-[var(--color-muted)]">= Margen bruto</dt>
-            <dd className="font-semibold" style={{ color: marginColor(row.profit.grossPct) }}>{formatMoney(row.profit.grossMargin)} · {fmtPct(row.profit.grossPct)}</dd>
+            {row.profit ? (
+              <dd className="font-semibold" style={{ color: marginColor(row.profit.grossPct) }}>{formatMoney(row.profit.grossMargin)} · {fmtPct(row.profit.grossPct)}</dd>
+            ) : (
+              <dd className="text-[var(--color-warning)]">sin calcular: nadie del equipo hace este servicio</dd>
+            )}
           </div>
         </dl>
       </div>
