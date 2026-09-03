@@ -487,6 +487,7 @@ export function QuickFunnelPage() {
                 mode="income"
                 lines={state.lines}
                 currency={state.currency}
+                onCurrency={c => setState(s => ({ ...s, currency: c }))}
                 professionals={professionals}
                 assignments={assignments}
                 onUnitPrice={setUnitPrice}

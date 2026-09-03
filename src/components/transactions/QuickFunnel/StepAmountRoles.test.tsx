@@ -37,6 +37,7 @@ function renderStep(professionals: Professional[], onLineProfessionals = vi.fn()
       mode="income"
       lines={[line]}
       currency="ARS"
+      onCurrency={vi.fn()}
       professionals={professionals}
       assignments={assignments}
       onUnitPrice={vi.fn()}

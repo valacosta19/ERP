@@ -5,7 +5,7 @@ import type { CartLine, FunnelType } from './funnelTypes'
 import { lineGross } from './funnelTypes'
 import { StepHeading, SectionLabel } from './funnelAtoms'
 import { useStaffRoles } from '@/hooks/useStaffRoles'
-import { money, funnelInput } from './funnelFormat'
+import { money, funnelInput, CURRENCY_SYMBOL } from './funnelFormat'
 
 export type PriceTier = 'cash' | 'transfer' | 'card'
 
@@ -19,6 +19,7 @@ type IncomeProps = {
   mode: 'income'
   lines: CartLine[]
   currency: Currency
+  onCurrency: (c: Currency) => void
   professionals: Professional[]
   assignments: HairdresserService[]
   onUnitPrice: (key: string, price: number) => void
@@ -51,7 +52,7 @@ export function StepAmount(props: IncomeProps | SimpleProps) {
   return <SimpleAmount {...props} />
 }
 
-function IncomeAmount({ lines, currency, professionals, assignments, onUnitPrice, onLineProfessionals, paymentMethods, selectedMethod, onMethod, priceTier, onPriceTier }: IncomeProps) {
+function IncomeAmount({ lines, currency, onCurrency, professionals, assignments, onUnitPrice, onLineProfessionals, paymentMethods, selectedMethod, onMethod, priceTier, onPriceTier }: IncomeProps) {
   const [editing, setEditing] = useState<string | null>(null)
   const { data: staffRoles = [] } = useStaffRoles()
   const roleById = new Map(staffRoles.map(r => [r.id, r]))
@@ -79,6 +80,8 @@ function IncomeAmount({ lines, currency, professionals, assignments, onUnitPrice
   return (
     <div style={{ maxWidth: '660px' }}>
       <StepHeading kicker="Paso 3 — Monto" title="Precios y profesionales" />
+
+      <CurrencyPicker currency={currency} onCurrency={onCurrency} />
 
       <div style={{ marginBottom: '14px' }}>
         <SectionLabel>Tipo de cobro — ajusta el precio automáticamente</SectionLabel>
@@ -139,14 +142,14 @@ function IncomeAmount({ lines, currency, professionals, assignments, onUnitPrice
                 {editing === line.key ? (
                   <>
                     <div style={{ position: 'relative', width: '140px' }}>
-                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted)' }}>$</span>
+                      <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted)' }}>{CURRENCY_SYMBOL[currency]}</span>
                       <input
                         type="number"
                         autoFocus
                         defaultValue={line.unitPrice}
                         onChange={e => onUnitPrice(line.key, parseFloat(e.target.value) || 0)}
                         onKeyDown={e => { if (e.key === 'Enter') setEditing(null) }}
-                        style={{ ...funnelInput, paddingLeft: '24px', padding: '9px 12px 9px 24px', textAlign: 'right' }}
+                        style={{ ...funnelInput, padding: `9px 12px 9px ${12 + CURRENCY_SYMBOL[currency].length * 9}px`, textAlign: 'right' }}
                       />
                     </div>
                     <button type="button" onClick={() => setEditing(null)} style={iconBtn('var(--color-success)')}>
@@ -269,26 +272,7 @@ function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simp
     <div style={{ maxWidth: '520px' }}>
       <StepHeading kicker="Paso 3 — Monto" title="¿Cuánto?" />
 
-      <div style={{ marginBottom: '14px' }}>
-        <SectionLabel>Moneda</SectionLabel>
-        <div className="flex gap-2" style={{ marginTop: '8px' }}>
-          {(['ARS', 'USD', 'EUR'] as Currency[]).map(c => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => onCurrency(c)}
-              style={{
-                padding: '9px 18px', borderRadius: '999px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600,
-                border: currency === c ? '2px solid var(--color-accent)' : '1.5px solid var(--color-border)',
-                background: currency === c ? 'var(--color-accent-light)' : 'var(--color-surface)',
-                color: 'var(--color-text)',
-              }}
-            >
-              {c}
-            </button>
-          ))}
-        </div>
-      </div>
+      <CurrencyPicker currency={currency} onCurrency={onCurrency} />
 
       <div style={{ position: 'relative', marginBottom: '22px' }}>
         <span style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', fontSize: '1.6rem', fontWeight: 600, color: 'var(--color-muted)' }}>
@@ -357,6 +341,31 @@ function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simp
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function CurrencyPicker({ currency, onCurrency }: { currency: Currency; onCurrency: (c: Currency) => void }) {
+  return (
+    <div style={{ marginBottom: '14px' }}>
+      <SectionLabel>Moneda</SectionLabel>
+      <div className="flex gap-2" style={{ marginTop: '8px' }}>
+        {(['ARS', 'USD', 'EUR'] as Currency[]).map(c => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => onCurrency(c)}
+            style={{
+              padding: '9px 18px', borderRadius: '999px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 600,
+              border: currency === c ? '2px solid var(--color-accent)' : '1.5px solid var(--color-border)',
+              background: currency === c ? 'var(--color-accent-light)' : 'var(--color-surface)',
+              color: 'var(--color-text)',
+            }}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

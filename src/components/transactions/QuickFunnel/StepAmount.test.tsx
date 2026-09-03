@@ -28,6 +28,7 @@ function renderStep(lineValue: CartLine, onLineProfessionals = vi.fn()) {
       mode="income"
       lines={[lineValue]}
       currency="ARS"
+      onCurrency={vi.fn()}
       professionals={professionals}
       assignments={assignments}
       onUnitPrice={vi.fn()}
