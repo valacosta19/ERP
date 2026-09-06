@@ -125,6 +125,7 @@ export function TransactionsPage() {
   const { data: products = [] } = useProducts()
   const { data: unrefundedAnticipos = [] } = useUnrefundedAnticipos()
   const updateTx = useUpdateTransaction()
+  const savingEditRef = useRef(false)
   const voidTx = useVoidTransaction()
   const { data: lockedPeriods = [] } = useLockedPeriods()
   const { data: paymentBalances = [] } = usePaymentMethodBalances({
@@ -438,6 +439,7 @@ export function TransactionsPage() {
   }
 
   async function handleUpdate() {
+    if (savingEditRef.current) return
     const total = calcTotal(editForm.payments)
     if (!editForm.date || total <= 0) {
       setFormError('Fecha y al menos un pago con monto son obligatorios.')
@@ -453,63 +455,68 @@ export function TransactionsPage() {
     const isEditDevolución = editDesc === 'devolución de anticipo'
     const editSubcat = subcategories.find(c => c.id === editForm.subcategory_id)
     const editSubcatTriggersInventory = !!(editSubcat?.deducts_inventory) || editSubcat?.name.toLowerCase() === 'producto'
-    const { data: { user } } = await supabase.auth.getUser()
+    savingEditRef.current = true
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
 
-    let runFifo = false
-    let inventoryPending = editing!.inventory_pending ?? false
-    if (editSubcatTriggersInventory && editForm.product_id) {
-      const { data: existingMovement, error: movementError } = await supabase
-        .from('inventory_movements')
-        .select('id')
-        .eq('reference_id', editing!.id)
-        .eq('reference_type', 'transaction')
-        .limit(1)
-        .maybeSingle()
-      if (movementError) throw new Error(movementError.message)
-      if (existingMovement) {
-        inventoryPending = false
-      } else if ((products.find(p => p.id === editForm.product_id)?.stock ?? 0) >= 1) {
-        runFifo = true
-        inventoryPending = false
+      let runFifo = false
+      let inventoryPending = editing!.inventory_pending ?? false
+      if (editSubcatTriggersInventory && editForm.product_id) {
+        const { data: existingMovement, error: movementError } = await supabase
+          .from('inventory_movements')
+          .select('id')
+          .eq('reference_id', editing!.id)
+          .eq('reference_type', 'transaction')
+          .limit(1)
+          .maybeSingle()
+        if (movementError) throw new Error(movementError.message)
+        if (existingMovement) {
+          inventoryPending = false
+        } else if ((products.find(p => p.id === editForm.product_id)?.stock ?? 0) >= 1) {
+          runFifo = true
+          inventoryPending = false
+        } else {
+          inventoryPending = true
+        }
       } else {
-        inventoryPending = true
+        inventoryPending = false
       }
-    } else {
-      inventoryPending = false
-    }
 
-    await updateTx.mutateAsync({
-      id: editing!.id,
-      date: editForm.date,
-      transaction_type: editTransactionType,
-      currency: editForm.currency,
-      amount: total,
-      subcategory_id: editForm.subcategory_id || null,
-      catalog_item_id: editForm.catalog_item_id ?? null,
-      description: editForm.description || null,
-      is_seña: isEditAnticipo || isEditDevolución,
-      seña_amount: !isEditAnticipo && !isEditDevolución && isEditServiceCategory && editForm.seña_amount ? parseFloat(editForm.seña_amount) : null,
-      refunds_anticipo_id: isEditDevolución ? editForm.refunds_anticipo_id : null,
-      transfer_direction: editTransactionType === 'transfer' ? editForm.transfer_direction : undefined,
-      payments: editForm.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
-      professionals: editForm.professionals,
-      product_id: editForm.product_id,
-      inventory_pending: inventoryPending,
-    })
-
-    if (runFifo && editForm.product_id) {
-      const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
-        p_product_id: editForm.product_id,
-        p_quantity: 1,
-        p_transaction_id: editing!.id,
-        p_unit_sale_price: total,
-        p_created_by: user!.id,
+      await updateTx.mutateAsync({
+        id: editing!.id,
+        date: editForm.date,
+        transaction_type: editTransactionType,
+        currency: editForm.currency,
+        amount: total,
+        subcategory_id: editForm.subcategory_id || null,
+        catalog_item_id: editForm.catalog_item_id ?? null,
+        description: editForm.description || null,
+        is_seña: isEditAnticipo || isEditDevolución,
+        seña_amount: !isEditAnticipo && !isEditDevolución && isEditServiceCategory && editForm.seña_amount ? parseFloat(editForm.seña_amount) : null,
+        refunds_anticipo_id: isEditDevolución ? editForm.refunds_anticipo_id : null,
+        transfer_direction: editTransactionType === 'transfer' ? editForm.transfer_direction : undefined,
+        payments: editForm.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
+        professionals: editForm.professionals,
+        product_id: editForm.product_id,
+        inventory_pending: inventoryPending,
       })
-      if (fifoError) throw new Error(fifoError.message)
-    }
 
-    qc.invalidateQueries({ queryKey: ['products'] })
-    setModalOpen(false)
+      if (runFifo && editForm.product_id) {
+        const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
+          p_product_id: editForm.product_id,
+          p_quantity: 1,
+          p_transaction_id: editing!.id,
+          p_unit_sale_price: total,
+          p_created_by: user!.id,
+        })
+        if (fifoError) throw new Error(fifoError.message)
+      }
+
+      qc.invalidateQueries({ queryKey: ['products'] })
+      setModalOpen(false)
+    } finally {
+      savingEditRef.current = false
+    }
   }
 
   async function exportCSV() {
