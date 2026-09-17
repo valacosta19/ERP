@@ -662,7 +662,7 @@ export function CuentasPage() {
     <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar title="Cuentas" subtitle="Por pagar y por cobrar" />
 
-      <div className="flex-1 min-h-0 flex flex-col p-6 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col p-6 space-y-4">
         <div className="flex gap-1 border-b border-[var(--color-border)]">
           {TABS.map(t => (
             <button
