@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Plus, X } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
@@ -9,6 +10,12 @@ import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { formatDate } from '@/lib/formatDate'
 import { todayLocal } from '@/lib/dateRange'
 import { formatMoney } from '@/lib/money'
+import {
+  remainingCommissionPaymentAmount,
+  sumCommissionPaymentAllocations,
+  validateCommissionPaymentAllocations,
+  type CommissionPaymentAllocation,
+} from '@/lib/commissionPayments'
 
 interface Props {
   open: boolean
@@ -23,6 +30,16 @@ interface Props {
 
 function fmt(amount: number) {
   return formatMoney(amount)
+}
+
+interface PaymentDraft {
+  key: string
+  payment_method: string
+  amount: number
+}
+
+function newPaymentDraft(paymentMethod = '', amount = 0): PaymentDraft {
+  return { key: crypto.randomUUID(), payment_method: paymentMethod, amount }
 }
 
 export function SettleCommissionModal({
@@ -48,7 +65,8 @@ export function SettleCommissionModal({
 
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null)
   const [clientUuid] = useState(() => crypto.randomUUID())
-  const [paymentMethod, setPaymentMethod] = useState('')
+  const [paymentDrafts, setPaymentDrafts] = useState<PaymentDraft[]>(() => [newPaymentDraft()])
+  const [paymentAmountsEdited, setPaymentAmountsEdited] = useState(false)
   const [paymentDate, setPaymentDate] = useState(() => todayLocal())
   const [installmentAmount, setInstallmentAmount] = useState(() => Math.max(0, grossAmount - alreadySettled).toFixed(2))
   const [subcategoryId, setSubcategoryId] = useState('')
@@ -74,7 +92,6 @@ export function SettleCommissionModal({
     )?.id ?? '',
     [categoriesQuery.data],
   )
-  const effectivePaymentMethod = paymentMethod || activePaymentMethods[0]?.name || ''
   const effectiveSubcategoryId = subcategoryId || defaultCommissionCategoryId
 
   const offset = useMemo(
@@ -86,6 +103,76 @@ export function SettleCommissionModal({
 
   const installment = Number(installmentAmount) || 0
   const net = Math.max(0, installment - offset)
+  const defaultPaymentMethod = activePaymentMethods[0]?.name ?? ''
+  const effectivePaymentDrafts = useMemo(() => {
+    if (net <= 0.001) return []
+    return paymentDrafts.map((payment, index) => ({
+      ...payment,
+      payment_method: payment.payment_method || (index === 0 ? defaultPaymentMethod : ''),
+      amount: paymentDrafts.length === 1 && !paymentAmountsEdited ? net : payment.amount,
+    }))
+  }, [defaultPaymentMethod, net, paymentAmountsEdited, paymentDrafts])
+
+  const payments = useMemo<CommissionPaymentAllocation[]>(
+    () => effectivePaymentDrafts.map(payment => ({
+      payment_method: payment.payment_method,
+      currency: 'ARS',
+      amount: payment.amount,
+    })),
+    [effectivePaymentDrafts],
+  )
+  const paymentsTotal = sumCommissionPaymentAllocations(payments)
+  const paymentRemaining = remainingCommissionPaymentAmount(payments, net)
+
+  function addPaymentMethod() {
+    const usedMethods = new Set(effectivePaymentDrafts.map(payment => payment.payment_method))
+    const nextMethod = activePaymentMethods.find(method => !usedMethods.has(method.name))?.name
+    if (!nextMethod) return
+
+    setPaymentAmountsEdited(true)
+    setPaymentDrafts(() => {
+      if (effectivePaymentDrafts.length === 1) {
+        const secondAmount = Math.round((net / 2) * 100) / 100
+        return [
+          { ...effectivePaymentDrafts[0], amount: Math.round((net - secondAmount) * 100) / 100 },
+          newPaymentDraft(nextMethod, secondAmount),
+        ]
+      }
+
+      const currentTotal = effectivePaymentDrafts.reduce((sum, payment) => sum + payment.amount, 0)
+      return [...effectivePaymentDrafts, newPaymentDraft(nextMethod, Math.max(0, Math.round((net - currentTotal) * 100) / 100))]
+    })
+  }
+
+  function updatePaymentMethod(key: string, paymentMethod: string) {
+    setPaymentDrafts(current => current.map(payment => (
+      payment.key === key ? { ...payment, payment_method: paymentMethod } : payment
+    )))
+  }
+
+  function updatePaymentAmount(key: string, amount: number) {
+    setPaymentAmountsEdited(true)
+    setPaymentDrafts(current => {
+      const roundedAmount = Math.round(Math.max(0, amount) * 100) / 100
+      if (current.length !== 2) {
+        return current.map(payment => payment.key === key ? { ...payment, amount: roundedAmount } : payment)
+      }
+
+      const otherAmount = Math.round(Math.max(0, net - roundedAmount) * 100) / 100
+      return current.map(payment => payment.key === key
+        ? { ...payment, amount: roundedAmount }
+        : { ...payment, amount: otherAmount })
+    })
+  }
+
+  function removePaymentMethod(key: string) {
+    setPaymentDrafts(() => {
+      const remaining = effectivePaymentDrafts.filter(payment => payment.key !== key)
+      if (remaining.length === 1) return [{ ...remaining[0], amount: net }]
+      return remaining
+    })
+    setPaymentAmountsEdited(false)
+  }
 
   function toggle(id: string) {
     setSelectedIds(prev => {
@@ -100,10 +187,11 @@ export function SettleCommissionModal({
     setError(null)
     if (installment <= 0) return setError('Ingresá un importe a liquidar mayor que cero.')
     if (installment > remainingAmount + 0.001) return setError(`El importe no puede superar el saldo pendiente (${fmt(remainingAmount)}).`)
-    if (!effectivePaymentMethod) return setError('Seleccioná un método de pago.')
     if (!paymentDate) return setError('Seleccioná una fecha de pago.')
     if (offset > installment + 0.001) return setError('Los retiros seleccionados superan el importe de esta liquidación. Reducí el importe aplicado desmarcando retiros o aumentá el pago.')
     if (net > 0 && !effectiveSubcategoryId) return setError('Seleccioná una categoría de gasto para el pago neto.')
+    const paymentError = validateCommissionPaymentAllocations(payments, net)
+    if (paymentError) return setError(paymentError)
 
     try {
       await settle.mutateAsync({
@@ -113,7 +201,7 @@ export function SettleCommissionModal({
         period_end: periodEnd,
         installment_amount: installment,
         receivable_ids: selectedIds === null ? pending.map(r => r.id) : Array.from(selectedIds),
-        payment_method: effectivePaymentMethod,
+        payments,
         payment_date: paymentDate,
         subcategory_id: effectiveSubcategoryId || null,
         notes: notes.trim() || null,
@@ -205,20 +293,83 @@ export function SettleCommissionModal({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Select
-            label="Método de pago"
-            options={activePaymentMethods.map(m => ({ value: m.name, label: m.name }))}
-            value={effectivePaymentMethod}
-            onChange={e => setPaymentMethod(e.target.value)}
-            placeholder="Seleccionar..."
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Input
             label="Fecha de pago"
             type="date"
             value={paymentDate}
             onChange={e => setPaymentDate(e.target.value)}
           />
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div>
+              <h4 className="text-sm font-semibold text-[var(--color-text)]">Métodos de pago</h4>
+              <p className="text-xs text-[var(--color-muted)]">Distribuí el neto entre una o más cuentas.</p>
+            </div>
+            <span className={`text-xs font-semibold tabular-nums ${Math.abs(paymentRemaining) < 0.001 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}`}>
+              {paymentRemaining >= 0 ? 'Restante' : 'Exceso'}: {fmt(Math.abs(paymentRemaining))}
+            </span>
+          </div>
+
+          {net <= 0.001 ? (
+            <p className="text-xs text-[var(--color-muted)] py-3">No hay salida de dinero: la liquidación queda cubierta por los retiros aplicados.</p>
+          ) : (
+            <div className="space-y-2">
+              {effectivePaymentDrafts.map((payment, index) => {
+                const usedByOtherRows = new Set(effectivePaymentDrafts
+                  .filter(other => other.key !== payment.key)
+                  .map(other => other.payment_method))
+                return (
+                  <div key={payment.key} className="grid grid-cols-[minmax(0,1fr)_minmax(120px,0.65fr)_auto] gap-2 items-end">
+                    <Select
+                      label={`Método de pago ${index + 1}`}
+                      options={activePaymentMethods.map(method => ({ value: method.name, label: method.name }))}
+                      value={payment.payment_method}
+                      onChange={event => updatePaymentMethod(payment.key, event.target.value)}
+                      placeholder="Seleccionar..."
+                    />
+                    <Input
+                      label={`Importe ${index + 1}`}
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={payment.amount || ''}
+                      onChange={event => updatePaymentAmount(payment.key, Number(event.target.value) || 0)}
+                      prefix="$"
+                    />
+                    {effectivePaymentDrafts.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removePaymentMethod(payment.key)}
+                        className="mb-0.5 flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-danger)] hover:bg-[var(--color-bg)]"
+                        aria-label={`Quitar método de pago ${index + 1}`}
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                    {usedByOtherRows.has(payment.payment_method) && (
+                      <p className="col-span-full text-xs text-[var(--color-danger)]">Este método ya está usado en otra fila.</p>
+                    )}
+                  </div>
+                )
+              })}
+
+              {effectivePaymentDrafts.length < activePaymentMethods.length && (
+                <button
+                  type="button"
+                  onClick={addPaymentMethod}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-accent)] hover:opacity-80"
+                >
+                  <Plus size={14} /> Dividir pago
+                </button>
+              )}
+              <p className="text-xs text-[var(--color-muted)] text-right tabular-nums">
+                Total asignado: {fmt(paymentsTotal)} de {fmt(net)}
+              </p>
+            </div>
+          )}
         </div>
 
         <Select

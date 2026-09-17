@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 import { fetchAllRows } from '@/lib/fetchAllRows'
+import type { CommissionPaymentAllocation } from '@/lib/commissionPayments'
 import type { CommissionPayout, Currency, Receivable } from '@/types'
 
 export function useStaffReceivables() {
@@ -72,7 +73,7 @@ interface SettleCommissionPayoutPayload {
   period_end: string
   installment_amount: number
   receivable_ids: string[]
-  payment_method: string
+  payments: CommissionPaymentAllocation[]
   payment_date: string
   subcategory_id?: string | null
   notes?: string | null
@@ -82,14 +83,18 @@ export function useSettleCommissionPayout() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (payload: SettleCommissionPayoutPayload) => {
-      const { data, error } = await supabase.rpc('record_partial_commission_payout', {
+      const { data, error } = await supabase.rpc('record_partial_commission_payout_multi', {
         p_client_uuid: payload.client_uuid,
         p_hairdresser_id: payload.hairdresser_id,
         p_period_start: payload.period_start,
         p_period_end: payload.period_end,
         p_installment_amount: payload.installment_amount,
         p_receivable_ids: payload.receivable_ids,
-        p_payment_method: payload.payment_method,
+        p_payments: payload.payments.map(payment => ({
+          payment_method: payment.payment_method,
+          currency: payment.currency,
+          amount: payment.amount,
+        })),
         p_payment_date: payload.payment_date,
         p_subcategory_id: payload.subcategory_id ?? null,
         p_notes: payload.notes ?? null,
