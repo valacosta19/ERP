@@ -41,6 +41,7 @@ import { StepAmount } from '@/components/transactions/QuickFunnel/StepAmount'
 import { StepAdjust } from '@/components/transactions/QuickFunnel/StepAdjust'
 import { StepPayment } from '@/components/transactions/QuickFunnel/StepPayment'
 import { TicketPanel } from '@/components/transactions/QuickFunnel/TicketPanel'
+import { findCashPaymentMethod } from '@/lib/paymentMethod'
 
 const STEP_LABELS: Record<FunnelStep, string> = {
   type: 'Tipo', detail: 'Detalle', amount: 'Monto', adjust: 'Ajustes', payment: 'Pago', done: 'Cierre',
@@ -89,9 +90,9 @@ export function QuickFunnelPage() {
   const [showStuckPanel, setShowStuckPanel] = useState(false)
 
   const paymentMethods = useMemo(() => paymentMethodsData.filter(m => m.active).map(m => m.name), [paymentMethodsData])
-  const cashMethod = useMemo(() => paymentMethods.find(m => m.toLowerCase().includes('efectivo')) ?? null, [paymentMethods])
+  const cashMethod = useMemo(() => findCashPaymentMethod(paymentMethods), [paymentMethods])
   const productLabel = useCallback((p: Product) => (p.unit ? `${p.name} ${p.unit}` : p.name), [])
-  const effectiveIncomeMethod = state.incomeMethod || cashMethod || paymentMethods[0] || ''
+  const effectiveIncomeMethod = state.incomeMethod || cashMethod || ''
 
   const steps = stepsFor(state)
   const stepperItems = steps.map(s => ({ key: s, label: STEP_LABELS[s] }))
@@ -109,7 +110,17 @@ export function QuickFunnelPage() {
   }
 
   function pickType(t: FunnelType) {
-    setState(s => ({ ...makeEmptyFunnelState(), type: t, date: s.date, step: 'detail', simpleProductId: null, simpleProductQty: 1 }))
+    const originMethod = cashMethod ?? paymentMethods[0] ?? ''
+    setState(s => ({
+      ...makeEmptyFunnelState(),
+      type: t,
+      date: s.date,
+      step: 'detail',
+      simpleProductId: null,
+      simpleProductQty: 1,
+      simpleMethod: originMethod,
+      transferDestinationMethod: paymentMethods.find(method => method !== originMethod) ?? '',
+    }))
     setError('')
   }
 
@@ -137,7 +148,7 @@ export function QuickFunnelPage() {
 
   function leaveSimpleIncome(s: FunnelState): FunnelState {
     if (s.incomeMode !== 'simple') return s
-    return { ...s, incomeMode: 'cart', subcategoryId: '', concept: '', manualAmount: 0, simpleMethod: 'Efectivo' }
+    return { ...s, incomeMode: 'cart', subcategoryId: '', concept: '', manualAmount: 0, simpleMethod: cashMethod ?? '' }
   }
 
   function pickOtherIncome(subcat: { id: string; name: string }) {
@@ -196,6 +207,12 @@ export function QuickFunnelPage() {
       case 'amount':
         if (isCartIncome(state)) return state.lines.every(l => l.unitPrice > 0)
         if (state.type === 'income') return state.manualAmount > 0 && !!state.simpleMethod
+        if (state.type === 'transfer') {
+          return state.manualAmount > 0
+            && !!state.simpleMethod
+            && !!state.transferDestinationMethod
+            && state.simpleMethod !== state.transferDestinationMethod
+        }
         return state.manualAmount > 0 && (selectedSimpleSubcat?.deducts_inventory === true || !!state.simpleMethod)
       case 'adjust': return true
       case 'payment': return totalToCharge <= 0 || Math.abs(totalToCharge - paymentsSum) < 1
@@ -213,11 +230,12 @@ export function QuickFunnelPage() {
     setError('')
     const next = steps[idx + 1]
     if (next === 'done') { void submit(); return }
-    // entering payment: prefill a single full payment with cash/first method
+    // Entering payment: prefill only a verified cash account. Never charge an
+    // arbitrary first account when Efectivo is missing or renamed.
     if (next === 'payment') {
       setState(s => {
         if (s.payments.length > 0) return { ...s, step: next }
-        const method = s.type === 'income' ? (s.incomeMethod || cashMethod || paymentMethods[0]) : (cashMethod ?? paymentMethods[0])
+        const method = s.type === 'income' ? (s.incomeMethod || cashMethod) : cashMethod
         const total = chargeTotal(s)
         return { ...s, step: next, payments: method && total > 0 ? [{ key: newPaymentKey(), payment_method: method, amount: total, received: null }] : [] }
       })
@@ -241,7 +259,11 @@ export function QuickFunnelPage() {
       if (selectedSimpleSubcat?.deducts_inventory && !state.simpleProductId) return 'Esta categoría descuenta inventario — seleccioná el producto.'
       return 'Elegí una categoría.'
     }
-    if (step === 'amount') return isCartIncome(state) ? 'Cada ítem necesita un precio mayor a cero.' : 'Ingresá un monto mayor a cero.'
+    if (step === 'amount') {
+      if (isCartIncome(state)) return 'Cada ítem necesita un precio mayor a cero.'
+      if (state.type === 'transfer') return 'Ingresá un monto y elegí cuentas de origen y destino distintas.'
+      return 'Ingresá un monto mayor a cero.'
+    }
     if (step === 'payment') return 'El pago debe cubrir el total a cobrar.'
     return 'Completá este paso para continuar.'
   }
@@ -296,12 +318,13 @@ export function QuickFunnelPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const activeSubcats = state.type && state.type !== 'income'
+  const activeSubcats = useMemo(() => state.type && state.type !== 'income'
     ? categories.filter(c => {
         const parent = categories.find(p => p.id === c.parent_id)
-        return parent?.name === FUNNEL_TYPE_META[state.type as FunnelType].parentName
+        if (parent?.name !== FUNNEL_TYPE_META[state.type as FunnelType].parentName) return false
+        return state.type !== 'transfer' || c.name === 'Transferencia interna'
       })
-    : []
+    : [], [categories, state.type])
 
   const selectedSimpleSubcat = useMemo(
     () => activeSubcats.find(c => c.id === state.subcategoryId) ?? null,
@@ -509,9 +532,9 @@ export function QuickFunnelPage() {
                 onAmount={v => setState(s => ({ ...s, manualAmount: v }))}
                 simpleMethod={state.simpleMethod}
                 onMethod={m => setState(s => ({ ...s, simpleMethod: m }))}
+                transferDestinationMethod={state.transferDestinationMethod}
+                onTransferDestinationMethod={m => setState(s => ({ ...s, transferDestinationMethod: m }))}
                 paymentMethods={paymentMethods}
-                transferDirection={state.transferDirection}
-                onDirection={d => setState(s => ({ ...s, transferDirection: d }))}
                 methodLabel="Entra en"
               />
             )}
@@ -525,9 +548,9 @@ export function QuickFunnelPage() {
                 onAmount={v => setState(s => ({ ...s, manualAmount: v }))}
                 simpleMethod={state.simpleMethod}
                 onMethod={m => setState(s => ({ ...s, simpleMethod: m }))}
+                transferDestinationMethod={state.transferDestinationMethod}
+                onTransferDestinationMethod={m => setState(s => ({ ...s, transferDestinationMethod: m }))}
                 paymentMethods={paymentMethods}
-                transferDirection={state.transferDirection}
-                onDirection={d => setState(s => ({ ...s, transferDirection: d }))}
                 deductsInventory={selectedSimpleSubcat?.deducts_inventory === true}
               />
             )}

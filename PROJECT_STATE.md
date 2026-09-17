@@ -13,6 +13,10 @@ ERP para peluquería. Reemplaza Excel. Núcleo: costeo **FIFO** estricto — cad
 ## Fase actual
 **Phase 30** — 🚧 Recetas, insumos y rentabilidad: página `/recetas` con edición en línea ✅ · tab Rentabilidad ✅ · costo de material con último lote (mig. `091`) y corrección de fotos en 0 (mig. `092`) aplicadas ✅ — pendiente validar en producción. Fase 29 sigue pendiente de validar.
 
+**Phase 31** — 🚧 Integridad contable y análisis de gastos: pagos direccionales y atómicos, liquidaciones de comisiones divididas, transferencias internas de doble partida y peso de gastos sobre ingresos con rangos editables (`expense_benchmarks`, mig. `096`). **Falta aplicar las migraciones `096`–`099` en Supabase**. Pendiente validar en el browser.
+
+**Phase 29** — 🚧 Auditoría de producción: A contable ✅ · B integridad DB ✅ (mig. `089`/`090` aplicadas) · C carga/UX ✅ (pendiente validar)
+
 > Actualizar esta sección al arrancar cada fase nueva.
 
 ---

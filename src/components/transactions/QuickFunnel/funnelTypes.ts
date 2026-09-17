@@ -39,10 +39,10 @@ export type FunnelState = {
   concept: string
   manualAmount: number
   simpleMethod: string
+  transferDestinationMethod: string
   incomeMethod: string
   incomePriceTier: 'cash' | 'transfer' | 'card'
   subcategoryId: string
-  transferDirection: 'entrada' | 'salida'
   discountMode: DiscountMode
   discountValue: number
   tipEnabled: boolean
@@ -57,7 +57,7 @@ export const FUNNEL_TYPE_META: Record<FunnelType, { label: string; parentName: s
   income: { label: 'Ingreso', parentName: 'Ingresos' },
   expense: { label: 'Gasto', parentName: 'Gastos' },
   cost: { label: 'Costo', parentName: 'Costos' },
-  transfer: { label: 'Movimiento', parentName: 'Movimientos' },
+  transfer: { label: 'Transferencia interna', parentName: 'Movimientos' },
 }
 
 export function makeEmptyFunnelState(): FunnelState {
@@ -71,10 +71,10 @@ export function makeEmptyFunnelState(): FunnelState {
     concept: '',
     manualAmount: 0,
     simpleMethod: 'Efectivo',
+    transferDestinationMethod: '',
     incomeMethod: '',
     incomePriceTier: 'cash',
     subcategoryId: '',
-    transferDirection: 'entrada',
     discountMode: 'none',
     discountValue: 0,
     tipEnabled: false,

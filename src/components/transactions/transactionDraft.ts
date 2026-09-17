@@ -15,7 +15,6 @@ export type TransactionDraft = {
   description: string
   seña_amount: string
   refunds_anticipo_id: string | null
-  transfer_direction: 'entrada' | 'salida'
   payments: PaymentRow[]
   professionals: { id: string; commission_rate: number }[]
   product_id: string | null
@@ -32,7 +31,6 @@ export const EMPTY_DRAFT: TransactionDraft = {
   description: '',
   seña_amount: '',
   refunds_anticipo_id: null,
-  transfer_direction: 'entrada',
   payments: [makeEmptyPayment()],
   professionals: [],
   product_id: null,

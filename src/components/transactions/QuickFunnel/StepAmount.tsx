@@ -40,9 +40,9 @@ type SimpleProps = {
   onAmount: (v: number) => void
   simpleMethod: string
   onMethod: (m: string) => void
+  transferDestinationMethod: string
+  onTransferDestinationMethod: (m: string) => void
   paymentMethods: string[]
-  transferDirection: 'entrada' | 'salida'
-  onDirection: (d: 'entrada' | 'salida') => void
   deductsInventory?: boolean
   methodLabel?: string
 }
@@ -267,7 +267,7 @@ function IncomeAmount({ lines, currency, onCurrency, professionals, assignments,
   )
 }
 
-function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simpleMethod, onMethod, paymentMethods, transferDirection, onDirection, deductsInventory, methodLabel }: SimpleProps) {
+function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simpleMethod, onMethod, transferDestinationMethod, onTransferDestinationMethod, paymentMethods, deductsInventory, methodLabel }: SimpleProps) {
   return (
     <div style={{ maxWidth: '520px' }}>
       <StepHeading kicker="Paso 3 — Monto" title="¿Cuánto?" />
@@ -292,36 +292,33 @@ function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simp
         />
       </div>
 
-      {type === 'transfer' && (
-        <div style={{ marginBottom: '20px' }}>
-          <SectionLabel>Dirección</SectionLabel>
-          <div className="flex gap-2" style={{ marginTop: '8px' }}>
-            {(['entrada', 'salida'] as const).map(d => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => onDirection(d)}
-                style={{
-                  flex: 1, padding: '12px', borderRadius: '12px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600,
-                  border: transferDirection === d ? '2px solid var(--color-accent)' : '1.5px solid var(--color-border)',
-                  background: transferDirection === d ? 'var(--color-accent-light)' : 'var(--color-surface)',
-                  color: 'var(--color-text)', textTransform: 'capitalize',
-                }}
-              >
-                {d}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {deductsInventory ? (
         <div style={{ padding: '14px 16px', borderRadius: '12px', border: '1.5px solid var(--color-border)', background: 'var(--color-bg)', fontSize: '0.875rem', color: 'var(--color-muted)', fontWeight: 500 }}>
           El costo se calcula del inventario — no hay salida de caja.
         </div>
+      ) : type === 'transfer' ? (
+        <div className="space-y-5">
+          <PaymentMethodButtons
+            label="Cuenta de origen"
+            value={simpleMethod}
+            paymentMethods={paymentMethods}
+            disabledMethod={transferDestinationMethod}
+            onChange={onMethod}
+          />
+          <PaymentMethodButtons
+            label="Cuenta de destino"
+            value={transferDestinationMethod}
+            paymentMethods={paymentMethods}
+            disabledMethod={simpleMethod}
+            onChange={onTransferDestinationMethod}
+          />
+          <p style={{ fontSize: '0.8125rem', color: 'var(--color-muted)' }}>
+            Ambas cuentas usan la moneda seleccionada. Las operaciones entre monedas se registran por separado.
+          </p>
+        </div>
       ) : (
         <div>
-          <SectionLabel>{methodLabel ?? (type === 'transfer' ? 'Cuenta / caja' : 'Sale de')}</SectionLabel>
+          <SectionLabel>{methodLabel ?? 'Sale de'}</SectionLabel>
           <div className="flex flex-wrap gap-2" style={{ marginTop: '8px' }}>
             {paymentMethods.map(m => (
               <button
@@ -365,6 +362,41 @@ function CurrencyPicker({ currency, onCurrency }: { currency: Currency; onCurren
             {c}
           </button>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function PaymentMethodButtons({ label, value, paymentMethods, disabledMethod, onChange }: {
+  label: string
+  value: string
+  paymentMethods: string[]
+  disabledMethod: string
+  onChange: (method: string) => void
+}) {
+  return (
+    <div>
+      <SectionLabel>{label}</SectionLabel>
+      <div className="flex flex-wrap gap-2" style={{ marginTop: '8px' }}>
+        {paymentMethods.map(method => {
+          const disabled = method === disabledMethod
+          return (
+            <button
+              key={method}
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange(method)}
+              style={{
+                padding: '10px 16px', borderRadius: '999px', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: '0.875rem', fontWeight: 600,
+                border: value === method ? '2px solid var(--color-accent)' : '1.5px solid var(--color-border)',
+                background: value === method ? 'var(--color-accent-light)' : 'var(--color-surface)',
+                color: 'var(--color-text)', opacity: disabled ? 0.45 : 1,
+              }}
+            >
+              {method}
+            </button>
+          )
+        })}
       </div>
     </div>
   )

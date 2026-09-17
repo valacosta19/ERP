@@ -77,6 +77,11 @@ export function TicketPanel({ state, onQty, onRemove, onDate }: Props) {
         ) : (
           <div className="space-y-1.5">
             <div style={{ fontSize: '0.8125rem', color: 'var(--color-muted)' }}>{state.concept || 'Sin concepto'}</div>
+            {state.type === 'transfer' && (
+              <div style={{ fontSize: '0.8125rem', color: 'var(--color-text)', fontWeight: 600 }}>
+                {state.simpleMethod || 'Origen'} → {state.transferDestinationMethod || 'Destino'}
+              </div>
+            )}
           </div>
         )}
       </div>

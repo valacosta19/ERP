@@ -123,7 +123,8 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
     return { ...base, group_label: groupLabel(state.lines.map(l => l.name)), units }
   }
 
-  // expense / cost / transfer / otros ingresos — single simple unit, one payment method.
+  // Simple operations use one transaction. Internal transfers use two explicit
+  // ledger legs so the account-level net movement is zero.
   const subcat = ctx.categories.find(c => c.id === state.subcategoryId)
   const txType: TicketUnit['transaction_type'] =
     state.type === 'transfer' ? 'transfer' : state.type === 'income' ? 'income' : 'expense'
@@ -146,8 +147,16 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
         subcategory_name: subcat?.name ?? null,
         professionals: [],
         sena_amount: null,
-        transfer_direction: state.type === 'transfer' ? state.transferDirection : undefined,
-        payments: inventoryFunded ? [] : amount > 0 ? [{ payment_method: state.simpleMethod, instrument: null, amount }] : [],
+        payments: state.type === 'transfer' && amount > 0
+          ? [
+              { payment_method: state.simpleMethod, instrument: null, amount, type: 'salida' },
+              { payment_method: state.transferDestinationMethod, instrument: null, amount, type: 'entrada' },
+            ]
+          : inventoryFunded
+            ? []
+            : amount > 0
+              ? [{ payment_method: state.simpleMethod, instrument: null, amount }]
+              : [],
       },
     ],
   }

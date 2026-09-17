@@ -85,6 +85,28 @@ describe('submitTicket grouping', () => {
     await submitTicket(ticket([unit('staff_advance', { hairdresser_id: 'h', value_amount: 100 })], null))
     expect(createGroup).not.toHaveBeenCalled()
   })
+
+  it('forwards typed transfer legs without changing legacy non-transfer payments', async () => {
+    const { submitTicket } = useFunnelSubmit()
+    const transferPayments = [
+      { payment_method: 'Efectivo', instrument: null, amount: 1000, type: 'salida' as const },
+      { payment_method: 'Mercado Pago', instrument: null, amount: 1000, type: 'entrada' as const },
+    ]
+
+    await submitTicket(ticket([
+      unit('simple', { transaction_type: 'transfer', payments: transferPayments }),
+    ], null))
+    expect(rpc).toHaveBeenLastCalledWith('create_funnel_unit', expect.objectContaining({
+      p_transaction_type: 'transfer',
+      p_payments: transferPayments,
+    }))
+
+    await submitTicket(ticket([unit('simple')], null))
+    expect(rpc).toHaveBeenLastCalledWith('create_funnel_unit', expect.objectContaining({
+      p_transaction_type: 'income',
+      p_payments: [{ payment_method: 'Santander', instrument: null, amount: 1000 }],
+    }))
+  })
 })
 
 describe('submitTicket partial failure', () => {
@@ -107,5 +129,13 @@ describe('submitTicket partial failure', () => {
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'failed to fetch' } })
     const { submitTicket } = useFunnelSubmit()
     await expect(submitTicket(ticket([unit('simple')], null))).rejects.toThrow(/^failed to fetch$/)
+  })
+
+  it('rejects a successful RPC response without a transaction id', async () => {
+    rpc.mockResolvedValueOnce({ data: { transaction_id: null }, error: null })
+    const { submitTicket } = useFunnelSubmit()
+    await expect(submitTicket(ticket([unit('service')], null))).rejects.toThrow(
+      'La base no confirmó el identificador de la transacción.',
+    )
   })
 })

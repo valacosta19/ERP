@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 import { createTransactionGroup } from '@/hooks/useTransactionGroups'
-import type { Currency } from '@/types'
+import type { Currency, PaymentDirection } from '@/types'
 import { invalidateAccounting } from '@/lib/invalidateAccounting'
 
 export type TicketUnit = {
@@ -18,7 +18,7 @@ export type TicketUnit = {
   professionals: { id: string; commission_rate: number }[]
   sena_amount: number | null
   transfer_direction?: 'entrada' | 'salida'
-  payments: { payment_method: string; instrument: null; amount: number }[]
+  payments: { payment_method: string; instrument: null; amount: number; type?: PaymentDirection }[]
   hairdresser_id?: string | null
   staff_quantity?: number | null
   value_amount?: number | null
@@ -114,7 +114,11 @@ export function useFunnelSubmit() {
         p_created_by: user?.id ?? null,
       })
       if (error) throw unitError(error.message, index, total)
-      transactionIds.push((data as { transaction_id: string }).transaction_id)
+      const transactionId = (data as { transaction_id?: string | null } | null)?.transaction_id
+      if (!transactionId) {
+        throw unitError('La base no confirmó el identificador de la transacción.', index, total)
+      }
+      transactionIds.push(transactionId)
     }
 
     await ensureTicketGroup(payload, transactionIds)

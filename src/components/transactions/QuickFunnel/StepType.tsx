@@ -5,7 +5,7 @@ const TYPES: { key: FunnelType; label: string; desc: string; icon: typeof ArrowD
   { key: 'income', label: 'Ingreso', desc: 'Servicios y productos', icon: ArrowDownLeft, accent: '#10B981' },
   { key: 'expense', label: 'Gasto', desc: 'Salida operativa', icon: ArrowUpRight, accent: '#EF4444' },
   { key: 'cost', label: 'Costo', desc: 'Insumos directos', icon: Factory, accent: '#F59E0B' },
-  { key: 'transfer', label: 'Movimiento', desc: 'Entre cajas', icon: ArrowLeftRight, accent: '#6366F1' },
+  { key: 'transfer', label: 'Transferencia interna', desc: 'Entre cuentas de la misma moneda', icon: ArrowLeftRight, accent: '#6366F1' },
 ]
 
 export function StepType({ value, onPick }: { value: FunnelType | null; onPick: (t: FunnelType) => void }) {

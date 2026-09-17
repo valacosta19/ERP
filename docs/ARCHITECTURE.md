@@ -252,6 +252,10 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 
 **Archivos:**
 - `src/pages/reports/ReportsPage.tsx` (1149 líneas — **archivo grande; leer completo antes de tocar**)
+- `src/pages/reports/ExpenseShareSection.tsx` — sección "Peso sobre los ingresos" dentro del tab Utilidad (pie de asignación + rubros + detalle)
+- `src/lib/expenseShare.ts` + `src/lib/expenseShare.test.ts` — lógica pura del peso de gastos (ventana de meses, tasa vigente, baseline, delta, rubros y asignación del pie)
+- `src/hooks/useExpenseBenchmarks.ts` — rangos recomendados por rubro (lectura y edición)
+- `src/hooks/useServiceDeductions.ts` — comisiones e insumos de servicio por mes para un rango; usado por el tab Utilidad y por la sección
 - `src/hooks/useReports.ts` (368 líneas) — `useFinancialReport`, `useInventoryValuation`, `useProfitReport`
 - `src/hooks/useCommissionsReport.ts`
 
@@ -268,6 +272,17 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - **Costo de materiales (`tab Costos`)** viene de `transaction_recipe_costs` (snapshot al momento de la transacción), no de `service_recipes` actuales. Cambiar las recetas no recalcula historial.
 - **Conversión multimoneda**: USD→ARS vía dólar blue. EUR→ARS no está implementada aún. No asumir que todas las transacciones son ARS.
 - **Transacciones anuladas excluidas.** Todas las queries de reportes filtran `.is('voided_at', null)`.
+- **El peso de los gastos es informativo.** `ExpenseShareSection` no entra al P&L: los gastos fijos son montos configurados y los gastos reales son transacciones, sin vínculo en el esquema. Restar los fijos a la Utilidad Neta duplicaría cualquier fijo que además se haya cargado como transacción.
+- **El porcentaje se compara contra la propia historia del gasto.** El % del último mes con ingresos contra el promedio de los meses anteriores de la ventana. Los meses con ingresos 0 se saltean del promedio, y un mes parcial prorratea el gasto fijo por días cubiertos: un fijo entero contra ingresos parciales infla el porcentaje.
+- **El pie usa los gastos fijos con nombre propio, no las subcategorías de las transacciones.** Las subcategorías son demasiado gruesas para reconocer un gasto (Alquiler, Agua, Electricidad viven en `fixed_costs`). Como son montos configurados y no transacciones, el sector restante se rotula "Resto de los ingresos" y **no** es la utilidad: los costos variables y los gastos reales quedan fuera de ese cálculo.
+- **Con más de cuatro conceptos el pie colapsa el resto en "Otros gastos fijos".** El detalle con los 19 nombres vive en la tabla de abajo; un pie no puede rotular veinte sectores. Si hace falta ver todos los nombres a la vez, la forma correcta es una barra ordenada, no más sectores.
+- **El reporte de utilidad no depende de la feature de rubros.** `useProfitReport` no lee `benchmark_key`: el mapeo gasto→rubro se consulta aparte (`useCategoryBenchmarkKeys`, `retry: false`). Un P&L nunca debe caerse por una columna de una feature de referencia.
+- **Un reporte que falla no muestra ceros.** El tab Utilidad y la sección renderizan el error de la query en vez de `$0`: en un reporte contable un cero significa "sin movimientos", y usarlo para "falló la consulta" esconde el fallo.
+- **El veredicto de un rubro se calcula sobre los gastos reales, nunca sobre los fijos configurados.** Los fijos son el presupuesto y se muestran al lado como referencia. Sumar ambos duplica.
+- **El rubro de un gasto se asigna a mano.** `fixed_costs.benchmark_key` y `transaction_categories.benchmark_key` (migración `091`) referencian `expense_benchmarks`; los nombres son libres y no se infiere el rubro por texto. Sin rubro asignado no hay recomendación.
+- **Los rangos recomendados son referencias generales del rubro, no datos autoritativos locales.** Se siembran con fuentes citadas en la migración `091` y son editables desde Ajustes → Costos. La UI nunca muestra un número sin origen.
+- **El pie no pasa de 4 sectores con color de identidad.** La paleta (`#2a78d6`, `#eb6834`, `#4a3aa7`, `#1baf7a`) está validada para sectores adyacentes en superficie clara; el resto de los gastos colapsa en "Otros" con el neutro de la app. Agregar un quinto tono exige revalidar.
+- **`operating_by_category` sale del mismo loop que `operating_expenses`.** `useProfitReport` desglosa los gastos operativos por subcategoría y mes sin queries extra, respetando los mismos filtros (`is_seña`, `voided_at`, EUR, categoría de compra de inventario).
 
 ---
 
@@ -359,10 +374,11 @@ Mapa por módulo de dominio. Para cada área documenta: qué hace, archivos invo
 - `src/hooks/useLockedPeriods.ts`
 - `src/pages/settings/ProfessionalServicesSection.tsx` + `src/hooks/useHairdresserServices.ts` — matriz "Servicios por profesional" (Operaciones): una fila por familia de servicio (el % aplica a todas sus tallas), columnas por profesional activa, celda = % de comisión editable en línea (vacío = no lo realiza). Sin totales: las asignadas son alternativas
 
-**Datos:** `transaction_categories`, `payment_methods`, `catalog_items`, `hairdressers`, `hairdresser_services`, `fixed_costs`, `fixed_cost_rates`, `service_recipes`, `locked_periods`, `user_action_logs`
+**Datos:** `transaction_categories`, `payment_methods`, `catalog_items`, `hairdressers`, `hairdresser_services`, `fixed_costs`, `fixed_cost_rates`, `expense_benchmarks`, `service_recipes`, `locked_periods`, `user_action_logs`
 
 **Invariantes (NO romper):**
 - **Costos fijos son append-only en `fixed_cost_rates`.** Editar un costo fijo inserta una nueva fila con `effective_from = today`, no sobreescribe el histórico. `useFixedCosts` debe respetar este patrón.
+- **Los rubros de referencia se editan, no se crean ni se borran.** `expense_benchmarks` solo tiene policy de SELECT y UPDATE: el set de rubros lo fija la migración y desde la UI se ajusta el rango. La sección "Rubros de referencia" del tab Costos también asigna el rubro de cada gasto fijo y de cada subcategoría de gasto.
 - **Categorías son dos niveles.** Top-level (parent_id null) fijo por tipo de transacción. Subcategorías son user-defined. No permitir más de dos niveles.
 - **No borrar subcategorías con transacciones vinculadas.** La UI valida esto antes de eliminar.
 - **`deducts_inventory` en `transaction_categories`** es la flag que dispara el FIFO en `TransactionsPage`. Solo subcategorías de "Consumos y cortesías" deben tenerla en `true`.
