@@ -29,7 +29,7 @@ export function useCreateFixedCost() {
 export function useUpdateFixedCost() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, ...patch }: { id: string; name?: string; monthly_amount?: number; active?: boolean }) => {
+    mutationFn: async ({ id, ...patch }: { id: string; name?: string; monthly_amount?: number; active?: boolean; benchmark_key?: string | null }) => {
       const { data, error } = await supabase.from('fixed_costs').update(patch).eq('id', id).select().single()
       if (error) throw new Error(error.message)
       return data as FixedCost

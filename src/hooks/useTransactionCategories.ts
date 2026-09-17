@@ -36,10 +36,11 @@ export function useCreateTransactionCategory() {
 export function useUpdateTransactionCategory() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, name, deducts_inventory }: { id: string; name?: string; deducts_inventory?: boolean }) => {
+    mutationFn: async ({ id, name, deducts_inventory, benchmark_key }: { id: string; name?: string; deducts_inventory?: boolean; benchmark_key?: string | null }) => {
       const patch: Record<string, unknown> = {}
       if (name !== undefined) patch.name = name
       if (deducts_inventory !== undefined) patch.deducts_inventory = deducts_inventory
+      if (benchmark_key !== undefined) patch.benchmark_key = benchmark_key
       const { data, error } = await supabase
         .from('transaction_categories')
         .update(patch)

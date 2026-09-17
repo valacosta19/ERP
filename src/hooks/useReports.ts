@@ -29,9 +29,17 @@ export type ProfitMonthRow = {
   total_profit: number
 }
 
+export type ExpenseCategoryBreakdown = {
+  subcategory_id: string | null
+  category_name: string
+  byMonth: Record<string, number>
+  total: number
+}
+
 export type ProfitReport = {
   rows: ProfitMonthRow[]
   totals: Omit<ProfitMonthRow, 'month' | 'month_label'>
+  operating_by_category: ExpenseCategoryBreakdown[]
 }
 
 export type FinancialCategoryRow = {
@@ -319,6 +327,7 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
       const saleItemTxIds = new Set(saleItems.map(si => si.transaction_id))
 
       const byMonth = new Map<string, Omit<ProfitMonthRow, 'month' | 'month_label'>>()
+      const operatingByCategory = new Map<string, ExpenseCategoryBreakdown>()
 
       function ensure(month: string) {
         if (!byMonth.has(month)) {
@@ -365,6 +374,18 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
             byMonth.get(month)!.direct_costs += amountARS
           } else {
             byMonth.get(month)!.operating_expenses += amountARS
+            const key = tx.subcategory_id ?? 'sin-categoria'
+            if (!operatingByCategory.has(key)) {
+              operatingByCategory.set(key, {
+                subcategory_id: tx.subcategory_id,
+                category_name: tx.transaction_categories.name || 'Sin categoría',
+                byMonth: {},
+                total: 0,
+              })
+            }
+            const bucket = operatingByCategory.get(key)!
+            bucket.byMonth[month] = (bucket.byMonth[month] ?? 0) + amountARS
+            bucket.total += amountARS
           }
         }
       }
@@ -392,7 +413,9 @@ export function useProfitReport(filters: { from?: string; to?: string; usdRate?:
         { product_revenue: 0, product_cogs: 0, product_profit: 0, service_income: 0, direct_costs: 0, operating_expenses: 0, total_profit: 0 }
       )
 
-      return { rows, totals }
+      const operating_by_category = Array.from(operatingByCategory.values()).sort((a, b) => b.total - a.total)
+
+      return { rows, totals, operating_by_category }
     },
   })
 }

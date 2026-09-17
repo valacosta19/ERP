@@ -33,6 +33,7 @@ export interface Database {
           parent_id: string | null
           transaction_type: 'income' | 'expense' | 'transfer' | null
           deducts_inventory: boolean
+          benchmark_key: string | null
           created_at: string
         }
         Insert: {
@@ -41,6 +42,7 @@ export interface Database {
           parent_id?: string | null
           transaction_type?: 'income' | 'expense' | 'transfer' | null
           deducts_inventory?: boolean
+          benchmark_key?: string | null
           created_at?: string
         }
         Update: {
@@ -49,6 +51,7 @@ export interface Database {
           parent_id?: string | null
           transaction_type?: 'income' | 'expense' | 'transfer' | null
           deducts_inventory?: boolean
+          benchmark_key?: string | null
         }
         Relationships: []
       }
@@ -462,6 +465,7 @@ export interface Database {
           created_by: string | null
           created_at: string
           payment_transaction_id: string | null
+          settlement_mode: 'immediate' | 'deferred' | 'none' | null
         }
         Insert: {
           id?: string
@@ -473,6 +477,7 @@ export interface Database {
           created_by?: string | null
           created_at?: string
           payment_transaction_id?: string | null
+          settlement_mode?: 'immediate' | 'deferred' | 'none' | null
         }
         Update: {
           id?: string
@@ -482,6 +487,7 @@ export interface Database {
           shipping_cost?: number
           discount_amount?: number
           payment_transaction_id?: string | null
+          settlement_mode?: 'immediate' | 'deferred' | 'none' | null
         }
         Relationships: []
       }
@@ -713,6 +719,7 @@ export interface Database {
           name: string
           monthly_amount: number
           active: boolean
+          benchmark_key: string | null
           created_at: string
         }
         Insert: {
@@ -720,6 +727,7 @@ export interface Database {
           name: string
           monthly_amount: number
           active?: boolean
+          benchmark_key?: string | null
           created_at?: string
         }
         Update: {
@@ -727,7 +735,35 @@ export interface Database {
           name?: string
           monthly_amount?: number
           active?: boolean
+          benchmark_key?: string | null
           created_at?: string
+        }
+        Relationships: []
+      }
+      expense_benchmarks: {
+        Row: {
+          key: string
+          label: string
+          description: string | null
+          min_pct: number
+          max_pct: number
+          sort_order: number
+        }
+        Insert: {
+          key: string
+          label: string
+          description?: string | null
+          min_pct: number
+          max_pct: number
+          sort_order?: number
+        }
+        Update: {
+          key?: string
+          label?: string
+          description?: string | null
+          min_pct?: number
+          max_pct?: number
+          sort_order?: number
         }
         Relationships: []
       }
@@ -1071,6 +1107,55 @@ export interface Database {
         }
         Returns: Json
       }
+      update_transaction_atomic: {
+        Args: {
+          p_transaction_id: string
+          p_transaction: Json
+          p_payments: Json
+          p_professionals: Json
+        }
+        Returns: Json
+      }
+      create_imported_transaction: {
+        Args: {
+          p_client_uuid: string
+          p_date: string
+          p_amount: number
+          p_currency: string
+          p_subcategory_id: string | null
+          p_description: string | null
+          p_is_sena: boolean
+          p_sena_amount: number
+          p_payment_method: string
+          p_instrument: string | null
+          p_direction: string
+          p_hairdresser_id?: string | null
+        }
+        Returns: string
+      }
+      create_reserve_movement_atomic: {
+        Args: {
+          p_reserve_id: string
+          p_amount: number
+          p_date: string
+          p_payment_method: string
+          p_note: string | null
+        }
+        Returns: Json
+      }
+      receive_purchase_order_accounted: {
+        Args: {
+          p_po_id: string
+          p_items: Json
+          p_mode: string
+          p_payment_method?: string | null
+          p_payment_date?: string | null
+          p_due_date?: string | null
+          p_notes?: string | null
+          p_subcategory_id?: string | null
+        }
+        Returns: Json
+      }
       consume_inventory_fifo: {
         Args: {
           p_product_id: string
@@ -1208,6 +1293,21 @@ export interface Database {
           p_installment_amount: number
           p_receivable_ids: string[]
           p_payment_method: string
+          p_payment_date: string
+          p_subcategory_id: string | null
+          p_notes: string | null
+        }
+        Returns: string
+      }
+      record_partial_commission_payout_multi: {
+        Args: {
+          p_client_uuid: string
+          p_hairdresser_id: string
+          p_period_start: string
+          p_period_end: string
+          p_installment_amount: number
+          p_receivable_ids: string[]
+          p_payments: Json
           p_payment_date: string
           p_subcategory_id: string | null
           p_notes: string | null

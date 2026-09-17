@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
 import { TopBar } from '@/components/layout/TopBar'
 import { Table } from '@/components/ui/Table'
 import { Input } from '@/components/ui/Input'
@@ -12,15 +11,14 @@ import { useTransactions } from '@/hooks/useTransactions'
 import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { useCommissionPayouts, useStaffReceivables } from '@/hooks/useStaffReceivables'
 import { SettleCommissionModal } from '@/components/SettleCommissionModal'
+import { ExpenseShareSection } from './ExpenseShareSection'
+import { useServiceDeductions, useServiceRevenueTransactions, useTransactionCommissionRates } from '@/hooks/useServiceDeductions'
 import { useFixedCosts } from '@/hooks/useFixedCosts'
 import { useDolarBlue } from '@/hooks/useDolarBlue'
 import { useProducts } from '@/hooks/useProducts'
 import { useCatalogItems } from '@/hooks/useCatalogItems'
-import { useTransactionRecipeCosts } from '@/hooks/useTransactionRecipeCosts'
 import { useAllServiceRecipes } from '@/hooks/useServiceRecipes'
 import { useInventoryRecounts } from '@/hooks/useInventoryRecount'
-import { supabase } from '@/lib/supabaseClient'
-import { fetchAllRows } from '@/lib/fetchAllRows'
 import type { InventoryRecount } from '@/hooks/useInventoryRecount'
 import type { FinancialCategoryRow, InventoryValuationRow, ProfitMonthRow } from '@/hooks/useReports'
 
@@ -337,49 +335,10 @@ export function ReportsPage() {
   const { data: fixedCosts = [] } = useFixedCosts()
   const { data: products = [] } = useProducts()
   const { data: allCatalogItems = [] } = useCatalogItems()
-  const { data: txRecipeCosts = [] } = useTransactionRecipeCosts()
 
   const { data: allRecipes = [] } = useAllServiceRecipes()
-
-  const { data: txRevenue = [] } = useQuery<{ id: string; catalog_item_id: string; amount: number; seña_amount: number | null; currency: string; date: string }[]>({
-    queryKey: ['tx-revenue-by-catalog-item'],
-    queryFn: async () => {
-      const rows = await fetchAllRows<{ id: string; catalog_item_id: string; amount: number; seña_amount: number | null; currency: string; date: string; transaction_categories: unknown }>(
-        (rangeFrom, rangeTo) =>
-          supabase
-            .from('transactions')
-            .select('id, catalog_item_id, amount, seña_amount, currency, date, transaction_categories!subcategory_id!inner(transaction_type)')
-            .eq('transaction_categories.transaction_type', 'income')
-            .eq('is_seña', false)
-            .not('catalog_item_id', 'is', null)
-            .is('voided_at', null)
-            .order('id', { ascending: true })
-            .range(rangeFrom, rangeTo),
-      )
-      return rows.map(row => ({
-        id: row.id,
-        catalog_item_id: row.catalog_item_id,
-        amount: row.amount,
-        seña_amount: row.seña_amount,
-        currency: row.currency,
-        date: row.date,
-      }))
-    },
-  })
-
-  const { data: txCommissions = [] } = useQuery<{ transaction_id: string; commission_rate: number }[]>({
-    queryKey: ['tx-commissions-all'],
-    queryFn: async () => {
-      return fetchAllRows<{ transaction_id: string; commission_rate: number }>((rangeFrom, rangeTo) =>
-        supabase
-          .from('transaction_hairdressers')
-          .select('transaction_id, commission_rate')
-          .order('transaction_id', { ascending: true })
-          .order('hairdresser_id', { ascending: true })
-          .range(rangeFrom, rangeTo),
-      )
-    },
-  })
+  const { data: txRevenue = [] } = useServiceRevenueTransactions()
+  const { data: txCommissions = [] } = useTransactionCommissionRates()
 
   const totalMonthlyFixed = useMemo(
     () => fixedCosts.filter(fc => fc.active).reduce((s, fc) => s + fc.monthly_amount, 0),
@@ -387,56 +346,11 @@ export function ReportsPage() {
   )
 
 
-  const serviceDeductionsByMonth = useMemo(() => {
-    const usdRate = dolarBlue?.venta
-    if (usdRate == null) return new Map<string, { commission: number; materials: number }>()
-    const commRateByTx = new Map<string, number>()
-    for (const tc of txCommissions) {
-      commRateByTx.set(tc.transaction_id, (commRateByTx.get(tc.transaction_id) ?? 0) + tc.commission_rate)
-    }
-    const productMap = new Map(products.map(p => [p.id, p]))
-    const recipesByService = new Map<string, ServiceRecipe[]>()
-    for (const r of allRecipes) {
-      if (!recipesByService.has(r.catalog_item_id)) recipesByService.set(r.catalog_item_id, [])
-      recipesByService.get(r.catalog_item_id)!.push(r)
-    }
-    const snapshotByTx = new Map<string, number>()
-    for (const s of txRecipeCosts) {
-      snapshotByTx.set(s.transaction_id, (snapshotByTx.get(s.transaction_id) ?? 0) + s.quantity_grams * s.avg_unit_cost / s.unit_size)
-    }
-    const byMonth = new Map<string, { commission: number; materials: number }>()
-    for (const tx of txRevenue) {
-      if (profitFrom && tx.date < profitFrom) continue
-      if (profitTo && tx.date > profitTo) continue
-      const month = tx.date.slice(0, 7)
-      if (!byMonth.has(month)) byMonth.set(month, { commission: 0, materials: 0 })
-      const row = byMonth.get(month)!
-      const base = tx.amount + (tx.seña_amount ?? 0)
-      const amountARS = tx.currency === 'USD' ? base * usdRate : base
-      row.commission += amountARS * ((commRateByTx.get(tx.id) ?? 0) / 100)
-      if (snapshotByTx.has(tx.id)) {
-        row.materials += snapshotByTx.get(tx.id)!
-      } else {
-        for (const recipe of (recipesByService.get(tx.catalog_item_id) ?? [])) {
-          const product = productMap.get(recipe.product_id)
-          const costPerGram = product ? getCostPerGram(product) : null
-          if (costPerGram == null) continue
-          row.materials += recipe.quantity_grams * costPerGram
-        }
-      }
-    }
-    return byMonth
-  }, [txRevenue, txCommissions, allRecipes, products, txRecipeCosts, profitFrom, profitTo, dolarBlue])
-
-  const serviceDeductionTotals = useMemo(() => {
-    let commission = 0
-    let materials = 0
-    for (const v of serviceDeductionsByMonth.values()) {
-      commission += v.commission
-      materials += v.materials
-    }
-    return { commission, materials }
-  }, [serviceDeductionsByMonth])
+  const { byMonth: serviceDeductionsByMonth, totals: serviceDeductionTotals } = useServiceDeductions({
+    from: profitFrom,
+    to: profitTo,
+    usdRate: dolarBlue?.venta,
+  })
 
   const costRows = useMemo<ServiceCostRow[]>(() => {
     const usdRate = dolarBlue?.venta
@@ -893,6 +807,20 @@ export function ReportsPage() {
               <div className="flex justify-center py-12">
                 <span className="w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
               </div>
+            ) : profit.isError ? (
+              <div
+                className="rounded-lg border px-4 py-6 text-sm"
+                style={{ borderColor: 'var(--color-danger)', background: 'var(--color-danger-light)', color: 'var(--color-danger)' }}
+              >
+                <p className="font-semibold flex items-center gap-2">
+                  <AlertTriangle size={15} />
+                  El reporte de utilidad no se pudo calcular.
+                </p>
+                <p className="mt-1 text-[var(--color-text)]">
+                  Las cifras de abajo se omiten a propósito: un cero acá no significa que no haya ingresos.
+                </p>
+                <p className="mt-1 text-xs text-[var(--color-muted)]">{profit.error.message}</p>
+              </div>
             ) : (
               <>
                 {(() => {
@@ -1023,6 +951,7 @@ export function ReportsPage() {
                     </>
                   )
                 })()}
+                <ExpenseShareSection usdRate={dolarBlue?.venta} />
               </>
             )}
           </>

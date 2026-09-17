@@ -5,6 +5,7 @@ import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
 import { Select } from '@/components/ui/Select'
 import { InlineEditCell } from '@/components/ui/InlineEditCell'
+import { useExpenseBenchmarks, useUpdateExpenseBenchmark } from '@/hooks/useExpenseBenchmarks'
 import { useTransactionCategories, useCreateTransactionCategory, useUpdateTransactionCategory, useDeleteTransactionCategory } from '@/hooks/useTransactionCategories'
 import { useStaffRoles } from '@/hooks/useStaffRoles'
 import { useProfessionals, useCreateProfessional, useUpdateProfessional, useDeleteProfessional } from '@/hooks/useProfessionals'
@@ -274,6 +275,16 @@ export function SettingsPage() {
   const createCat = useCreateTransactionCategory()
   const updateCat = useUpdateTransactionCategory()
   const deleteCat = useDeleteTransactionCategory()
+
+  const { data: benchmarks = [] } = useExpenseBenchmarks()
+  const updateBenchmark = useUpdateExpenseBenchmark()
+  const benchmarkOptions = [
+    { value: '', label: '— sin rubro' },
+    ...benchmarks.map(b => ({ value: b.key, label: b.label })),
+  ]
+  const expenseSubcategories = txCategories.filter(
+    c => c.parent_id !== null && c.transaction_type === 'expense',
+  )
 
   const categories = txCategories.filter(c => c.parent_id !== null)
   const parentCategories = txCategories.filter(c => c.parent_id === null)
@@ -1253,6 +1264,16 @@ export function SettingsPage() {
                           className="text-sm text-[var(--color-text)]"
                         />
                         <span className="text-sm tabular-nums text-[var(--color-muted)]">${fc.monthly_amount.toLocaleString('es-AR')}/mes</span>
+                        {benchmarks.length > 0 && (
+                        <select
+                          value={fc.benchmark_key ?? ''}
+                          onChange={e => { updateFc.mutate({ id: fc.id, benchmark_key: e.target.value || null }) }}
+                          aria-label={`Rubro de ${fc.name}`}
+                          className="text-xs rounded-lg px-2 py-1 bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)]"
+                        >
+                          {benchmarkOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                        )}
                       </div>
                       <div className="flex items-center gap-1">
                         <button
@@ -1341,6 +1362,68 @@ export function SettingsPage() {
             </div>
           </section>
         )}
+
+        <section>
+          <h2 className="text-sm font-semibold text-[var(--color-text)] mb-1">Rubros de referencia</h2>
+          <p className="text-xs text-[var(--color-muted)] mb-3 max-w-2xl">
+            Rangos recomendados de gasto sobre los ingresos, usados en Reportes → Utilidad. Son referencias
+            generales del rubro peluquería: ajustalas a tu realidad. Asigná abajo a qué rubro pertenece cada
+            subcategoría de gasto; un gasto sin rubro no muestra recomendación.
+          </p>
+          <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+            {benchmarks.length === 0 && (
+              <p className="px-4 py-3 text-sm text-[var(--color-muted)]">
+                Sin rubros cargados — falta aplicar la migración 096.
+              </p>
+            )}
+            {benchmarks.map(b => (
+              <div key={b.key} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="min-w-0">
+                  <span className="text-sm text-[var(--color-text)]">{b.label}</span>
+                  {b.description && (
+                    <span className="block text-xs text-[var(--color-muted)]">{b.description}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <InlineEditCell
+                    value={String(b.min_pct)}
+                    onSave={async v => { await updateBenchmark.mutateAsync({ key: b.key, min_pct: Number(v), max_pct: b.max_pct }) }}
+                    className="text-sm tabular-nums text-[var(--color-text)]"
+                  />
+                  <span className="text-xs text-[var(--color-muted)]">a</span>
+                  <InlineEditCell
+                    value={String(b.max_pct)}
+                    onSave={async v => { await updateBenchmark.mutateAsync({ key: b.key, min_pct: b.min_pct, max_pct: Number(v) }) }}
+                    className="text-sm tabular-nums text-[var(--color-text)]"
+                  />
+                  <span className="text-xs text-[var(--color-muted)]">% de los ingresos</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)] mt-4 mb-2">
+            Rubro de cada subcategoría de gasto
+          </h3>
+          <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+            {expenseSubcategories.length === 0 && (
+              <p className="px-4 py-3 text-sm text-[var(--color-muted)]">Sin subcategorías de gasto</p>
+            )}
+            {expenseSubcategories.map(cat => (
+              <div key={cat.id} className="flex items-center justify-between gap-4 px-4 py-2.5">
+                <span className="text-sm text-[var(--color-text)] min-w-0 truncate">{cat.name}</span>
+                <select
+                  value={cat.benchmark_key ?? ''}
+                  onChange={e => { updateCat.mutate({ id: cat.id, benchmark_key: e.target.value || null }) }}
+                  aria-label={`Rubro de ${cat.name}`}
+                  className="shrink-0 text-xs rounded-lg px-2 py-1 bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)]"
+                >
+                  {benchmarkOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <section>
           <h2 className="text-sm font-semibold text-[var(--color-text)] mb-3">Recetas de servicios</h2>

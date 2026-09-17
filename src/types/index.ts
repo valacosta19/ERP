@@ -3,6 +3,7 @@ export type { Database } from './database'
 export type UserRole = 'admin' | 'employee'
 export type TransactionType = 'income' | 'expense' | 'transfer'
 export type Currency = 'ARS' | 'USD' | 'EUR'
+export type PaymentDirection = 'entrada' | 'salida'
 export type MovementType = 'in' | 'out' | 'adjustment'
 export type POStatus = 'draft' | 'received' | 'cancelled'
 export type PaymentMethod = string
@@ -23,6 +24,7 @@ export interface TransactionCategory {
   parent_id: string | null
   transaction_type: 'income' | 'expense' | 'transfer' | null
   deducts_inventory: boolean
+  benchmark_key: string | null
   created_at: string
 }
 
@@ -52,8 +54,15 @@ export interface TransactionPayment {
   payment_method: PaymentMethod
   instrument: PaymentInstrument | null
   amount: number
-  type: string
+  type: PaymentDirection
   created_at: string
+}
+
+export interface TransactionPaymentInput {
+  payment_method: PaymentMethod
+  instrument: PaymentInstrument | null
+  amount: number
+  type?: PaymentDirection
 }
 
 export interface Transaction {
@@ -141,6 +150,8 @@ export interface PurchaseOrder {
   discount_amount: number
   created_by: string | null
   created_at: string
+  payment_transaction_id?: string | null
+  settlement_mode?: 'immediate' | 'deferred' | 'none' | null
   supplier?: Supplier
   items?: PurchaseOrderItem[]
 }
@@ -222,6 +233,16 @@ export interface FixedCost {
   name: string
   monthly_amount: number
   active: boolean
+  benchmark_key: string | null
+}
+
+export interface ExpenseBenchmark {
+  key: string
+  label: string
+  description: string | null
+  min_pct: number
+  max_pct: number
+  sort_order: number
 }
 
 export interface FixedCostRate {
