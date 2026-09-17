@@ -80,10 +80,6 @@ function ProductSearchSelect({
   const totalItems = filtered.length + (showCreateNew ? 1 : 0)
 
   useEffect(() => {
-    setHighlighted(0)
-  }, [query])
-
-  useEffect(() => {
     if (open && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect()
       setDropdownStyle({
@@ -147,7 +143,7 @@ function ProductSearchSelect({
             className="flex-1 bg-transparent outline-none text-[var(--color-text)] placeholder:text-[var(--color-muted)]"
             placeholder={value ? selectedLabel : 'Buscar producto…'}
             value={query}
-            onChange={e => { setQuery(e.target.value); setOpen(true) }}
+            onChange={e => { setQuery(e.target.value); setHighlighted(0); setOpen(true) }}
             onFocus={() => setOpen(true)}
             onBlur={() => setTimeout(() => { setOpen(false); setQuery('') }, 150)}
             onKeyDown={handleKeyDown}
@@ -461,13 +457,6 @@ export function PurchaseOrdersPage() {
       .map(l => ({ id: l.id, quantity: parseFloat(l.received) }))
     if (items.length === 0) return
 
-    const receivedItems = receiveLines.filter(l => l.checked && parseFloat(l.received) > 0)
-    const itemsTotal = receivedItems.reduce((sum, l) => {
-      const orig = selectedPO.items?.find(i => i.id === l.id)
-      return sum + (orig ? orig.unit_cost * parseFloat(l.received) : 0)
-    }, 0)
-    const totalAmount = itemsTotal + (selectedPO.shipping_cost ?? 0) - (selectedPO.discount_amount ?? 0)
-
     let paymentOption: POPaymentOption
     if (paymentMode === 'immediate') {
       paymentOption = { mode: 'immediate', payment_method: paymentMethod, date: paymentDate }
@@ -477,7 +466,7 @@ export function PurchaseOrdersPage() {
       paymentOption = { mode: 'none' }
     }
 
-    await receivePO.mutateAsync({ po: selectedPO, items, totalAmount, paymentOption })
+    await receivePO.mutateAsync({ po: selectedPO, items, paymentOption })
     setReceiveOpen(false)
     setSelectedPO(null)
   }
@@ -632,7 +621,8 @@ export function PurchaseOrdersPage() {
                   <button
                     onClick={() => setSelectedRestock(s => {
                       const next = new Set(s)
-                      next.has(p.id) ? next.delete(p.id) : next.add(p.id)
+                      if (next.has(p.id)) next.delete(p.id)
+                      else next.add(p.id)
                       return next
                     })}
                     className="flex items-center gap-2 hover:opacity-75 transition-opacity"

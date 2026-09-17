@@ -8,7 +8,6 @@ import { invalidateAccounting } from '@/lib/invalidateAccounting'
 type POInsert = Database['public']['Tables']['purchase_orders']['Insert']
 type POUpdate = Database['public']['Tables']['purchase_orders']['Update']
 type POItemInsert = Database['public']['Tables']['purchase_order_items']['Insert']
-type DebtInsert = Database['public']['Tables']['supplier_debts']['Insert']
 
 export function usePurchaseOrders() {
   return useQuery({
@@ -107,69 +106,24 @@ export function useReceivePurchaseOrder() {
     mutationFn: async ({
       po,
       items,
-      totalAmount,
       paymentOption,
     }: {
       po: PurchaseOrder
       items: { id: string; quantity: number }[]
-      totalAmount: number
       paymentOption: POPaymentOption
     }) => {
-      const { data: { user } } = await supabase.auth.getUser()
       const subcategoryId = paymentOption.mode === 'immediate' ? await fetchInventoryPurchaseCategoryId() : null
-      const { error } = await supabase.rpc('receive_purchase_order', {
+      const { error } = await supabase.rpc('receive_purchase_order_accounted', {
         p_po_id: po.id,
-        p_created_by: user?.id ?? null,
         p_items: items,
+        p_mode: paymentOption.mode,
+        p_payment_method: paymentOption.mode === 'immediate' ? paymentOption.payment_method : null,
+        p_payment_date: paymentOption.mode === 'immediate' ? paymentOption.date : null,
+        p_due_date: paymentOption.mode === 'deferred' ? paymentOption.due_date : null,
+        p_notes: paymentOption.mode === 'deferred' ? paymentOption.notes ?? null : null,
+        p_subcategory_id: subcategoryId,
       })
       if (error) throw new Error(error.message)
-
-      if (paymentOption.mode === 'immediate') {
-        const { data: tx, error: txErr } = await supabase
-          .from('transactions')
-          .insert({
-            date: paymentOption.date,
-            amount: totalAmount,
-            currency: 'ARS',
-            subcategory_id: subcategoryId,
-            description: `Pago OC - ${po.supplier?.name ?? ''}`.trim().replace(/- $/, ''),
-            is_seña: false,
-            seña_amount: null,
-            created_by: user?.id ?? null,
-          })
-          .select('id')
-          .single()
-        if (txErr) throw new Error(txErr.message)
-
-        const { error: pmtErr } = await supabase
-          .from('transaction_payments')
-          .insert({
-            transaction_id: tx.id,
-            payment_method: paymentOption.payment_method,
-            instrument: null,
-            amount: totalAmount,
-            type: 'salida',
-          })
-        if (pmtErr) throw new Error(pmtErr.message)
-
-        const { error: linkErr } = await supabase
-          .from('purchase_orders')
-          .update({ payment_transaction_id: tx.id })
-          .eq('id', po.id)
-        if (linkErr) throw new Error(linkErr.message)
-      } else if (paymentOption.mode === 'deferred') {
-        const { error: debtErr } = await supabase
-          .from('supplier_debts')
-          .insert({
-            purchase_order_id: po.id,
-            supplier_id: po.supplier_id,
-            total_amount: totalAmount,
-            paid_amount: 0,
-            due_date: paymentOption.due_date,
-            notes: paymentOption.notes ?? null,
-          } as DebtInsert)
-        if (debtErr) throw new Error(debtErr.message)
-      }
     },
     onSuccess: () => {
       invalidateAccounting(qc, [['purchase_orders'], ['products'], ['inventory_lots'], ['supplier_debts']])

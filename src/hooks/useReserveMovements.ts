@@ -29,69 +29,15 @@ export function useCreateReserveMovement() {
       payment_method: string
       note?: string | null
     }) => {
-      const { reserve_name, ...movementPayload } = payload
-
-      const { data: movement, error: movErr } = await supabase
-        .from('reserve_movements')
-        .insert(movementPayload)
-        .select()
-        .single()
-      if (movErr) throw new Error(movErr.message)
-
-      const { data: { user } } = await supabase.auth.getUser()
-      const isDeposit = payload.amount > 0
-      const description = isDeposit
-        ? `Transferencia → ${reserve_name}`
-        : `Retorno ← ${reserve_name}`
-
-      const { data: subcat, error: subcatErr } = await supabase
-        .from('transaction_categories')
-        .select('id')
-        .eq('name', 'Transferencia interna')
-        .maybeSingle()
-      if (subcatErr) throw new Error(subcatErr.message)
-      if (!subcat) throw new Error('Falta la subcategoría "Transferencia interna": el movimiento no se registró.')
-
-      const { data: tx, error: txErr } = await supabase
-        .from('transactions')
-        .insert({
-          date: payload.date,
-          amount: Math.abs(payload.amount),
-          currency: 'ARS',
-          description,
-          subcategory_id: subcat.id,
-          catalog_item_id: null,
-          is_seña: false,
-          seña_amount: null,
-          created_by: user?.id ?? null,
-        })
-        .select('id')
-        .single()
-      if (txErr) throw new Error(txErr.message)
-
-      const { error: pmtErr } = await supabase
-        .from('transaction_payments')
-        .insert({
-          transaction_id: tx.id,
-          payment_method: payload.payment_method,
-          instrument: null,
-          amount: Math.abs(payload.amount),
-          type: isDeposit ? 'salida' : 'entrada',
-        })
-      if (pmtErr) throw new Error(pmtErr.message)
-
-      const { error: linkErr } = await supabase
-        .from('reserve_movements')
-        .update({ transaction_id: tx.id })
-        .eq('id', movement.id)
-      if (linkErr) {
-        throw new Error(
-          `Se creó el movimiento y su transacción, pero no se pudieron vincular: ${linkErr.message}. ` +
-          'Correr la consulta de huérfanos de la migración 076 para enlazarlos.',
-        )
-      }
-
-      return { ...(movement as ReserveMovement), transaction_id: tx.id }
+      const { data, error } = await supabase.rpc('create_reserve_movement_atomic', {
+        p_reserve_id: payload.reserve_id,
+        p_amount: payload.amount,
+        p_date: payload.date,
+        p_payment_method: payload.payment_method,
+        p_note: payload.note ?? null,
+      })
+      if (error) throw new Error(error.message)
+      return data
     },
     onSuccess: () => invalidateAccounting(qc, [['reserve-movements']]),
   })

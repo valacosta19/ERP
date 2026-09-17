@@ -55,7 +55,7 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
   const runImport = async () => {
     try {
       const [catRes, supRes, prodRes, hdRes, svcRes, pmRes, incomeCatRes, expenseCatRes] = await Promise.all([
-        supabase.from('transaction_categories').select('id, name').not('parent_id', 'is', null),
+        supabase.from('transaction_categories').select('id, name, transaction_type').not('parent_id', 'is', null),
         supabase.from('suppliers').select('id, name'),
         supabase.from('products').select('id, sku').is('deleted_at', null),
         supabase.from('hairdressers').select('id, name'),
@@ -74,7 +74,9 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
       const defaultIncomeSubcatId: string | null = incomeCatRes.data?.id ?? null
       const defaultExpenseSubcatId: string | null = expenseCatRes.data?.id ?? null
 
-      const catMap = new Map((catRes.data as { id: string; name: string }[]).map(c => [c.name.toLowerCase(), c.id]))
+      const importCategories = catRes.data as { id: string; name: string; transaction_type: string | null }[]
+      const catMap = new Map(importCategories.map(c => [c.name.toLowerCase(), c.id]))
+      const categoryTypeMap = new Map(importCategories.map(c => [c.name.toLowerCase(), c.transaction_type]))
       const supMap = new Map(supRes.data.map(s => [s.name.toLowerCase(), s.id]))
       const skuMap = new Map(prodRes.data.map(p => [p.sku, p.id]))
       const hdMap = new Map(hdRes.data.map(h => [h.name.toLowerCase(), h.id]))
@@ -180,6 +182,10 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
               if (!date || amount === 0) { result.skipped++; continue }
 
               const categoryName = getVal(row, m, 'category')
+              if (categoryName && categoryTypeMap.get(categoryName.toLowerCase()) === 'transfer') {
+                result.errors.push(`${date} $${amount}: las transferencias internas requieren cuentas de origen y destino y no se importan desde este formato.`)
+                continue
+              }
               const subcategory_id = categoryName
                 ? (catMap.get(categoryName.toLowerCase()) ?? (direction === 'income' ? defaultIncomeSubcatId : defaultExpenseSubcatId))
                 : (direction === 'income' ? defaultIncomeSubcatId : defaultExpenseSubcatId)
@@ -195,39 +201,35 @@ export function StepImport({ sheets, assignments, mappings, onDone }: Props) {
                 ? (rawCurrency as 'ARS' | 'USD' | 'EUR')
                 : 'ARS'
 
-              const { data: txData, error: txError } = await supabase
-                .from('transactions')
-                .insert({ date, amount, currency, subcategory_id, description, is_seña, seña_amount })
-                .select('id')
-                .single()
-              if (txError) { result.errors.push(`${date} $${amount}: ${txError.message}`); continue }
-
               const rawPaymentMethod = getVal(row, m, 'payment_method').trim()
-              if (rawPaymentMethod) {
-                const paymentMethod = pmMap.get(rawPaymentMethod.toLowerCase())
-                if (!paymentMethod) {
-                  result.errors.push(`${date} $${amount}: la cuenta "${rawPaymentMethod}" no existe. Creala en Ajustes o corregí el archivo.`)
-                  continue
-                }
-                const instrument = getVal(row, m, 'instrument') || null
-                const { error: pmError } = await supabase.from('transaction_payments').insert({
-                  transaction_id: txData.id,
-                  payment_method: paymentMethod,
-                  instrument,
-                  amount,
-                  type: direction === 'income' ? 'entrada' : 'salida',
-                })
-                if (pmError) { result.errors.push(`${date} payment: ${pmError.message}`); continue }
+              if (!rawPaymentMethod) {
+                result.errors.push(`${date} $${amount}: falta el medio de pago. La transacción no se importó.`)
+                continue
+              }
+              const paymentMethod = pmMap.get(rawPaymentMethod.toLowerCase())
+              if (!paymentMethod) {
+                result.errors.push(`${date} $${amount}: la cuenta "${rawPaymentMethod}" no existe. Creala en Ajustes o corregí el archivo.`)
+                continue
               }
 
               const professionalName = getVal(row, m, 'professional')
-              if (professionalName) {
-                const professional_id = hdMap.get(professionalName.toLowerCase())
-                if (professional_id) {
-                  const { error: hdError } = await supabase.from('transaction_hairdressers').insert({ transaction_id: txData.id, hairdresser_id: professional_id })
-                  if (hdError) { result.errors.push(`${date} profesional: ${hdError.message}`); continue }
-                }
-              }
+              const professionalId = professionalName ? hdMap.get(professionalName.toLowerCase()) ?? null : null
+
+              const { error: txError } = await supabase.rpc('create_imported_transaction', {
+                p_client_uuid: crypto.randomUUID(),
+                p_date: date,
+                p_amount: amount,
+                p_currency: currency,
+                p_subcategory_id: subcategory_id,
+                p_description: description,
+                p_is_sena: is_seña,
+                p_sena_amount: seña_amount,
+                p_payment_method: paymentMethod,
+                p_instrument: getVal(row, m, 'instrument') || null,
+                p_direction: direction === 'income' ? 'entrada' : 'salida',
+                p_hairdresser_id: professionalId,
+              })
+              if (txError) { result.errors.push(`${date} $${amount}: ${txError.message}`); continue }
 
               result.inserted++
             }

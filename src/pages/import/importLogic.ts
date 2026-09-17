@@ -49,7 +49,7 @@ export const ENTITY_FIELDS: Record<EntityType, FieldDef[]> = {
     { key: 'currency', label: 'Moneda (ARS / USD / EUR)', required: false },
     { key: 'category', label: 'Categoría (nombre)', required: false },
     { key: 'description', label: 'Descripción', required: false },
-    { key: 'payment_method', label: 'Medio de pago', required: false },
+    { key: 'payment_method', label: 'Medio de pago', required: true },
     { key: 'instrument', label: 'Instrumento', required: false },
     { key: 'is_seña', label: 'Monto seña (número)', required: false },
     { key: 'professional', label: 'Profesional', required: false },

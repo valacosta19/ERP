@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers, Search } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
-import { currentMonthRange } from '@/lib/dateRange'
+import { currentMonthRange, todayLocal } from '@/lib/dateRange'
 import { readDateParam, readCurrencyParam } from '@/lib/transactionFilters'
 import { TopBar } from '@/components/layout/TopBar'
 import { Button } from '@/components/ui/Button'
@@ -43,6 +43,13 @@ import {
 import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInstrument, Product, TransactionGroupWithMembers } from '@/types'
 import { confirmDialog } from '@/lib/confirm'
 import { showToast } from '@/lib/toast'
+import { transactionCashMovements, transactionCashTotals } from '@/lib/transactionCashFlow'
+import {
+  internalTransferAmount,
+  internalTransferValidationError,
+  isInternalTransferCategory,
+  normalizeInternalTransferPayments,
+} from '@/lib/internalTransfer'
 
 const FLUSH_DELAY_MS = 450
 const SEARCH_DEBOUNCE_MS = 300
@@ -85,7 +92,7 @@ export function TransactionsPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const defaultRange = currentMonthRange()
+  const defaultRange = { ...currentMonthRange(), to: todayLocal() }
   const parentCategoryFilter = searchParams.get('cat') ?? ''
   const currencyFilter = readCurrencyParam(searchParams)
   const paymentMethodFilter = searchParams.get('method') ?? ''
@@ -127,10 +134,11 @@ export function TransactionsPage() {
   const updateTx = useUpdateTransaction()
   const voidTx = useVoidTransaction()
   const { data: lockedPeriods = [] } = useLockedPeriods()
-  const { data: paymentBalances = [] } = usePaymentMethodBalances({
+  const paymentBalancesQuery = usePaymentMethodBalances({
     to: to || undefined,
     currency: currencyFilter || undefined,
   })
+  const paymentBalances = paymentBalancesQuery.data ?? []
   const [dragId, setDragId] = useState<string | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const [activeRowId, setActiveRowId] = useState<string | null>(null)
@@ -149,6 +157,7 @@ export function TransactionsPage() {
   const paymentMethodOptions = paymentMethodsData
     .filter(pm => pm.active)
     .map(pm => ({ value: pm.name, label: pm.name }))
+  const activePaymentMethodNames = paymentMethodOptions.map(option => option.value)
 
   const activeProfessionals = professionals.filter(h => h.active)
   const { data: assignments = [] } = useHairdresserServices()
@@ -176,7 +185,7 @@ export function TransactionsPage() {
 
   const filterSubcatIds = parentCategoryFilter ? subcatsForParent(parentCategoryFilter).map(c => c.id) : undefined
 
-  const { data: transactions = [], isLoading } = useTransactions({
+  const transactionsQuery = useTransactions({
     subcategoryIds: filterSubcatIds,
     currency: currencyFilter || undefined,
     from: from || undefined,
@@ -185,6 +194,9 @@ export function TransactionsPage() {
     pendingOnly,
     search: search || undefined,
   })
+  const transactions = transactionsQuery.data ?? []
+  const isLoading = transactionsQuery.isLoading
+  const accountingQueryError = transactionsQuery.error ?? paymentBalancesQuery.error
 
   const normalizedPaymentMethodFilter = paymentMethodFilter.toLowerCase()
   const filteredTransactions = paymentMethodFilter
@@ -373,38 +385,41 @@ export function TransactionsPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   })
 
-  const totals = filteredTransactions
-    .filter(tx => !tx.voided_at)
-    .reduce((acc, tx) => {
-      const cur = tx.currency
-      if (!acc[cur]) acc[cur] = { entrada: 0, salida: 0 }
-
-      if (paymentMethodFilter) {
-        tx.payments
-          ?.filter(payment => payment.payment_method.toLowerCase() === normalizedPaymentMethodFilter)
-          .forEach(payment => {
-            if (payment.type === 'entrada') acc[cur].entrada += payment.amount
-            else if (payment.type === 'salida') acc[cur].salida += payment.amount
-          })
-      } else {
-        const dir = getTxDirection(tx)
-        if (dir === 'entrada') acc[cur].entrada += tx.amount
-        else if (dir === 'salida') acc[cur].salida += tx.amount
-      }
-      return acc
-    }, {} as Record<string, { entrada: number; salida: number }>)
+  const cashMovements = transactionCashMovements(filteredTransactions, paymentMethodFilter || undefined)
+  const totals = transactionCashTotals(cashMovements)
 
   const refundedAntipoIds = new Set(
     transactions.filter(t => t.refunds_anticipo_id !== null).map(t => t.refunds_anticipo_id as string)
   )
 
   const editSubcategory = subcategories.find(c => c.id === editForm.subcategory_id)
+  const isEditInternalTransfer = isInternalTransferCategory(editSubcategory)
   const isEditServiceCategory = editSubcategory?.name.toLowerCase() === 'servicio'
   const isEditInventoryCategory = !!editSubcategory?.deducts_inventory || editSubcategory?.name.toLowerCase() === 'producto'
 
   const productLabel = (p: Product) => p.unit ? `${p.name} ${p.unit}` : p.name
 
   function openEdit(tx: Transaction) {
+    const mappedPayments = tx.payments && tx.payments.length > 0
+      ? tx.payments.map(p => {
+          const validMethod = paymentMethodsData.some(pm => pm.active && pm.name === p.payment_method)
+          return {
+            payment_method: validMethod ? p.payment_method : (paymentMethodsData.find(pm => pm.active)?.name ?? p.payment_method),
+            instrument: p.instrument,
+            amount: p.amount,
+            type: p.type,
+          }
+        })
+      : [makeEmptyPayment()]
+    const editPayments = isInternalTransferCategory(tx.subcategory)
+      ? normalizeInternalTransferPayments(mappedPayments, activePaymentMethodNames)
+      : mappedPayments.map(payment => ({
+          payment_method: payment.payment_method,
+          instrument: payment.instrument,
+          amount: payment.amount,
+          ...(tx.subcategory?.transaction_type === 'transfer' ? { type: payment.type } : {}),
+        }))
+
     setEditing(tx)
     setEditForm({
       date: tx.date,
@@ -415,19 +430,7 @@ export function TransactionsPage() {
       description: tx.description ?? '',
       seña_amount: tx.seña_amount != null ? String(tx.seña_amount) : '',
       refunds_anticipo_id: tx.refunds_anticipo_id ?? null,
-      transfer_direction: (tx.payments?.[0]?.type === 'entrada' || tx.payments?.[0]?.type === 'salida')
-        ? tx.payments[0].type
-        : 'entrada',
-      payments: tx.payments && tx.payments.length > 0
-        ? tx.payments.map(p => {
-            const validMethod = paymentMethodsData.some(pm => pm.active && pm.name === p.payment_method)
-            return {
-              payment_method: validMethod ? p.payment_method : (paymentMethodsData.find(pm => pm.active)?.name ?? p.payment_method),
-              instrument: p.instrument,
-              amount: p.amount,
-            }
-          })
-        : [makeEmptyPayment()],
+      payments: editPayments,
       professionals: tx.professionals?.map(h => ({ id: h.id, commission_rate: h.commission_rate })) ?? [],
       product_id: tx.product_id ?? null,
       product_quantity: 1,
@@ -438,83 +441,102 @@ export function TransactionsPage() {
   }
 
   async function handleUpdate() {
-    const total = calcTotal(editForm.payments)
+    const editTransactionType = typeFromParent(editForm.category_parent_id)
+    const total = isEditInternalTransfer
+      ? internalTransferAmount(editForm.payments)
+      : calcTotal(editForm.payments)
     if (!editForm.date || total <= 0) {
       setFormError('Fecha y al menos un pago con monto son obligatorios.')
       return
+    }
+    if (isEditInternalTransfer) {
+      const transferError = internalTransferValidationError(editForm.payments)
+      if (transferError) {
+        setFormError(transferError)
+        return
+      }
+    } else {
+      const paymentMethodKeys = editForm.payments.map(payment => payment.payment_method.trim().toLocaleLowerCase())
+      if (paymentMethodKeys.some(method => !method) || new Set(paymentMethodKeys).size !== paymentMethodKeys.length) {
+        setFormError('Cada método de pago debe estar completo y no puede repetirse.')
+        return
+      }
     }
     if (isDateLocked(editForm.date)) {
       setFormError('El período de esa fecha está cerrado. No se pueden editar transacciones en períodos cerrados.')
       return
     }
-    const editTransactionType = typeFromParent(editForm.category_parent_id)
     const editDesc = editForm.description.trim().toLowerCase()
     const isEditAnticipo = editDesc === 'anticipo'
     const isEditDevolución = editDesc === 'devolución de anticipo'
-    const editSubcat = subcategories.find(c => c.id === editForm.subcategory_id)
-    const editSubcatTriggersInventory = !!(editSubcat?.deducts_inventory) || editSubcat?.name.toLowerCase() === 'producto'
-    const { data: { user } } = await supabase.auth.getUser()
-
-    let runFifo = false
-    let inventoryPending = editing!.inventory_pending ?? false
-    if (editSubcatTriggersInventory && editForm.product_id) {
-      const { data: existingMovement, error: movementError } = await supabase
-        .from('inventory_movements')
-        .select('id')
-        .eq('reference_id', editing!.id)
-        .eq('reference_type', 'transaction')
-        .limit(1)
-        .maybeSingle()
-      if (movementError) throw new Error(movementError.message)
-      if (existingMovement) {
-        inventoryPending = false
-      } else if ((products.find(p => p.id === editForm.product_id)?.stock ?? 0) >= 1) {
-        runFifo = true
-        inventoryPending = false
-      } else {
-        inventoryPending = true
-      }
-    } else {
-      inventoryPending = false
-    }
-
-    await updateTx.mutateAsync({
-      id: editing!.id,
-      date: editForm.date,
-      transaction_type: editTransactionType,
-      currency: editForm.currency,
-      amount: total,
-      subcategory_id: editForm.subcategory_id || null,
-      catalog_item_id: editForm.catalog_item_id ?? null,
-      description: editForm.description || null,
-      is_seña: isEditAnticipo || isEditDevolución,
-      seña_amount: !isEditAnticipo && !isEditDevolución && isEditServiceCategory && editForm.seña_amount ? parseFloat(editForm.seña_amount) : null,
-      refunds_anticipo_id: isEditDevolución ? editForm.refunds_anticipo_id : null,
-      transfer_direction: editTransactionType === 'transfer' ? editForm.transfer_direction : undefined,
-      payments: editForm.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
-      professionals: editForm.professionals,
-      product_id: editForm.product_id,
-      inventory_pending: inventoryPending,
-    })
-
-    if (runFifo && editForm.product_id) {
-      const { error: fifoError } = await supabase.rpc('consume_inventory_fifo', {
-        p_product_id: editForm.product_id,
-        p_quantity: 1,
-        p_transaction_id: editing!.id,
-        p_unit_sale_price: total,
-        p_created_by: user!.id,
+    try {
+      await updateTx.mutateAsync({
+        id: editing!.id,
+        date: editForm.date,
+        transaction_type: editTransactionType,
+        currency: editForm.currency,
+        amount: total,
+        subcategory_id: editForm.subcategory_id || null,
+        catalog_item_id: editForm.catalog_item_id ?? null,
+        description: editForm.description || null,
+        is_seña: isEditAnticipo || isEditDevolución,
+        seña_amount: !isEditAnticipo && !isEditDevolución && isEditServiceCategory && editForm.seña_amount ? parseFloat(editForm.seña_amount) : null,
+        refunds_anticipo_id: isEditDevolución ? editForm.refunds_anticipo_id : null,
+        payments: editForm.payments.map(p => ({ ...p, instrument: p.instrument || null, amount: Number(p.amount) })),
+        professionals: editForm.professionals,
+        product_id: editForm.product_id,
+        transfer_direction: editTransactionType === 'transfer' && !isEditInternalTransfer
+          ? (editForm.payments[0]?.type === 'entrada' ? 'entrada' : 'salida')
+          : undefined,
       })
-      if (fifoError) throw new Error(fifoError.message)
+      setModalOpen(false)
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No se pudo actualizar la transacción.')
     }
+  }
 
-    qc.invalidateQueries({ queryKey: ['products'] })
-    setModalOpen(false)
+  function changeEditParent(categoryParentId: string) {
+    setEditForm(form => {
+      let payments = form.payments
+
+      const previousSubcategory = subcategories.find(category => category.id === form.subcategory_id)
+      if (isInternalTransferCategory(previousSubcategory)) {
+        const origin = payments.find(payment => payment.type === 'salida') ?? payments[0] ?? makeEmptyPayment()
+        payments = [{
+          payment_method: origin.payment_method,
+          instrument: origin.instrument,
+          amount: internalTransferAmount(payments),
+        }]
+      }
+
+      return { ...form, category_parent_id: categoryParentId, subcategory_id: '', payments }
+    })
+  }
+
+  function changeEditSubcategory(subcategoryId: string) {
+    setEditForm(form => {
+      const nextSubcategory = subcategories.find(category => category.id === subcategoryId)
+      const previousSubcategory = subcategories.find(category => category.id === form.subcategory_id)
+      let payments = form.payments
+
+      if (isInternalTransferCategory(nextSubcategory)) {
+        payments = normalizeInternalTransferPayments(payments, activePaymentMethodNames)
+      } else if (isInternalTransferCategory(previousSubcategory)) {
+        const origin = payments.find(payment => payment.type === 'salida') ?? payments[0] ?? makeEmptyPayment()
+        payments = [{
+          payment_method: origin.payment_method,
+          instrument: origin.instrument,
+          amount: internalTransferAmount(payments),
+          type: origin.type,
+        }]
+      }
+
+      return { ...form, subcategory_id: subcategoryId, payments }
+    })
   }
 
   async function exportCSV() {
-    const active = filteredTransactions
-      .filter(tx => !tx.voided_at)
+    const movements = transactionCashMovements(filteredTransactions, paymentMethodFilter || undefined)
       .slice()
       .sort((a, b) => a.date.localeCompare(b.date))
 
@@ -532,30 +554,22 @@ export function TransactionsPage() {
     }
 
     let balance = startingBalance
-    const rows = active.map(tx => {
-      const dir = getTxDirection(tx)
-      const signed = dir === 'entrada' ? tx.amount : dir === 'salida' ? -tx.amount : tx.amount
+    const rows = movements.map(movement => {
+      const signed = movement.type === 'entrada' ? movement.amount : -movement.amount
       balance += signed
-      const methods = tx.payments && tx.payments.length > 0
-        ? tx.payments.map(p => p.payment_method).join(' / ')
-        : ''
       return [
-        tx.date,
-        `"${(tx.description ?? '').replace(/"/g, '""')}"`,
-        `"${methods}"`,
+        movement.date,
+        `"${(movement.description ?? '').replace(/"/g, '""')}"`,
+        `"${movement.paymentMethod.replace(/"/g, '""')}"`,
         fmt(signed),
         fmt(balance),
       ].join(';')
     })
 
-    const totalCredits = active.reduce((s, tx) => {
-      const dir = getTxDirection(tx)
-      return dir === 'entrada' ? s + tx.amount : s
-    }, 0)
-    const totalDebits = active.reduce((s, tx) => {
-      const dir = getTxDirection(tx)
-      return dir === 'salida' ? s - tx.amount : s
-    }, 0)
+    const totalCredits = movements.reduce((sum, movement) =>
+      movement.type === 'entrada' ? sum + movement.amount : sum, 0)
+    const totalDebits = movements.reduce((sum, movement) =>
+      movement.type === 'salida' ? sum - movement.amount : sum, 0)
 
     const summary = `BALANCE_INICIAL;CREDITOS;DEBITOS;BALANCE_FINAL\n${fmt(startingBalance)};${fmt(totalCredits)};${fmt(totalDebits)};${fmt(balance)}`
     const header = 'FECHA;DESCRIPCION;METODO_PAGO;MONTO_NETO;BALANCE_PARCIAL'
@@ -971,6 +985,16 @@ export function TransactionsPage() {
           )}
         </div>
 
+        {accountingQueryError && (
+          <div
+            role="alert"
+            className="rounded-xl border px-4 py-3 text-sm"
+            style={{ borderColor: 'var(--color-danger)', color: 'var(--color-danger)', background: 'var(--color-danger-light)' }}
+          >
+            No se pudieron actualizar los datos contables: {accountingQueryError.message}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {paymentBalances.filter(b => b.method.toLowerCase() !== 'inventario').map(b => (
             <div
@@ -1043,7 +1067,7 @@ export function TransactionsPage() {
                   {Object.entries(totals).map(([currency, { entrada, salida }]) => (
                     <tr key={currency} className="border-t-2 border-[var(--color-border)]" style={{ background: 'var(--color-bg)' }}>
                       <td colSpan={columns.length - 1} className="px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
-                        Flujo neto del período {Object.keys(totals).length > 1 ? currency : ''}
+                        Flujo de caja del período {Object.keys(totals).length > 1 ? currency : ''}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className="font-semibold tabular-nums" style={{ color: entrada - salida >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
@@ -1097,7 +1121,7 @@ export function TransactionsPage() {
                 ...parents.map(p => ({ value: p.id, label: p.name })),
               ]}
               value={editForm.category_parent_id}
-              onChange={e => setEditForm(f => ({ ...f, category_parent_id: e.target.value, subcategory_id: '' }))}
+              onChange={e => changeEditParent(e.target.value)}
             />
             <Select
               label="Subcategoría"
@@ -1106,21 +1130,9 @@ export function TransactionsPage() {
                 ...subcatsForParent(editForm.category_parent_id).map(c => ({ value: c.id, label: c.name })),
               ]}
               value={editForm.subcategory_id}
-              onChange={e => setEditForm(f => ({ ...f, subcategory_id: e.target.value }))}
+              onChange={e => changeEditSubcategory(e.target.value)}
             />
           </div>
-
-          {typeFromParent(editForm.category_parent_id) === 'transfer' && (
-            <Select
-              label="Dirección"
-              options={[
-                { value: 'entrada', label: 'Entrada' },
-                { value: 'salida', label: 'Salida' },
-              ]}
-              value={editForm.transfer_direction}
-              onChange={e => setEditForm(f => ({ ...f, transfer_direction: e.target.value as 'entrada' | 'salida' }))}
-            />
-          )}
 
           {isEditInventoryCategory ? (
             <div>
@@ -1148,61 +1160,111 @@ export function TransactionsPage() {
             />
           )}
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-[var(--color-text)]">Métodos de pago</span>
-              <button
-                type="button"
-                onClick={() => setEditForm(f => ({ ...f, payments: [...f.payments, makeEmptyPayment()] }))}
-                className="text-xs text-[var(--color-accent)] hover:underline"
-              >
-                + Agregar fila
-              </button>
-            </div>
-            <div className="space-y-2">
-              {editForm.payments.map((p, i) => (
-                <div key={i} className="flex items-end gap-2">
-                  <div className="flex-1">
-                    <Select
-                      options={paymentMethodOptions}
-                      value={p.payment_method}
-                      onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, payment_method: e.target.value as PaymentMethod } : pp) }))}
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <Select
-                      options={INSTRUMENT_OPTIONS}
-                      value={p.instrument ?? ''}
-                      onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, instrument: (e.target.value as PaymentInstrument) || null } : pp) }))}
-                    />
-                  </div>
-                  <div className="w-28">
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={p.amount === 0 ? '' : String(p.amount)}
-                      onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, amount: parseFloat(e.target.value) || 0 } : pp) }))}
-                      placeholder="Monto"
-                      prefix="$"
-                    />
-                  </div>
-                  {editForm.payments.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setEditForm(f => ({ ...f, payments: f.payments.filter((_, ii) => ii !== i) }))}
-                      className="p-1.5 mb-0.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
+          {isEditInternalTransfer ? (
+            <div className="space-y-3">
+              <span className="text-sm font-medium text-[var(--color-text)]">Transferencia interna</span>
+              {editForm.payments.map((payment, index) => (
+                <div key={payment.type} className="grid grid-cols-2 gap-3">
+                  <Select
+                    label={payment.type === 'salida' ? 'Cuenta de origen' : 'Cuenta de destino'}
+                    options={paymentMethodOptions}
+                    value={payment.payment_method}
+                    onChange={e => setEditForm(form => ({
+                      ...form,
+                      payments: form.payments.map((row, rowIndex) => rowIndex === index
+                        ? { ...row, payment_method: e.target.value as PaymentMethod }
+                        : row),
+                    }))}
+                  />
+                  <Select
+                    label="Instrumento"
+                    options={INSTRUMENT_OPTIONS}
+                    value={payment.instrument ?? ''}
+                    onChange={e => setEditForm(form => ({
+                      ...form,
+                      payments: form.payments.map((row, rowIndex) => rowIndex === index
+                        ? { ...row, instrument: (e.target.value as PaymentInstrument) || null }
+                        : row),
+                    }))}
+                  />
                 </div>
               ))}
+              <Input
+                label="Importe transferido"
+                type="number"
+                min="0"
+                step="0.01"
+                value={internalTransferAmount(editForm.payments) || ''}
+                onChange={e => {
+                  const amount = parseFloat(e.target.value) || 0
+                  setEditForm(form => ({
+                    ...form,
+                    payments: form.payments.map(payment => ({ ...payment, amount })),
+                  }))
+                }}
+                prefix={CURRENCY_SYMBOL[editForm.currency]}
+              />
+              <p className="text-xs text-[var(--color-muted)]">
+                La salida y la entrada usan la misma moneda e importe. El movimiento neto es cero.
+              </p>
             </div>
-            <div className="mt-2 text-right text-sm font-semibold text-[var(--color-text)]">
-              Total: {CURRENCY_SYMBOL[editForm.currency]}{calcTotal(editForm.payments).toLocaleString('es-CO')}
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-[var(--color-text)]">Métodos de pago</span>
+                <button
+                  type="button"
+                  onClick={() => setEditForm(f => ({ ...f, payments: [...f.payments, makeEmptyPayment()] }))}
+                  className="text-xs text-[var(--color-accent)] hover:underline"
+                >
+                  + Agregar fila
+                </button>
+              </div>
+              <div className="space-y-2">
+                {editForm.payments.map((p, i) => (
+                  <div key={i} className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <Select
+                        options={paymentMethodOptions}
+                        value={p.payment_method}
+                        onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, payment_method: e.target.value as PaymentMethod } : pp) }))}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <Select
+                        options={INSTRUMENT_OPTIONS}
+                        value={p.instrument ?? ''}
+                        onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, instrument: (e.target.value as PaymentInstrument) || null } : pp) }))}
+                      />
+                    </div>
+                    <div className="w-28">
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={p.amount === 0 ? '' : String(p.amount)}
+                        onChange={e => setEditForm(f => ({ ...f, payments: f.payments.map((pp, ii) => ii === i ? { ...pp, amount: parseFloat(e.target.value) || 0 } : pp) }))}
+                        placeholder="Monto"
+                        prefix="$"
+                      />
+                    </div>
+                    {editForm.payments.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setEditForm(f => ({ ...f, payments: f.payments.filter((_, ii) => ii !== i) }))}
+                        className="p-1.5 mb-0.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 text-right text-sm font-semibold text-[var(--color-text)]">
+                Total: {CURRENCY_SYMBOL[editForm.currency]}{calcTotal(editForm.payments).toLocaleString('es-CO')}
+              </div>
             </div>
-          </div>
+          )}
 
 
 
