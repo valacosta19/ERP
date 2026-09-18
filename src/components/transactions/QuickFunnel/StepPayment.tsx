@@ -47,7 +47,7 @@ export function StepPayment({
 
       {hasService && (
       <div style={{ marginBottom: '22px' }}>
-        <div className="flex items-center justify-between">
+        <div className="quick-funnel-payment-heading flex items-center justify-between">
           <SectionLabel>Imputar anticipo previo</SectionLabel>
           <span style={{ fontSize: '0.75rem', color: 'var(--color-muted)', fontWeight: 600 }}>
             Saldo disponible {money(anticipoBalance, currency)}
@@ -116,8 +116,8 @@ export function StepPayment({
 
           <div className="space-y-2.5">
             {payments.map(p => (
-              <div key={p.key} style={{ border: '1.5px solid var(--color-border)', borderRadius: '13px', padding: '12px 14px', background: 'var(--color-surface)' }}>
-                <div className="flex items-center gap-2">
+              <div key={p.key} className="quick-funnel-payment-card" style={{ border: '1.5px solid var(--color-border)', borderRadius: '13px', padding: '12px 14px', background: 'var(--color-surface)' }}>
+                <div className="quick-funnel-payment-row flex items-center gap-2">
                   <select
                     value={p.payment_method}
                     onChange={e => update(p.key, { payment_method: e.target.value, received: null })}
@@ -125,7 +125,7 @@ export function StepPayment({
                   >
                     {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
-                  <div style={{ position: 'relative', width: '150px' }}>
+                  <div className="quick-funnel-payment-amount" style={{ position: 'relative', width: '150px' }}>
                     <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted)' }}>$</span>
                     <input
                       type="number" min="0"
@@ -137,15 +137,15 @@ export function StepPayment({
                     />
                   </div>
                   {payments.length > 1 && (
-                    <button type="button" onClick={() => onPayments(payments.filter(r => r.key !== p.key))} style={iconBtn}>
+                    <button type="button" className="quick-funnel-payment-remove" aria-label={`Quitar pago con ${p.payment_method}`} onClick={() => onPayments(payments.filter(r => r.key !== p.key))} style={iconBtn}>
                       <X size={15} />
                     </button>
                   )}
                 </div>
                 {isCash(p.payment_method) && (
-                  <div className="flex items-center gap-3" style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--color-border)' }}>
+                  <div className="quick-funnel-cash-row flex items-center gap-3" style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--color-border)' }}>
                     <span style={{ fontSize: '0.8125rem', color: 'var(--color-muted)', whiteSpace: 'nowrap' }}>Recibido</span>
-                    <div style={{ position: 'relative', width: '140px' }}>
+                    <div className="quick-funnel-cash-received" style={{ position: 'relative', width: '140px' }}>
                       <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted)' }}>$</span>
                       <input
                         type="number" min="0"

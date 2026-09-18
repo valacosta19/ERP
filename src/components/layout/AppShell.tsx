@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { Outlet } from 'react-router-dom'
-import { Menu, Scissors } from 'lucide-react'
+import { LogOut, Scissors } from 'lucide-react'
 import { Sidebar } from './Sidebar'
+import { MobileBottomNav } from './MobileBottomNav'
+import { useAuth } from '@/hooks/useAuth'
 import { useFunnelSubmit } from '@/components/transactions/QuickFunnel/funnelSubmit'
 import { flushQueue } from '@/components/transactions/QuickFunnel/offlineQueue'
 import { showToast } from '@/lib/toast'
 
 export function AppShell() {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { profile, signOut } = useAuth()
   const { submitTicket } = useFunnelSubmit()
   const submitRef = useRef(submitTicket)
   useEffect(() => {
@@ -26,35 +28,30 @@ export function AppShell() {
   }, [])
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-black/50 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      <div className={`fixed inset-y-0 left-0 z-30 md:static md:block transition-transform duration-200
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+    <div className="app-shell flex h-screen overflow-hidden">
+      <div className="hidden md:block md:static">
+        <Sidebar />
       </div>
 
       <main className="flex-1 flex flex-col overflow-hidden bg-[var(--color-bg)] min-w-0">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] md:hidden">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
-          >
-            <Menu size={20} />
-          </button>
+        <div className="mobile-app-header md:hidden">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-md bg-[var(--color-accent)] flex items-center justify-center">
               <Scissors size={12} className="text-white" />
             </div>
-            <span className="text-sm font-semibold text-[var(--color-text)]">Buenas Ondas ERP</span>
+            <div className="min-w-0">
+              <span className="block text-sm font-semibold text-[var(--color-text)] truncate">{profile?.business_name || 'Buenas Ondas ERP'}</span>
+              <span className="block text-[10px] text-[var(--color-muted)] truncate">{profile?.full_name || 'Usuario'}</span>
+            </div>
           </div>
+          <button onClick={() => void signOut()} className="mobile-icon-button" aria-label="Cerrar sesión" title="Cerrar sesión">
+            <LogOut size={18} />
+          </button>
         </div>
-        <Outlet />
+        <div className="app-shell__content flex-1 min-h-0 flex flex-col">
+          <Outlet />
+        </div>
+        <MobileBottomNav />
       </main>
     </div>
   )

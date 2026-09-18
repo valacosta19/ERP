@@ -112,8 +112,8 @@ function APTab() {
 
     return (
       <>
-        <tr className="border-b border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
-          <td className="w-8 px-2 py-3">
+        <tr className="accounts-data-row border-b border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
+          <td data-label="Detalle" className="w-8 px-2 py-3">
             <button
               onClick={() => setExpandedId(isExpanded ? null : debt.id)}
               className="p-1 text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
@@ -121,14 +121,14 @@ function APTab() {
               {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </button>
           </td>
-          <td className="px-3 py-3 text-sm text-[var(--color-text)]">{debt.supplier?.name ?? '—'}</td>
-          <td className="px-3 py-3 text-sm tabular-nums text-[var(--color-text)]">{fmtCurrency(debt.total_amount)}</td>
-          <td className="px-3 py-3 text-sm tabular-nums font-semibold text-[var(--color-text)]">{fmtCurrency(pending)}</td>
-          <td className="px-3 py-3 text-sm text-[var(--color-muted)]">{debt.due_date ? formatDate(debt.due_date) : '—'}</td>
-          <td className="px-3 py-3">
+          <td data-label="Proveedor" className="px-3 py-3 text-sm text-[var(--color-text)]">{debt.supplier?.name ?? '—'}</td>
+          <td data-label="Total" className="px-3 py-3 text-sm tabular-nums text-[var(--color-text)]">{fmtCurrency(debt.total_amount)}</td>
+          <td data-label="Pendiente" className="px-3 py-3 text-sm tabular-nums font-semibold text-[var(--color-text)]">{fmtCurrency(pending)}</td>
+          <td data-label="Vencimiento" className="px-3 py-3 text-sm text-[var(--color-muted)]">{debt.due_date ? formatDate(debt.due_date) : '—'}</td>
+          <td data-label="Estado" className="px-3 py-3">
             <Badge variant={STATUS_BADGE[status]}>{STATUS_LABEL[status]}</Badge>
           </td>
-          <td className="px-3 py-3 text-right">
+          <td data-label="Acciones" className="px-3 py-3 text-right">
             {pending > 0 && (
               <Button size="sm" variant="secondary" onClick={() => openPayModal(debt)}>
                 Registrar pago
@@ -178,7 +178,7 @@ function APTab() {
         <>
           {openDebts.length > 0 && (
             <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
-              <table className="w-full text-sm">
+              <table className="accounts-data-table w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg)]">
                     <th className="w-8 px-2 py-2" />
@@ -203,7 +203,7 @@ function APTab() {
                 Ver pagadas ({closedDebts.length})
               </summary>
               <div className="mt-2 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden opacity-70">
-                <table className="w-full text-sm">
+                <table className="accounts-data-table w-full text-sm">
                   <thead>
                     <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg)]">
                       <th className="w-8 px-2 py-2" />
@@ -295,7 +295,7 @@ function StaffWithdrawalsSummary({ receivables }: { receivables: Receivable[] })
         <h3 className="text-sm font-semibold text-[var(--color-text)]">Retiros de staff</h3>
         <p className="text-xs text-[var(--color-muted)] mt-0.5">Saldos pendientes a descontar de comisión o cobrar manualmente.</p>
       </div>
-      <table className="w-full text-sm">
+      <table className="staff-summary-table w-full text-sm">
         <thead>
           <tr className="border-b border-[var(--color-border)]">
             <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">Empleado</th>
@@ -410,8 +410,8 @@ function ARTab() {
 
     return (
       <>
-        <tr className="border-b border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
-          <td className="w-8 px-2 py-3">
+        <tr className="accounts-data-row border-b border-[var(--color-border)] hover:bg-[var(--color-bg)] transition-colors">
+          <td data-label="Detalle" className="w-8 px-2 py-3">
             <button
               onClick={() => setExpandedId(isExpanded ? null : r.id)}
               className="p-1 text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
@@ -419,15 +419,15 @@ function ARTab() {
               {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </button>
           </td>
-          <td className="px-3 py-3 text-sm text-[var(--color-text)]">{r.debtor_name}</td>
-          <td className="px-3 py-3 text-sm text-[var(--color-muted)]">{r.concept}</td>
-          <td className="px-3 py-3 text-sm tabular-nums text-[var(--color-text)]">{fmtCurrency(r.total_amount, r.currency)}</td>
-          <td className="px-3 py-3 text-sm tabular-nums font-semibold text-[var(--color-text)]">{fmtCurrency(pending, r.currency)}</td>
-          <td className="px-3 py-3 text-sm text-[var(--color-muted)]">{r.due_date ? formatDate(r.due_date) : '—'}</td>
-          <td className="px-3 py-3">
+          <td data-label="Deudor" className="px-3 py-3 text-sm text-[var(--color-text)]">{r.debtor_name}</td>
+          <td data-label="Concepto" className="px-3 py-3 text-sm text-[var(--color-muted)]">{r.concept}</td>
+          <td data-label="Total" className="px-3 py-3 text-sm tabular-nums text-[var(--color-text)]">{fmtCurrency(r.total_amount, r.currency)}</td>
+          <td data-label="Pendiente" className="px-3 py-3 text-sm tabular-nums font-semibold text-[var(--color-text)]">{fmtCurrency(pending, r.currency)}</td>
+          <td data-label="Vencimiento" className="px-3 py-3 text-sm text-[var(--color-muted)]">{r.due_date ? formatDate(r.due_date) : '—'}</td>
+          <td data-label="Estado" className="px-3 py-3">
             <Badge variant={STATUS_BADGE[status]}>{STATUS_LABEL[status]}</Badge>
           </td>
-          <td className="px-3 py-3 text-right">
+          <td data-label="Acciones" className="px-3 py-3 text-right">
             {pending > 0 && (
               <Button size="sm" variant="secondary" onClick={() => openCollectModal(r)}>
                 Registrar cobro
@@ -486,7 +486,7 @@ function ARTab() {
         <>
           {openReceivables.length > 0 && (
             <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
-              <table className="w-full text-sm">
+              <table className="accounts-data-table w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg)]">
                     <th className="w-8 px-2 py-2" />
@@ -512,7 +512,7 @@ function ARTab() {
                 Ver cobradas ({closedReceivables.length})
               </summary>
               <div className="mt-2 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden opacity-70">
-                <table className="w-full text-sm">
+                <table className="accounts-data-table w-full text-sm">
                   <thead>
                     <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg)]">
                       <th className="w-8 px-2 py-2" />
@@ -659,11 +659,11 @@ export function CuentasPage() {
   }
 
   return (
-    <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
+    <div className="accounts-page animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar title="Cuentas" subtitle="Por pagar y por cobrar" />
 
-      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col p-6 space-y-4">
-        <div className="flex gap-1 border-b border-[var(--color-border)]">
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col p-4 md:p-6 space-y-4">
+        <div className="responsive-tabs flex gap-1 border-b border-[var(--color-border)]">
           {TABS.map(t => (
             <button
               key={t.id}

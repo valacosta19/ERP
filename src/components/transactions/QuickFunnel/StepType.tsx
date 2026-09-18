@@ -11,18 +11,18 @@ const TYPE_VISUALS: Record<FunnelType, { desc: string; icon: typeof ArrowDownLef
 
 export function StepType({ value, onPick }: { value: FunnelType | null; onPick: (t: FunnelType) => void }) {
   return (
-    <div className="flex flex-col items-center justify-center" style={{ minHeight: '64vh' }}>
-      <div style={{ textAlign: 'center', marginBottom: '34px' }}>
+    <div className="quick-funnel-type flex flex-col items-center justify-center" style={{ minHeight: '64vh' }}>
+      <div className="quick-funnel-type__heading" style={{ textAlign: 'center', marginBottom: '34px' }}>
         <div style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--color-accent)', marginBottom: '8px' }}>
           Paso 1
         </div>
-        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--color-text)' }}>
+        <h2 className="quick-funnel-type__title" style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--color-text)' }}>
           ¿Qué vas a registrar?
         </h2>
       </div>
 
       <div
-        className="grid grid-cols-2 gap-4"
+        className="quick-funnel-type-grid grid grid-cols-2 gap-4"
         style={{ width: '100%', maxWidth: '680px' }}
       >
         {FUNNEL_TYPE_ORDER.map((key, i) => {
@@ -33,6 +33,7 @@ export function StepType({ value, onPick }: { value: FunnelType | null; onPick: 
             <button
               key={key}
               type="button"
+              className="quick-funnel-type-card"
               onClick={() => onPick(key)}
               style={{
                 position: 'relative',
@@ -54,6 +55,7 @@ export function StepType({ value, onPick }: { value: FunnelType | null; onPick: 
               onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; if (!selected) e.currentTarget.style.borderColor = 'var(--color-border)' }}
             >
               <kbd
+                className="quick-funnel-type-card__key"
                 style={{
                   position: 'absolute', top: '14px', right: '16px',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -65,19 +67,20 @@ export function StepType({ value, onPick }: { value: FunnelType | null; onPick: 
                 {i + 1}
               </kbd>
               <div
+                className="quick-funnel-type-card__icon"
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: '68px', height: '68px', borderRadius: '20px', background: visual.accent, color: '#fff',
                   boxShadow: `0 10px 22px -10px ${visual.accent}`,
                 }}
               >
-                <Icon size={34} strokeWidth={2.4} />
+                <Icon className="quick-funnel-type-card__icon-svg" size={34} strokeWidth={2.4} />
               </div>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text)', letterSpacing: '-0.02em' }}>
+                <div className="quick-funnel-type-card__label" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text)', letterSpacing: '-0.02em' }}>
                   {FUNNEL_TYPE_META[key].label}
                 </div>
-                <div style={{ fontSize: '0.875rem', color: 'var(--color-muted)', marginTop: '2px' }}>{visual.desc}</div>
+                <div className="quick-funnel-type-card__description" style={{ fontSize: '0.875rem', color: 'var(--color-muted)', marginTop: '2px' }}>{visual.desc}</div>
               </div>
             </button>
           )

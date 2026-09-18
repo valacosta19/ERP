@@ -1,4 +1,5 @@
-import { CalendarDays, Minus, Plus, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { CalendarDays, ChevronDown, Minus, Plus, Trash2, X } from 'lucide-react'
 import {
   type FunnelState,
   FUNNEL_TYPE_META,
@@ -21,6 +22,7 @@ type Props = {
 }
 
 export function TicketPanel({ state, isInternalTransfer, onQty, onRemove, onDate }: Props) {
+  const [mobileOpen, setMobileOpen] = useState(false)
   const isIncome = isCartIncome(state)
   const cur = state.currency
   const discount = discountValueFor(state)
@@ -30,12 +32,28 @@ export function TicketPanel({ state, isInternalTransfer, onQty, onRemove, onDate
 
   return (
     <aside
-      className="flex flex-col"
-      style={{
-        width: '300px', flexShrink: 0, background: 'var(--color-surface)', borderLeft: '1px solid var(--color-border)',
-        padding: '22px 20px', height: '100%',
-      }}
+      className="quick-ticket flex flex-col"
     >
+      <button
+        type="button"
+        className="quick-ticket__mobile-heading md:hidden"
+        onClick={() => setMobileOpen(open => !open)}
+        aria-expanded={mobileOpen}
+        aria-controls="quick-ticket-drawer"
+      >
+        <span>Resumen del ticket</span>
+        <span className="flex items-center gap-2">
+          <strong className="tabular-nums" style={{ color: accent }}>{money(total, cur)}</strong>
+          <ChevronDown className={`transition-transform ${mobileOpen ? 'rotate-180' : ''}`} size={17} aria-hidden="true" />
+        </span>
+      </button>
+      <div id="quick-ticket-drawer" className={`quick-ticket__content ${mobileOpen ? 'quick-ticket__content--open' : ''}`}>
+      <div className="quick-ticket__drawer-heading md:hidden">
+        <strong>Detalle del ticket</strong>
+        <button type="button" onClick={() => setMobileOpen(false)} aria-label="Cerrar resumen del ticket" title="Cerrar resumen del ticket">
+          <X size={18} aria-hidden="true" />
+        </button>
+      </div>
       <div style={{ marginBottom: '16px' }}>
         <div style={{ fontSize: '0.6875rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--color-muted)', marginBottom: '10px' }}>
           Ticket {state.type ? `· ${FUNNEL_TYPE_META[state.type].label}` : ''}
@@ -59,15 +77,15 @@ export function TicketPanel({ state, isInternalTransfer, onQty, onRemove, onDate
                 <div key={line.key} style={{ borderBottom: '1px dashed var(--color-border)', paddingBottom: '10px' }}>
                   <div className="flex items-start justify-between gap-2">
                     <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text)', lineHeight: 1.3 }}>{line.name}</span>
-                    <button type="button" onClick={() => onRemove(line.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-muted)', padding: '2px' }}>
-                      <Trash2 size={13} />
+                    <button type="button" className="quick-ticket__remove" onClick={() => onRemove(line.key)} aria-label={`Quitar ${line.name}`} title={`Quitar ${line.name}`} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-muted)', padding: '2px' }}>
+                      <Trash2 size={16} />
                     </button>
                   </div>
                   <div className="flex items-center justify-between" style={{ marginTop: '6px' }}>
                     <div className="flex items-center gap-1.5">
-                      <button type="button" onClick={() => onQty(line.key, Math.max(1, line.qty - 1))} style={qtyBtn}><Minus size={12} /></button>
+                      <button type="button" className="quick-ticket__qty" onClick={() => onQty(line.key, Math.max(1, line.qty - 1))} aria-label={`Reducir cantidad de ${line.name}`} style={qtyBtn}><Minus size={14} /></button>
                       <span style={{ minWidth: '20px', textAlign: 'center', fontSize: '0.8125rem', fontWeight: 600 }} className="tabular-nums">{line.qty}</span>
-                      <button type="button" onClick={() => onQty(line.key, line.qty + 1)} style={qtyBtn}><Plus size={12} /></button>
+                      <button type="button" className="quick-ticket__qty" onClick={() => onQty(line.key, line.qty + 1)} aria-label={`Aumentar cantidad de ${line.name}`} style={qtyBtn}><Plus size={14} /></button>
                     </div>
                     <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--color-text)' }} className="tabular-nums">{money(lineGross(line), cur)}</span>
                   </div>
@@ -104,6 +122,7 @@ export function TicketPanel({ state, isInternalTransfer, onQty, onRemove, onDate
             {money(total, cur)}
           </span>
         </div>
+      </div>
       </div>
     </aside>
   )

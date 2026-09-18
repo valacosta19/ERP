@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type DragEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers, Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers, Search, ChevronDown } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { currentMonthRange, todayLocal } from '@/lib/dateRange'
 import { readDateParam, readCurrencyParam } from '@/lib/transactionFilters'
@@ -340,27 +340,30 @@ export function TransactionsPage() {
     }
   }
 
-  function moveActiveRow(delta: 1 | -1) {
-    if (!activeRow) return
-    const dayRows = rows.filter(row => row.date === activeRow.date)
-    const index = dayRows.findIndex(row => row.id === activeRow.id)
+  function moveRow(row: TxRow, delta: 1 | -1) {
+    const dayRows = rows.filter(candidate => candidate.date === row.date)
+    const index = dayRows.findIndex(candidate => candidate.id === row.id)
     const target = dayRows[index + delta]
     if (!target) return
 
-    const movedIds = rowDateIds(activeRow)
+    const movedIds = rowDateIds(row)
     const anchorIds = rowDateIds(target)
     if (movedIds.length === 0 || anchorIds.length === 0) return
 
     applyOptimisticReorder(qc, {
-      date: activeRow.date,
+      date: row.date,
       movedIds,
       anchorIds,
       position: delta === 1 ? 'after' : 'before',
     })
 
-    pendingMoveRef.current = { date: activeRow.date, movedIds }
+    pendingMoveRef.current = { date: row.date, movedIds }
     if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
     flushTimerRef.current = setTimeout(flushPendingMove, FLUSH_DELAY_MS)
+  }
+
+  function moveActiveRow(delta: 1 | -1) {
+    if (activeRow) moveRow(activeRow, delta)
   }
 
   const flushRef = useRef(flushPendingMove)
@@ -600,15 +603,20 @@ export function TransactionsPage() {
     return (
       <>
         <button
+          type="button"
           onClick={() => openEdit(tx)}
-          className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+          title="Editar"
+          aria-label="Editar"
+          className="transaction-touch-action p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </button>
         <button
+          type="button"
           onClick={() => handleVoid(tx.id)}
           title="Anular"
-          className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
+          aria-label="Anular"
+          className="transaction-touch-action p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
         >
           <Ban size={14} />
         </button>
@@ -625,33 +633,69 @@ export function TransactionsPage() {
           const sym = CURRENCY_SYMBOL[member.currency]
           const outOfFilter = !filteredIds.has(member.id)
           return (
-            <div
-              key={member.id}
-              className="grid grid-cols-[7rem_1fr_10rem_9rem_6rem] items-center gap-3 py-2 text-sm"
-              style={member.voided_at ? { opacity: 0.5 } : undefined}
-            >
-              <span className="text-[var(--color-muted)] text-xs">{formatDate(member.date)}</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[var(--color-text)]">{member.description || '—'}</span>
-                {member.voided_at && <Badge variant="danger">Anulada</Badge>}
-                {outOfFilter && <Badge variant="default">Fuera del filtro</Badge>}
-              </div>
-              <span className="text-[var(--color-muted)] text-xs">{member.subcategory?.name || '—'}</span>
-              <span
-                className="text-right font-semibold tabular-nums"
-                style={{ color: dir === 'entrada' ? 'var(--color-success)' : dir === 'salida' ? 'var(--color-danger)' : 'var(--color-muted)' }}
-              >
-                {dir === 'entrada' ? '+' : dir === 'salida' ? '-' : ''}{sym}{member.amount.toLocaleString('es-CO')}
-              </span>
-              <div className="flex items-center gap-1 justify-end">
-                {full && renderActions(full)}
-                <button
-                  onClick={() => removeGroupMember.mutate({ groupId: group.id, transactionId: member.id })}
-                  title="Quitar del grupo"
-                  className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+            <div key={member.id} style={member.voided_at ? { opacity: 0.5 } : undefined}>
+              <div className="hidden md:grid grid-cols-[7rem_1fr_10rem_9rem_6rem] items-center gap-3 py-2 text-sm">
+                <span className="text-[var(--color-muted)] text-xs">{formatDate(member.date)}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[var(--color-text)]">{member.description || '—'}</span>
+                  {member.voided_at && <Badge variant="danger">Anulada</Badge>}
+                  {outOfFilter && <Badge variant="default">Fuera del filtro</Badge>}
+                </div>
+                <span className="text-[var(--color-muted)] text-xs">{member.subcategory?.name || '—'}</span>
+                <span
+                  className="text-right font-semibold tabular-nums"
+                  style={{ color: dir === 'entrada' ? 'var(--color-success)' : dir === 'salida' ? 'var(--color-danger)' : 'var(--color-muted)' }}
                 >
-                  <Unlink size={14} />
-                </button>
+                  {dir === 'entrada' ? '+' : dir === 'salida' ? '-' : ''}{sym}{member.amount.toLocaleString('es-CO')}
+                </span>
+                <div className="flex items-center gap-1 justify-end">
+                  {full && renderActions(full)}
+                  <button
+                    type="button"
+                    onClick={() => removeGroupMember.mutate({ groupId: group.id, transactionId: member.id })}
+                    title="Quitar del grupo"
+                    aria-label="Quitar del grupo"
+                    className="transaction-touch-action p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+                  >
+                    <Unlink size={14} />
+                  </button>
+                </div>
+              </div>
+              <div className="transaction-group-member md:hidden py-3 text-sm">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="break-words font-medium text-[var(--color-text)]">{member.description || '—'}</span>
+                      {member.voided_at && <Badge variant="danger">Anulada</Badge>}
+                      {outOfFilter && <Badge variant="default">Fuera del filtro</Badge>}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs text-[var(--color-muted)]">
+                      <span>{formatDate(member.date)}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{member.subcategory?.name || 'Sin subcategoría'}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{member.voided_at ? 'Anulada' : 'Registrada'}</span>
+                    </div>
+                  </div>
+                  <span
+                    className="shrink-0 text-right font-semibold tabular-nums"
+                    style={{ color: dir === 'entrada' ? 'var(--color-success)' : dir === 'salida' ? 'var(--color-danger)' : 'var(--color-muted)' }}
+                  >
+                    {dir === 'entrada' ? '+' : dir === 'salida' ? '-' : ''}{sym}{member.amount.toLocaleString('es-CO')}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center justify-end gap-1">
+                  {full && renderActions(full)}
+                  <button
+                    type="button"
+                    onClick={() => removeGroupMember.mutate({ groupId: group.id, transactionId: member.id })}
+                    title="Quitar del grupo"
+                    aria-label="Quitar del grupo"
+                    className="transaction-touch-action p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
+                  >
+                    <Unlink size={16} />
+                  </button>
+                </div>
               </div>
             </div>
           )
@@ -860,53 +904,207 @@ export function TransactionsPage() {
     },
   ]
 
+  function renderColumn(key: string, row: TxRow) {
+    return columns.find(column => column.key === key)?.render(row)
+  }
+
+  function mobileRowStatus(row: TxRow) {
+    if (row.kind === 'group') {
+      return `${row.group.members.filter(member => !member.voided_at).length} activas`
+    }
+    if (row.tx.voided_at) return 'Anulada'
+    if (row.tx.inventory_pending) return 'Sin descontar'
+    if (row.tx.is_seña && row.tx.description?.trim().toLowerCase() === 'anticipo' && refundedAntipoIds.has(row.tx.id)) return 'Devuelta'
+    return 'Registrada'
+  }
+
+  function renderMobileTransactionCard(row: TxRow, { isOpen, toggle }: { isOpen: boolean; toggle: () => void }) {
+    const label = row.kind === 'group' ? row.group.label : row.tx.description || 'Transacción'
+    const dayRows = rows.filter(candidate => candidate.date === row.date)
+    const rowIndex = dayRows.findIndex(candidate => candidate.id === row.id)
+    const canMoveUp = rowIndex > 0
+    const canMoveDown = rowIndex >= 0 && rowIndex < dayRows.length - 1
+    const detailId = `mobile-transaction-${row.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+
+    return (
+      <article className="transaction-mobile-card data-card" data-row-kind={row.kind} data-row-id={row.id}>
+        <div className="transaction-mobile-card__header">
+          {row.kind === 'single' && !row.tx.voided_at ? (
+            <label className="transaction-mobile-card__select" title={`Seleccionar ${label}`}>
+              <input
+                type="checkbox"
+                checked={selected.has(row.tx.id)}
+                onChange={() => toggleSelected(row.tx.id)}
+                aria-label={`Seleccionar ${label}`}
+                style={{ accentColor: 'var(--color-accent)' }}
+              />
+            </label>
+          ) : (
+            <span className="transaction-mobile-card__select" aria-hidden="true"><Layers size={18} /></span>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-start gap-2">
+              <span className="min-w-0 flex-1 break-words font-semibold text-[var(--color-text)]">{label}</span>
+              {row.kind === 'group' && <Badge variant="default">Grupo</Badge>}
+            </div>
+            <div className="transaction-mobile-card__meta">
+              <span>{formatDate(row.date)}</span>
+              <span aria-hidden="true">·</span>
+              <span>{renderColumn('subcategory', row)}</span>
+              <span aria-hidden="true">·</span>
+              <span>{mobileRowStatus(row)}</span>
+            </div>
+          </div>
+          <div className="transaction-mobile-card__amount">{renderColumn('monto', row)}</div>
+          <button
+            type="button"
+            className="transaction-mobile-card__toggle"
+            onClick={toggle}
+            aria-expanded={isOpen}
+            aria-controls={detailId}
+            aria-label={isOpen ? `Contraer ${label}` : `Ver detalle de ${label}`}
+          >
+            <ChevronDown size={18} aria-hidden="true" />
+          </button>
+        </div>
+        {isOpen && (
+          <div id={detailId} className="transaction-mobile-card__details">
+            <div className="transaction-mobile-card__field">
+              <span>Categoría</span>
+              <div>{renderColumn('category', row)}</div>
+            </div>
+            <div className="transaction-mobile-card__field">
+              <span>Métodos</span>
+              <div>{renderColumn('payments', row)}</div>
+            </div>
+            <div className="transaction-mobile-card__field">
+              <span>Anticipo</span>
+              <div>{renderColumn('seña_amount', row)}</div>
+            </div>
+            {row.kind === 'group' && (
+              <div className="transaction-mobile-card__group-detail">{renderGroupDetail(row.group)}</div>
+            )}
+            <div className="transaction-mobile-card__reorder" role="group" aria-label={`Ordenar ${label}`}>
+              <span className="text-xs font-semibold text-[var(--color-muted)]">Orden en {formatDate(row.date)}</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="transaction-mobile-card__reorder-button"
+                  onClick={() => moveRow(row, -1)}
+                  disabled={!canMoveUp}
+                  aria-label={`Mover ${label} hacia arriba`}
+                >
+                  <ArrowUp size={16} />
+                  Subir
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="transaction-mobile-card__reorder-button"
+                  onClick={() => moveRow(row, 1)}
+                  disabled={!canMoveDown}
+                  aria-label={`Mover ${label} hacia abajo`}
+                >
+                  <ArrowDown size={16} />
+                  Bajar
+                </Button>
+              </div>
+            </div>
+            <div className="transaction-mobile-card__actions">
+              {row.kind === 'group' ? (
+                <Button type="button" variant="ghost" size="sm" onClick={() => deleteGroup.mutate(row.group.id)}>
+                  <Unlink size={16} />
+                  Desagrupar
+                </Button>
+              ) : renderActions(row.tx)}
+            </div>
+          </div>
+        )}
+      </article>
+    )
+  }
+
   return (
-    <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
+    <div className="transactions-page animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar
         title="Transacciones"
         subtitle={`${filteredTransactions.length} registros`}
         actions={
-          <div className="flex gap-2">
-            {selected.size >= 2 && (
+          <div className="transactions-toolbar w-full md:w-auto">
+            <div className="transactions-mobile-toolbar md:hidden">
+              <Button
+                className="transactions-mobile-toolbar__primary"
+                onClick={() => {
+                  const back = searchParams.toString()
+                  navigate({ pathname: '/transactions/cargar', search: back ? `back=${encodeURIComponent(back)}` : '' })
+                }}
+                size="sm"
+              >
+                <Zap size={16} />
+                Nueva transacción
+              </Button>
+              <div className="transactions-mobile-toolbar__secondary">
+                <Button variant="secondary" size="sm" onClick={() => setReconcileOpen(true)}>
+                  <Link size={14} />
+                  Reconciliar productos
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={exportCSV}
+                  disabled={!!search}
+                  title={search ? 'El CSV lleva un balance corrido por período: limpiá la búsqueda para exportar' : undefined}
+                >
+                  <Download size={14} />
+                  Exportar CSV
+                </Button>
+              </div>
+            </div>
+            <div className="hidden md:flex gap-2">
+              {selected.size >= 2 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => { setGroupError(''); setGroupModalOpen(true) }}
+                >
+                  <Layers size={14} />
+                  Agrupar ({selected.size})
+                </Button>
+              )}
+              <Button variant="secondary" size="sm" onClick={() => setReconcileOpen(true)}>
+                <Link size={14} />
+                Reconciliar productos
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => { setGroupError(''); setGroupModalOpen(true) }}
+                onClick={exportCSV}
+                disabled={!!search}
+                title={search ? 'El CSV lleva un balance corrido por período: limpiá la búsqueda para exportar' : undefined}
               >
-                <Layers size={14} />
-                Agrupar ({selected.size})
+                <Download size={14} />
+                Exportar CSV
               </Button>
-            )}
-            <Button variant="secondary" size="sm" onClick={() => setReconcileOpen(true)}>
-              <Link size={14} />
-              Reconciliar productos
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={exportCSV}
-              disabled={!!search}
-              title={search ? 'El CSV lleva un balance corrido por período: limpiá la búsqueda para exportar' : undefined}
-            >
-              <Download size={14} />
-              Exportar CSV
-            </Button>
-            <Button
-              onClick={() => {
-                const back = searchParams.toString()
-                navigate({ pathname: '/transactions/cargar', search: back ? `back=${encodeURIComponent(back)}` : '' })
-              }}
-              size="sm"
-            >
-              <Zap size={14} />
-              Nueva transacción
-            </Button>
+              <Button
+                onClick={() => {
+                  const back = searchParams.toString()
+                  navigate({ pathname: '/transactions/cargar', search: back ? `back=${encodeURIComponent(back)}` : '' })
+                }}
+                size="sm"
+              >
+                <Zap size={14} />
+                Nueva transacción
+              </Button>
+            </div>
           </div>
         }
       />
 
-      <div className="flex-1 min-h-0 flex flex-col p-6 gap-4">
-        <div className="flex flex-wrap gap-3">
+      <div className="responsive-page-body flex-1 min-h-0 flex flex-col p-4 md:p-6 gap-4">
+        <div className="responsive-filters flex flex-wrap gap-3">
           <Input
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
@@ -1023,19 +1221,30 @@ export function TransactionsPage() {
         </div>
 
         {activeRow && (
-          <div className="flex items-center justify-between gap-3 px-4 py-2 rounded-xl border border-[var(--color-accent)] bg-[var(--color-surface)]">
+          <div className="active-row-controls hidden md:flex items-center justify-between gap-3 px-4 py-2 rounded-xl border border-[var(--color-accent)] bg-[var(--color-surface)]">
             <span className="text-xs text-[var(--color-text)]">
               Moviendo <strong>{activeRow.kind === 'single' ? activeRow.tx.description || 'transacción' : activeRow.group.label}</strong> dentro del {formatDate(activeRow.date)} — usá ↑ y ↓ para colocarla.
             </span>
-            <Button variant="ghost" size="sm" onClick={() => { setActiveRowId(null); flushPendingMove() }}>Soltar</Button>
+            <div className="flex items-center gap-1 shrink-0">
+              <Button variant="ghost" size="sm" onClick={() => moveActiveRow(-1)} aria-label="Mover hacia arriba">
+                <ArrowUp size={16} />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => moveActiveRow(1)} aria-label="Mover hacia abajo">
+                <ArrowDown size={16} />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => { setActiveRowId(null); flushPendingMove() }}>Soltar</Button>
+            </div>
           </div>
         )}
 
-        <div className="flex-1 min-h-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
+        <div className="responsive-data-surface flex-1 min-h-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
           <Table
             columns={columns}
             data={rows}
             keyField="id"
+            mobileTitleKey="description"
+            mobileSummaryKeys={['date', 'monto']}
+            renderMobileCard={renderMobileTransactionCard}
             loading={isLoading}
             emptyMessage="No hay transacciones para los filtros seleccionados"
             paginate={false}
@@ -1083,6 +1292,25 @@ export function TransactionsPage() {
           />
         </div>
       </div>
+
+      {selected.size > 0 && (
+        <div className="transactions-selection-bar md:hidden" role="region" aria-label="Acciones de selección">
+          <span className="transactions-selection-bar__count">{selected.size} seleccionada{selected.size === 1 ? '' : 's'}</span>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+            Cancelar
+          </Button>
+          {selected.size >= 2 && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => { setGroupError(''); setGroupModalOpen(true) }}
+            >
+              <Layers size={16} />
+              Agrupar
+            </Button>
+          )}
+        </div>
+      )}
 
       <Modal
         open={modalOpen}

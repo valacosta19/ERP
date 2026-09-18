@@ -233,7 +233,7 @@ export function InventoryPage() {
   const selectedProduct = products.find(p => p.id === lotProductId) ?? null
 
   return (
-    <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
+    <div className="inventory-page animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar
         title="Inventario"
         subtitle={`${filteredProducts.length} productos`}
@@ -259,7 +259,7 @@ export function InventoryPage() {
         }
       />
 
-      <div className="flex-1 min-h-0 flex flex-col p-6 gap-4">
+      <div className="responsive-page-body flex-1 min-h-0 flex flex-col p-4 md:p-6 gap-4">
         {exportError && <p className="text-sm text-[var(--color-danger)]">{exportError}</p>}
         {pendingInventoryCount > 0 && (
           <div className="flex items-start gap-2 rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-light)] px-3 py-2">
@@ -295,11 +295,13 @@ export function InventoryPage() {
             <option value="without">Sin stock</option>
           </select>
         </div>
-        <div className="flex-1 min-h-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
+        <div className="responsive-data-surface flex-1 min-h-0 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] overflow-hidden">
           <Table
             columns={columns}
             data={filteredProducts}
             keyField="id"
+            mobileTitleKey="name"
+            mobileSummaryKeys={['stock', 'status']}
             loading={isLoading}
             emptyMessage="No hay productos registrados"
           />

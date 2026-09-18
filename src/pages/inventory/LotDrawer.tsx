@@ -160,7 +160,7 @@ export function LotDrawer({ product, onClose }: LotDrawerProps) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="lot-table w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)]">
                   <th className="text-left pb-2 font-medium text-[var(--color-muted)]">Recibido</th>
@@ -174,7 +174,7 @@ export function LotDrawer({ product, onClose }: LotDrawerProps) {
               <tbody>
                 {lots.map(lot => (
                   <tr key={lot.id} className="border-b border-[var(--color-border)] last:border-0">
-                    <td className="py-2 pr-4 text-[var(--color-muted)]">
+                    <td data-label="Recibido" className="py-2 pr-4 text-[var(--color-muted)]">
                       {editingCell?.lotId === lot.id && editingCell.field === 'received_date' ? (
                         <EditableCell
                           value={lot.received_date}
@@ -190,7 +190,7 @@ export function LotDrawer({ product, onClose }: LotDrawerProps) {
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-4 text-right tabular-nums">
+                    <td data-label="Inicial" className="py-2 pr-4 text-right tabular-nums">
                       {editingCell?.lotId === lot.id && editingCell.field === 'initial_quantity' ? (
                         <EditableCell
                           value={String(lot.initial_quantity)}
@@ -206,7 +206,7 @@ export function LotDrawer({ product, onClose }: LotDrawerProps) {
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-4 text-right tabular-nums font-medium">
+                    <td data-label="Restante" className="py-2 pr-4 text-right tabular-nums font-medium">
                       {editingCell?.lotId === lot.id && editingCell.field === 'remaining_quantity' ? (
                         <EditableCell
                           value={String(lot.remaining_quantity)}
@@ -222,7 +222,7 @@ export function LotDrawer({ product, onClose }: LotDrawerProps) {
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-4 text-right tabular-nums">
+                    <td data-label="Costo unit." className="py-2 pr-4 text-right tabular-nums">
                       {lot.has_sales ? (
                         <span
                           className="inline-flex items-center gap-1 text-[var(--color-muted)] cursor-not-allowed"
@@ -246,7 +246,7 @@ export function LotDrawer({ product, onClose }: LotDrawerProps) {
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-4 pl-3 text-[var(--color-muted)]">
+                    <td data-label="Notas" className="py-2 pr-4 pl-3 text-[var(--color-muted)]">
                       {editingCell?.lotId === lot.id && editingCell.field === 'notes' ? (
                         <EditableCell
                           value={lot.notes ?? ''}
@@ -262,7 +262,7 @@ export function LotDrawer({ product, onClose }: LotDrawerProps) {
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pl-3">
+                    <td data-label="Estado" className="py-2 pl-3">
                       {savingId === lot.id ? (
                         <span className="text-xs text-[var(--color-muted)]">Guardando…</span>
                       ) : Number(lot.remaining_quantity) === 0 ? (

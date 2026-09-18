@@ -71,6 +71,7 @@ export function QuickFunnelPage() {
   const [submitting, setSubmitting] = useState(false)
   const [closed, setClosed] = useState<{ summary: string; queued: boolean } | null>(null)
   const [staffModal, setStaffModal] = useState<'withdrawal' | 'advance' | null>(null)
+  const contentScrollRef = useRef<HTMLDivElement>(null)
 
   const categoriesQuery = useTransactionCategories()
   const catalogItemsQuery = useCatalogItems()
@@ -99,6 +100,10 @@ export function QuickFunnelPage() {
 
   const steps = stepsFor(state)
   const stepperItems = steps.map(s => ({ key: s, label: STEP_LABELS[s] }))
+
+  useEffect(() => {
+    if (contentScrollRef.current) contentScrollRef.current.scrollTop = 0
+  }, [state.step])
 
   const gross = linesGross(state.lines)
   const discountAmount = discountValueFor(state)
@@ -333,16 +338,16 @@ export function QuickFunnelPage() {
   const isLastInput = steps[steps.indexOf(state.step) + 1] === 'done'
 
   return (
-    <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
+    <div className="quick-funnel-page animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar
         title="Carga rápida"
         subtitle="Registro veloz de caja"
         actions={
-          <div className="flex items-center gap-3">
+          <div className="quick-funnel-top-actions flex items-center gap-3">
             {pending - stuckTickets.length > 0 && (
               <button
                 onClick={() => { void flush() }}
-                className="flex items-center gap-1.5"
+                className="quick-funnel-sync-status hidden md:flex items-center gap-1.5"
                 title="Pendientes de sincronizar"
                 style={{
                   fontSize: '0.8125rem', fontWeight: 600, padding: '6px 12px', borderRadius: '999px',
@@ -356,7 +361,7 @@ export function QuickFunnelPage() {
             {stuckTickets.length > 0 && (
               <button
                 onClick={() => setShowStuckPanel(v => !v)}
-                className="flex items-center gap-1.5"
+                className="quick-funnel-sync-status hidden md:flex items-center gap-1.5"
                 title="Tickets con error permanente"
                 style={{
                   fontSize: '0.8125rem', fontWeight: 600, padding: '6px 12px', borderRadius: '999px',
@@ -369,10 +374,11 @@ export function QuickFunnelPage() {
             )}
             <button
               onClick={goToList}
-              className="flex items-center gap-1.5"
+              className="quick-funnel-list-action flex items-center gap-1.5"
+              aria-label="Ver lista de transacciones"
               style={{ fontSize: '0.875rem', color: 'var(--color-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
             >
-              <List size={15} /> Ver lista
+              <List size={17} aria-hidden="true" /> <span className="hidden md:inline">Ver lista</span><span className="md:hidden">Lista</span>
             </button>
           </div>
         }
@@ -410,14 +416,14 @@ export function QuickFunnelPage() {
       )}
 
       {state.step !== 'done' && (
-        <div className="flex items-center justify-between px-6 py-3" style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+        <div className="quick-funnel__stepper flex items-center justify-between px-4 md:px-6 py-3" style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
           <Stepper steps={stepperItems} current={state.step} />
         </div>
       )}
 
-      <div className="flex-1 min-h-0 flex">
+      <div className="quick-funnel__workspace flex-1 min-h-0 flex">
         <div className="flex-1 min-h-0 flex flex-col">
-          <div className="flex-1 min-h-0 overflow-y-auto p-7">
+          <div ref={contentScrollRef} data-testid="quick-funnel-content" className="quick-funnel__content flex-1 min-h-0 overflow-y-auto p-4 md:p-7">
             {catalogError && (
               <div style={{ marginBottom: '16px', fontSize: '0.8125rem', color: 'var(--color-danger)', fontWeight: 500 }}>{catalogError}</div>
             )}
@@ -601,38 +607,70 @@ export function QuickFunnelPage() {
           </div>
 
           {state.step !== 'done' && (
-            <div className="flex items-center justify-between px-7 py-4" style={{ borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
-              <button
-                onClick={goBack}
-                className="flex items-center gap-2"
-                style={{ padding: '10px 16px', borderRadius: '11px', border: '1.5px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-muted)', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
-              >
-                <ArrowLeft size={16} /> {state.step === 'type' ? 'Salir' : 'Atrás'}
-              </button>
-
-              <div className="flex items-center gap-3">
-                {error && <span style={{ fontSize: '0.8125rem', color: 'var(--color-danger)', fontWeight: 500 }}>{error}</span>}
-                {state.step !== 'type' && (
+            <>
+              <div className="quick-funnel__actions quick-funnel__actions--mobile md:hidden" style={{ borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+                {error && <div className="quick-funnel__action-error" role="alert">{error}</div>}
+                <div className="quick-funnel__action-row">
                   <button
-                    onClick={goNext}
-                    disabled={submitting || catalogLoading || !canAdvance(state.step)}
-                    className="flex items-center gap-2"
-                    style={{
-                      padding: '11px 22px', borderRadius: '11px', border: 'none',
-                      background: !catalogLoading && canAdvance(state.step) ? 'var(--color-accent)' : 'var(--color-border)',
-                      color: '#fff', cursor: !catalogLoading && canAdvance(state.step) && !submitting ? 'pointer' : 'not-allowed',
-                      fontSize: '0.9375rem', fontWeight: 700,
-                      boxShadow: !catalogLoading && canAdvance(state.step) ? '0 6px 18px -8px var(--color-accent)' : 'none',
-                      opacity: submitting ? 0.7 : 1,
-                    }}
+                    onClick={goBack}
+                    className="quick-funnel__back-action"
+                    aria-label={state.step === 'type' ? 'Salir de carga rápida' : 'Volver al paso anterior'}
+                    title={state.step === 'type' ? 'Salir' : 'Atrás'}
                   >
-                    {submitting ? <><Loader2 size={16} className="animate-spin" /> Registrando…</>
-                      : isLastInput ? <><Check size={16} /> Confirmar y registrar</>
-                      : <>Continuar <ArrowRight size={16} /></>}
+                    {state.step === 'type' ? <X size={19} aria-hidden="true" /> : <ArrowLeft size={19} aria-hidden="true" />}
                   </button>
-                )}
+                  {state.step !== 'type' ? (
+                    <button
+                      onClick={goNext}
+                      disabled={submitting || catalogLoading || !canAdvance(state.step)}
+                      className="quick-funnel__primary-action"
+                      style={{
+                        background: !catalogLoading && canAdvance(state.step) ? 'var(--color-accent)' : 'var(--color-border)',
+                        cursor: !catalogLoading && canAdvance(state.step) && !submitting ? 'pointer' : 'not-allowed',
+                        boxShadow: !catalogLoading && canAdvance(state.step) ? '0 6px 18px -8px var(--color-accent)' : 'none',
+                        opacity: submitting ? 0.7 : 1,
+                      }}
+                    >
+                      {submitting ? <><Loader2 size={16} className="animate-spin" /> Registrando…</>
+                        : isLastInput ? <><Check size={16} /> Confirmar y registrar</>
+                        : <>Continuar <ArrowRight size={16} /></>}
+                    </button>
+                  ) : <span className="flex-1" aria-hidden="true" />}
+                </div>
               </div>
-            </div>
+              <div className="quick-funnel__actions hidden md:flex items-center justify-between gap-3 px-7 py-4" style={{ borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+                <button
+                  onClick={goBack}
+                  className="flex items-center gap-2"
+                  style={{ padding: '10px 16px', borderRadius: '11px', border: '1.5px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-muted)', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600 }}
+                >
+                  <ArrowLeft size={16} /> {state.step === 'type' ? 'Salir' : 'Atrás'}
+                </button>
+
+                <div className="flex items-center gap-3">
+                  {error && <span style={{ fontSize: '0.8125rem', color: 'var(--color-danger)', fontWeight: 500 }}>{error}</span>}
+                  {state.step !== 'type' && (
+                    <button
+                      onClick={goNext}
+                      disabled={submitting || catalogLoading || !canAdvance(state.step)}
+                      className="flex items-center gap-2"
+                      style={{
+                        padding: '11px 22px', borderRadius: '11px', border: 'none',
+                        background: !catalogLoading && canAdvance(state.step) ? 'var(--color-accent)' : 'var(--color-border)',
+                        color: '#fff', cursor: !catalogLoading && canAdvance(state.step) && !submitting ? 'pointer' : 'not-allowed',
+                        fontSize: '0.9375rem', fontWeight: 700,
+                        boxShadow: !catalogLoading && canAdvance(state.step) ? '0 6px 18px -8px var(--color-accent)' : 'none',
+                        opacity: submitting ? 0.7 : 1,
+                      }}
+                    >
+                      {submitting ? <><Loader2 size={16} className="animate-spin" /> Registrando…</>
+                        : isLastInput ? <><Check size={16} /> Confirmar y registrar</>
+                        : <>Continuar <ArrowRight size={16} /></>}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
           )}
         </div>
 
