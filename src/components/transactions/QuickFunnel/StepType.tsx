@@ -1,12 +1,13 @@
 import { ArrowDownLeft, ArrowUpRight, Factory, ArrowLeftRight } from 'lucide-react'
 import type { FunnelType } from './funnelTypes'
+import { FUNNEL_TYPE_META, FUNNEL_TYPE_ORDER } from './funnelTypes'
 
-const TYPES: { key: FunnelType; label: string; desc: string; icon: typeof ArrowDownLeft; accent: string }[] = [
-  { key: 'income', label: 'Ingreso', desc: 'Servicios y productos', icon: ArrowDownLeft, accent: '#10B981' },
-  { key: 'expense', label: 'Gasto', desc: 'Salida operativa', icon: ArrowUpRight, accent: '#EF4444' },
-  { key: 'cost', label: 'Costo', desc: 'Insumos directos', icon: Factory, accent: '#F59E0B' },
-  { key: 'transfer', label: 'Transferencia interna', desc: 'Entre cuentas de la misma moneda', icon: ArrowLeftRight, accent: '#6366F1' },
-]
+const TYPE_VISUALS: Record<FunnelType, { desc: string; icon: typeof ArrowDownLeft; accent: string }> = {
+  income: { desc: 'Servicios y productos', icon: ArrowDownLeft, accent: '#10B981' },
+  expense: { desc: 'Salida operativa', icon: ArrowUpRight, accent: '#EF4444' },
+  cost: { desc: 'Insumos directos', icon: Factory, accent: '#F59E0B' },
+  transfer: { desc: 'Entrada o salida de caja', icon: ArrowLeftRight, accent: '#6366F1' },
+}
 
 export function StepType({ value, onPick }: { value: FunnelType | null; onPick: (t: FunnelType) => void }) {
   return (
@@ -24,14 +25,15 @@ export function StepType({ value, onPick }: { value: FunnelType | null; onPick: 
         className="grid grid-cols-2 gap-4"
         style={{ width: '100%', maxWidth: '680px' }}
       >
-        {TYPES.map((t, i) => {
-          const Icon = t.icon
-          const selected = value === t.key
+        {FUNNEL_TYPE_ORDER.map((key, i) => {
+          const visual = TYPE_VISUALS[key]
+          const Icon = visual.icon
+          const selected = value === key
           return (
             <button
-              key={t.key}
+              key={key}
               type="button"
-              onClick={() => onPick(t.key)}
+              onClick={() => onPick(key)}
               style={{
                 position: 'relative',
                 display: 'flex',
@@ -42,13 +44,13 @@ export function StepType({ value, onPick }: { value: FunnelType | null; onPick: 
                 aspectRatio: '1 / 0.72',
                 padding: '24px',
                 borderRadius: '22px',
-                border: selected ? `3px solid ${t.accent}` : '2px solid var(--color-border)',
-                background: selected ? `color-mix(in srgb, ${t.accent} 12%, var(--color-surface))` : 'var(--color-surface)',
+                border: selected ? `3px solid ${visual.accent}` : '2px solid var(--color-border)',
+                background: selected ? `color-mix(in srgb, ${visual.accent} 12%, var(--color-surface))` : 'var(--color-surface)',
                 cursor: 'pointer',
-                boxShadow: selected ? `0 18px 40px -20px ${t.accent}` : '0 2px 8px rgba(15,17,23,0.05)',
+                boxShadow: selected ? `0 18px 40px -20px ${visual.accent}` : '0 2px 8px rgba(15,17,23,0.05)',
                 transition: 'transform 0.12s, box-shadow 0.12s, border-color 0.12s, background 0.12s',
               }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-3px)'; if (!selected) e.currentTarget.style.borderColor = t.accent }}
+              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-3px)'; if (!selected) e.currentTarget.style.borderColor = visual.accent }}
               onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; if (!selected) e.currentTarget.style.borderColor = 'var(--color-border)' }}
             >
               <kbd
@@ -65,17 +67,17 @@ export function StepType({ value, onPick }: { value: FunnelType | null; onPick: 
               <div
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: '68px', height: '68px', borderRadius: '20px', background: t.accent, color: '#fff',
-                  boxShadow: `0 10px 22px -10px ${t.accent}`,
+                  width: '68px', height: '68px', borderRadius: '20px', background: visual.accent, color: '#fff',
+                  boxShadow: `0 10px 22px -10px ${visual.accent}`,
                 }}
               >
                 <Icon size={34} strokeWidth={2.4} />
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-text)', letterSpacing: '-0.02em' }}>
-                  {t.label}
+                  {FUNNEL_TYPE_META[key].label}
                 </div>
-                <div style={{ fontSize: '0.875rem', color: 'var(--color-muted)', marginTop: '2px' }}>{t.desc}</div>
+                <div style={{ fontSize: '0.875rem', color: 'var(--color-muted)', marginTop: '2px' }}>{visual.desc}</div>
               </div>
             </button>
           )

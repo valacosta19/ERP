@@ -17,7 +17,9 @@ import {
   type FunnelStep,
   type FunnelType,
   type CartLine,
-  FUNNEL_TYPE_META,
+  FUNNEL_TYPE_ORDER,
+  funnelSubcategories,
+  canAdvanceSimpleAmount,
   makeEmptyFunnelState,
   linesGross,
   discountValueFor,
@@ -42,6 +44,7 @@ import { StepAdjust } from '@/components/transactions/QuickFunnel/StepAdjust'
 import { StepPayment } from '@/components/transactions/QuickFunnel/StepPayment'
 import { TicketPanel } from '@/components/transactions/QuickFunnel/TicketPanel'
 import { findCashPaymentMethod } from '@/lib/paymentMethod'
+import { isInternalTransferCategory } from '@/lib/internalTransfer'
 
 const STEP_LABELS: Record<FunnelStep, string> = {
   type: 'Tipo', detail: 'Detalle', amount: 'Monto', adjust: 'Ajustes', payment: 'Pago', done: 'Cierre',
@@ -207,13 +210,7 @@ export function QuickFunnelPage() {
       case 'amount':
         if (isCartIncome(state)) return state.lines.every(l => l.unitPrice > 0)
         if (state.type === 'income') return state.manualAmount > 0 && !!state.simpleMethod
-        if (state.type === 'transfer') {
-          return state.manualAmount > 0
-            && !!state.simpleMethod
-            && !!state.transferDestinationMethod
-            && state.simpleMethod !== state.transferDestinationMethod
-        }
-        return state.manualAmount > 0 && (selectedSimpleSubcat?.deducts_inventory === true || !!state.simpleMethod)
+        return canAdvanceSimpleAmount(state, selectedSimpleSubcat)
       case 'adjust': return true
       case 'payment': return totalToCharge <= 0 || Math.abs(totalToCharge - paymentsSum) < 1
       default: return true
@@ -261,7 +258,7 @@ export function QuickFunnelPage() {
     }
     if (step === 'amount') {
       if (isCartIncome(state)) return 'Cada ítem necesita un precio mayor a cero.'
-      if (state.type === 'transfer') return 'Ingresá un monto y elegí cuentas de origen y destino distintas.'
+      if (isInternalTransfer) return 'Ingresá un monto y elegí cuentas de origen y destino distintas.'
       return 'Ingresá un monto mayor a cero.'
     }
     if (step === 'payment') return 'El pago debe cubrir el total a cobrar.'
@@ -303,8 +300,7 @@ export function QuickFunnelPage() {
     const tag = (e.target as HTMLElement)?.tagName
     const inField = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA'
     if (state.step === 'type' && !inField && /^[1-4]$/.test(e.key)) {
-      const map: FunnelType[] = ['income', 'expense', 'cost', 'transfer']
-      pickType(map[parseInt(e.key) - 1])
+      pickType(FUNNEL_TYPE_ORDER[parseInt(e.key) - 1])
       return
     }
     if (e.key === 'Enter' && !inField && state.step !== 'done') {
@@ -319,17 +315,14 @@ export function QuickFunnelPage() {
   }, [])
 
   const activeSubcats = useMemo(() => state.type && state.type !== 'income'
-    ? categories.filter(c => {
-        const parent = categories.find(p => p.id === c.parent_id)
-        if (parent?.name !== FUNNEL_TYPE_META[state.type as FunnelType].parentName) return false
-        return state.type !== 'transfer' || c.name === 'Transferencia interna'
-      })
+    ? funnelSubcategories(state.type, categories)
     : [], [categories, state.type])
 
   const selectedSimpleSubcat = useMemo(
     () => activeSubcats.find(c => c.id === state.subcategoryId) ?? null,
     [activeSubcats, state.subcategoryId],
   )
+  const isInternalTransfer = state.type === 'transfer' && isInternalTransferCategory(selectedSimpleSubcat)
 
   const incomeSubcats = categories.filter(c => {
     const parent = categories.find(p => p.id === c.parent_id)
@@ -532,8 +525,11 @@ export function QuickFunnelPage() {
                 onAmount={v => setState(s => ({ ...s, manualAmount: v }))}
                 simpleMethod={state.simpleMethod}
                 onMethod={m => setState(s => ({ ...s, simpleMethod: m }))}
+                transferDirection={state.transferDirection}
+                onDirection={d => setState(s => ({ ...s, transferDirection: d }))}
                 transferDestinationMethod={state.transferDestinationMethod}
                 onTransferDestinationMethod={m => setState(s => ({ ...s, transferDestinationMethod: m }))}
+                isInternalTransfer={false}
                 paymentMethods={paymentMethods}
                 methodLabel="Entra en"
               />
@@ -548,8 +544,11 @@ export function QuickFunnelPage() {
                 onAmount={v => setState(s => ({ ...s, manualAmount: v }))}
                 simpleMethod={state.simpleMethod}
                 onMethod={m => setState(s => ({ ...s, simpleMethod: m }))}
+                transferDirection={state.transferDirection}
+                onDirection={d => setState(s => ({ ...s, transferDirection: d }))}
                 transferDestinationMethod={state.transferDestinationMethod}
                 onTransferDestinationMethod={m => setState(s => ({ ...s, transferDestinationMethod: m }))}
+                isInternalTransfer={isInternalTransfer}
                 paymentMethods={paymentMethods}
                 deductsInventory={selectedSimpleSubcat?.deducts_inventory === true}
               />
@@ -637,7 +636,7 @@ export function QuickFunnelPage() {
           )}
         </div>
 
-        {showTicketPanel && <TicketPanel state={state} onQty={setLineQty} onRemove={removeLine} onDate={d => setState(s => ({ ...s, date: d }))} />}
+        {showTicketPanel && <TicketPanel state={state} isInternalTransfer={isInternalTransfer} onQty={setLineQty} onRemove={removeLine} onDate={d => setState(s => ({ ...s, date: d }))} />}
       </div>
 
       {staffModal && (

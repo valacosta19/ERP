@@ -6,7 +6,10 @@ import { makeEmptyFunnelState, type CartLine, type FunnelState } from './funnelT
 const INGRESOS: TransactionCategory = { id: 'cat-ingresos', name: 'Ingresos', parent_id: null, transaction_type: 'income', deducts_inventory: false, benchmark_key: null, created_at: '' }
 const SERVICIO: TransactionCategory = { id: 'cat-servicio', name: 'Servicio', parent_id: 'cat-ingresos', transaction_type: 'income', deducts_inventory: false, benchmark_key: null, created_at: '' }
 const PRODUCTO: TransactionCategory = { id: 'cat-producto', name: 'Producto', parent_id: 'cat-ingresos', transaction_type: 'income', deducts_inventory: false, benchmark_key: null, created_at: '' }
-const ctx = { categories: [INGRESOS, SERVICIO, PRODUCTO] }
+const MOVIMIENTOS: TransactionCategory = { id: 'cat-movimientos', name: 'Movimientos', parent_id: null, transaction_type: 'transfer', deducts_inventory: false, benchmark_key: null, created_at: '' }
+const AJUSTE_CAJA: TransactionCategory = { id: 'cat-ajuste-caja', name: 'Ajuste de caja', parent_id: 'cat-movimientos', transaction_type: 'transfer', deducts_inventory: false, benchmark_key: null, created_at: '' }
+const TRANSFERENCIA_INTERNA: TransactionCategory = { id: 'cat-transferencia-interna', name: 'Transferencia interna', parent_id: 'cat-movimientos', transaction_type: 'transfer', deducts_inventory: false, benchmark_key: null, created_at: '' }
+const ctx = { categories: [INGRESOS, SERVICIO, PRODUCTO, MOVIMIENTOS, AJUSTE_CAJA, TRANSFERENCIA_INTERNA] }
 
 function line(kind: CartLine['kind'], name: string, unitPrice: number): CartLine {
   return { key: name, kind, name, unitPrice, qty: 1, catalogItemId: kind === 'service' ? `ci-${name}` : null, productId: kind === 'product' ? `p-${name}` : null, subcategoryId: null, professionals: [] }
@@ -68,12 +71,12 @@ describe('buildTicket anticipo', () => {
   })
 })
 
-describe('buildTicket internal transfer', () => {
-  it('creates one unit with equal typed legs and one transferred amount', () => {
+describe('buildTicket Movimiento', () => {
+  it('creates equal typed legs only when Transferencia interna is selected', () => {
     const state: FunnelState = {
       ...makeEmptyFunnelState(),
       type: 'transfer',
-      subcategoryId: 'transfer-subcategory',
+      subcategoryId: TRANSFERENCIA_INTERNA.id,
       manualAmount: 1250,
       simpleMethod: 'Efectivo',
       transferDestinationMethod: 'Mercado Pago',
@@ -86,5 +89,26 @@ describe('buildTicket internal transfer', () => {
       { payment_method: 'Mercado Pago', instrument: null, amount: 1250, type: 'entrada' },
     ])
     expect(ticket.units[0].payments[0].amount).toBe(1250)
+  })
+
+  it('keeps the selected direction and a single untyped payment leg', () => {
+    const state: FunnelState = {
+      ...makeEmptyFunnelState(),
+      type: 'transfer',
+      subcategoryId: AJUSTE_CAJA.id,
+      concept: 'Ajuste de caja',
+      manualAmount: 780,
+      simpleMethod: 'Efectivo',
+      transferDirection: 'salida',
+    }
+
+    const ticket = buildTicket(state, ctx)
+    expect(ticket.units).toHaveLength(1)
+    expect(ticket.units[0]).toEqual(expect.objectContaining({
+      transaction_type: 'transfer',
+      transfer_direction: 'salida',
+      description: 'Ajuste de caja',
+      payments: [{ payment_method: 'Efectivo', instrument: null, amount: 780 }],
+    }))
   })
 })

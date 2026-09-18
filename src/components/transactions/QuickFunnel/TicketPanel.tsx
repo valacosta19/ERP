@@ -14,12 +14,13 @@ import { Input } from '@/components/ui/Input'
 
 type Props = {
   state: FunnelState
+  isInternalTransfer: boolean
   onQty: (key: string, qty: number) => void
   onRemove: (key: string) => void
   onDate: (date: string) => void
 }
 
-export function TicketPanel({ state, onQty, onRemove, onDate }: Props) {
+export function TicketPanel({ state, isInternalTransfer, onQty, onRemove, onDate }: Props) {
   const isIncome = isCartIncome(state)
   const cur = state.currency
   const discount = discountValueFor(state)
@@ -77,7 +78,7 @@ export function TicketPanel({ state, onQty, onRemove, onDate }: Props) {
         ) : (
           <div className="space-y-1.5">
             <div style={{ fontSize: '0.8125rem', color: 'var(--color-muted)' }}>{state.concept || 'Sin concepto'}</div>
-            {state.type === 'transfer' && (
+            {isInternalTransfer && (
               <div style={{ fontSize: '0.8125rem', color: 'var(--color-text)', fontWeight: 600 }}>
                 {state.simpleMethod || 'Origen'} → {state.transferDestinationMethod || 'Destino'}
               </div>

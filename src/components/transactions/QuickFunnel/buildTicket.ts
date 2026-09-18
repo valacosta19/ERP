@@ -1,4 +1,5 @@
 import type { TransactionCategory } from '@/types'
+import { isInternalTransferCategory } from '@/lib/internalTransfer'
 import type { TicketPayload, TicketUnit } from './funnelSubmit'
 import {
   type FunnelState,
@@ -123,9 +124,10 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
     return { ...base, group_label: groupLabel(state.lines.map(l => l.name)), units }
   }
 
-  // Simple operations use one transaction. Internal transfers use two explicit
-  // ledger legs so the account-level net movement is zero.
+  // Simple operations use one transaction. Only the internal-transfer category
+  // uses two explicit ledger legs so the account-level net movement is zero.
   const subcat = ctx.categories.find(c => c.id === state.subcategoryId)
+  const isInternalTransfer = state.type === 'transfer' && isInternalTransferCategory(subcat)
   const txType: TicketUnit['transaction_type'] =
     state.type === 'transfer' ? 'transfer' : state.type === 'income' ? 'income' : 'expense'
   const amount = Math.round(Math.max(0, state.manualAmount))
@@ -147,7 +149,8 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
         subcategory_name: subcat?.name ?? null,
         professionals: [],
         sena_amount: null,
-        payments: state.type === 'transfer' && amount > 0
+        transfer_direction: state.type === 'transfer' && !isInternalTransfer ? state.transferDirection : undefined,
+        payments: isInternalTransfer && amount > 0
           ? [
               { payment_method: state.simpleMethod, instrument: null, amount, type: 'salida' },
               { payment_method: state.transferDestinationMethod, instrument: null, amount, type: 'entrada' },

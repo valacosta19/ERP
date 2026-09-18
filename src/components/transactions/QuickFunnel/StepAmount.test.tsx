@@ -76,3 +76,38 @@ describe('StepAmount professionals', () => {
     expect(onChange).toHaveBeenLastCalledWith('l1', [])
   })
 })
+
+describe('StepAmount Movimiento', () => {
+  const simpleProps = {
+    mode: 'simple' as const,
+    type: 'transfer' as const,
+    currency: 'ARS' as const,
+    onCurrency: vi.fn(),
+    manualAmount: 1000,
+    onAmount: vi.fn(),
+    simpleMethod: 'Efectivo',
+    onMethod: vi.fn(),
+    transferDirection: 'entrada' as const,
+    onDirection: vi.fn(),
+    transferDestinationMethod: 'Mercado Pago',
+    onTransferDestinationMethod: vi.fn(),
+    paymentMethods: ['Efectivo', 'Mercado Pago'],
+  }
+
+  it('shows direction and one account selector for a generic movement category', () => {
+    render(<StepAmount {...simpleProps} isInternalTransfer={false} />)
+
+    expect(screen.getByText('Dirección')).toBeTruthy()
+    expect(screen.getByText('Cuenta / caja')).toBeTruthy()
+    expect(screen.queryByText('Cuenta de origen')).toBeNull()
+    expect(screen.queryByText('Cuenta de destino')).toBeNull()
+  })
+
+  it('shows distinct origin and destination selectors only for Transferencia interna', () => {
+    render(<StepAmount {...simpleProps} isInternalTransfer />)
+
+    expect(screen.queryByText('Dirección')).toBeNull()
+    expect(screen.getByText('Cuenta de origen')).toBeTruthy()
+    expect(screen.getByText('Cuenta de destino')).toBeTruthy()
+  })
+})

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { chargeTotal, makeEmptyFunnelState, type CartLine, type FunnelState } from './funnelTypes'
+import type { TransactionCategory } from '@/types'
+import { canAdvanceSimpleAmount, chargeTotal, funnelSubcategories, makeEmptyFunnelState, type CartLine, type FunnelState } from './funnelTypes'
 
 function line(kind: CartLine['kind'], unitPrice: number): CartLine {
   return { key: `${kind}-${unitPrice}`, kind, name: kind, unitPrice, qty: 1, catalogItemId: null, productId: null, subcategoryId: null, professionals: [] }
@@ -20,5 +21,34 @@ describe('chargeTotal', () => {
 
   it('never goes below zero', () => {
     expect(chargeTotal(state([line('service', 50000)], 80000))).toBe(0)
+  })
+})
+
+describe('funnelSubcategories', () => {
+  const categories: TransactionCategory[] = [
+    { id: 'movements', name: 'Movimientos', parent_id: null, transaction_type: 'transfer', deducts_inventory: false, benchmark_key: null, created_at: '' },
+    { id: 'adjustment', name: 'Ajuste de caja', parent_id: 'movements', transaction_type: 'transfer', deducts_inventory: false, benchmark_key: null, created_at: '' },
+    { id: 'internal-transfer', name: 'Transferencia interna', parent_id: 'movements', transaction_type: 'transfer', deducts_inventory: false, benchmark_key: null, created_at: '' },
+  ]
+
+  it('offers generic movement categories and Transferencia interna in the same Movimiento path', () => {
+    expect(funnelSubcategories('transfer', categories).map(category => category.name)).toEqual([
+      'Ajuste de caja',
+      'Transferencia interna',
+    ])
+  })
+
+  it('rejects equal origin and destination accounts only for the internal-transfer category', () => {
+    const state: FunnelState = {
+      ...makeEmptyFunnelState(),
+      type: 'transfer',
+      subcategoryId: 'internal-transfer',
+      manualAmount: 500,
+      simpleMethod: 'Efectivo',
+      transferDestinationMethod: 'Efectivo',
+    }
+
+    expect(canAdvanceSimpleAmount(state, categories[2])).toBe(false)
+    expect(canAdvanceSimpleAmount(state, categories[1])).toBe(true)
   })
 })

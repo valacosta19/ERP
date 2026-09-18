@@ -1,6 +1,9 @@
-import type { Currency } from '@/types'
+import type { Currency, TransactionCategory } from '@/types'
+import { internalTransferValidationError, isInternalTransferCategory } from '@/lib/internalTransfer'
 
-export type FunnelType = 'income' | 'expense' | 'cost' | 'transfer'
+export const FUNNEL_TYPE_ORDER = ['income', 'expense', 'cost', 'transfer'] as const
+
+export type FunnelType = typeof FUNNEL_TYPE_ORDER[number]
 
 export type FunnelStep = 'type' | 'detail' | 'amount' | 'adjust' | 'payment' | 'done'
 
@@ -39,6 +42,7 @@ export type FunnelState = {
   concept: string
   manualAmount: number
   simpleMethod: string
+  transferDirection: 'entrada' | 'salida'
   transferDestinationMethod: string
   incomeMethod: string
   incomePriceTier: 'cash' | 'transfer' | 'card'
@@ -57,7 +61,33 @@ export const FUNNEL_TYPE_META: Record<FunnelType, { label: string; parentName: s
   income: { label: 'Ingreso', parentName: 'Ingresos' },
   expense: { label: 'Gasto', parentName: 'Gastos' },
   cost: { label: 'Costo', parentName: 'Costos' },
-  transfer: { label: 'Transferencia interna', parentName: 'Movimientos' },
+  transfer: { label: 'Movimiento', parentName: 'Movimientos' },
+}
+
+export function funnelSubcategories(
+  type: Exclude<FunnelType, 'income'>,
+  categories: TransactionCategory[],
+): TransactionCategory[] {
+  return categories.filter(category => {
+    const parent = categories.find(candidate => candidate.id === category.parent_id)
+    return parent?.name === FUNNEL_TYPE_META[type].parentName
+  })
+}
+
+export function canAdvanceSimpleAmount(
+  state: FunnelState,
+  subcategory: TransactionCategory | null | undefined,
+): boolean {
+  if (state.manualAmount <= 0) return false
+
+  if (state.type === 'transfer' && isInternalTransferCategory(subcategory)) {
+    return internalTransferValidationError([
+      { payment_method: state.simpleMethod, instrument: null, amount: state.manualAmount, type: 'salida' },
+      { payment_method: state.transferDestinationMethod, instrument: null, amount: state.manualAmount, type: 'entrada' },
+    ]) === null
+  }
+
+  return subcategory?.deducts_inventory === true || !!state.simpleMethod
 }
 
 export function makeEmptyFunnelState(): FunnelState {
@@ -71,6 +101,7 @@ export function makeEmptyFunnelState(): FunnelState {
     concept: '',
     manualAmount: 0,
     simpleMethod: 'Efectivo',
+    transferDirection: 'entrada',
     transferDestinationMethod: '',
     incomeMethod: '',
     incomePriceTier: 'cash',
