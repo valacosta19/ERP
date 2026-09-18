@@ -236,6 +236,9 @@ p { margin: 0; }
   html, body { max-width: 100%; overflow-x: hidden; }
   body { overscroll-behavior-y: none; }
   button, [role='button'], input, select, textarea { touch-action: manipulation; }
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='button']):not([type='submit']):not([type='reset']),
+  select,
+  textarea { font-size: 16px !important; }
   button:not(.mobile-bottom-nav__item), [role='button'], select { min-height: 44px; }
 
   .app-shell { height: 100dvh; min-height: 100svh; }

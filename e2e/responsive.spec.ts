@@ -8,6 +8,8 @@ test.describe('responsive essential workflows', () => {
 
     await page.goto('/transactions')
     await expect(page.getByRole('heading', { name: 'Transacciones', level: 1 })).toBeVisible()
+    expect(await page.getByPlaceholder('Buscar por descripción').evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(16)
+    expect(await page.locator('.responsive-filters select').first().evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(16)
     const createTransaction = page.getByRole('button', { name: 'Nueva transacción' })
     await expect(createTransaction).toBeVisible()
     const transactionCard = page.locator('.transaction-mobile-card').filter({ hasText: 'Venta shampoo' })
@@ -99,6 +101,7 @@ test.describe('responsive essential workflows', () => {
     await expect(page.getByRole('progressbar', { name: /Paso 2 de 6: Detalle/ })).toBeVisible()
     await expect.poll(() => content.evaluate(element => element.scrollTop)).toBe(0)
     await expect.poll(() => page.locator('.quick-funnel-income-tabs').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    expect(await page.getByPlaceholder('Buscar (opcional)').evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(16)
 
     await page.getByRole('button', { name: /Corte E2E/ }).click()
     const mobileFooter = page.locator('.quick-funnel__actions--mobile')
@@ -126,6 +129,7 @@ test.describe('responsive essential workflows', () => {
     await mobileFooter.getByRole('button', { name: /Continuar/ }).click()
     await expect(page.getByRole('progressbar', { name: /Paso 5 de 6: Pago/ })).toBeVisible()
     await expect.poll(() => content.evaluate(element => element.scrollTop)).toBe(0)
+    expect(await page.getByPlaceholder('Otro monto').evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(16)
     await expect(mobileFooter.getByRole('button', { name: /Confirmar y registrar/ })).toBeVisible()
     await expectNoDocumentOverflow(page)
 
