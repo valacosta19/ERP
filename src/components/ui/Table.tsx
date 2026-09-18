@@ -21,6 +21,9 @@ interface TableProps<T> {
   paginate?: boolean
   rowProps?: (row: T) => React.HTMLAttributes<HTMLTableRowElement>
   renderExpanded?: (row: T) => ReactNode
+  mobileTitleKey?: string
+  mobileSummaryKeys?: string[]
+  renderMobileCard?: (row: T, controls: { isOpen: boolean; toggle: () => void }) => ReactNode
 }
 
 const SCROLL_CHUNK = 60
@@ -64,13 +67,14 @@ function PageNavButton({ onClick, disabled, title, children }: { onClick: () => 
   )
 }
 
-export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow, pageSize, paginate = true, rowProps, renderExpanded }: TableProps<T>) {
+export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin registros', prependRow, appendRow, pageSize, paginate = true, rowProps, renderExpanded, mobileTitleKey, mobileSummaryKeys = [], renderMobileCard }: TableProps<T>) {
   const containerRef = useRef<HTMLDivElement>(null)
   const footRef = useRef<HTMLTableSectionElement>(null)
   const [autoPageSize, setAutoPageSize] = useState(pageSize ?? 25)
   const [page, setPage] = useState(1)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [renderCount, setRenderCount] = useState(SCROLL_CHUNK)
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)').matches === true)
   const scrollRef = useRef<HTMLDivElement>(null)
   const observerRef = useRef<IntersectionObserver | null>(null)
 
@@ -88,6 +92,15 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
   }, [])
 
   useEffect(() => () => observerRef.current?.disconnect(), [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const media = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(media.matches)
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
 
   function toggleExpanded(key: string) {
     setExpanded(prev => {
@@ -128,10 +141,18 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
   const rangeStart = data.length === 0 ? 0 : (safePage - 1) * effectivePageSize + 1
   const rangeEnd = Math.min(safePage * effectivePageSize, data.length)
   const totalColumns = columns.length + (renderExpanded ? 1 : 0)
+  const titleColumn = columns.find(col => col.key === mobileTitleKey)
+    ?? columns.find(col => col.header.trim().length > 0)
+    ?? columns[0]
+  const mobileRows = paginate ? visible : data
+
+  function renderCell(row: T, column: Column<T>) {
+    return column.render ? column.render(row) : String((row as Record<string, unknown>)[column.key] ?? '')
+  }
 
   return (
     <div ref={containerRef} className="data-table h-full flex flex-col">
-      <div ref={scrollRef} className="data-table__scroll overflow-auto">
+      {!isMobile && <div ref={scrollRef} className="data-table__scroll overflow-auto">
         <table className="data-table__table w-full text-sm">
           <thead className={`data-table__head ${paginate ? '' : 'sticky top-0 z-10 bg-[var(--color-surface)]'}`}>
             <tr className="data-table__head-row border-b border-[var(--color-border)]">
@@ -190,7 +211,7 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
                   )}
                   {columns.map(col => (
                     <td key={col.key} className={`data-table__cell px-4 py-3 text-[var(--color-text)] ${col.className || ''}`}>
-                      {col.render ? col.render(row) : String((row as Record<string, unknown>)[col.key] ?? '')}
+                      {renderCell(row, col)}
                     </td>
                   ))}
                 </tr>
@@ -217,7 +238,58 @@ export function Table<T>({ columns, data, keyField, loading, emptyMessage = 'Sin
             </tfoot>
           )}
         </table>
-      </div>
+      </div>}
+      {isMobile && <div className="data-table__mobile overflow-y-auto p-3 space-y-3">
+        {loading ? (
+          <div className="py-12 text-center text-[var(--color-muted)]" role="status" aria-label="Cargando">
+            <span className="inline-block w-5 h-5 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : data.length === 0 ? (
+          <p className="py-12 text-center text-sm text-[var(--color-muted)]">{emptyMessage}</p>
+        ) : mobileRows.map(row => {
+          const rowKey = String(row[keyField])
+          const isOpen = expanded.has(rowKey)
+          if (renderMobileCard) {
+            return (
+              <React.Fragment key={rowKey}>
+                {renderMobileCard(row, { isOpen, toggle: () => toggleExpanded(rowKey) })}
+              </React.Fragment>
+            )
+          }
+          const extraClassName = rowProps?.(row)?.className ?? ''
+          const summaryColumns = columns.filter(col => mobileSummaryKeys.includes(col.key) && col.key !== titleColumn?.key)
+          const detailColumns = columns.filter(col => col.key !== titleColumn?.key && !mobileSummaryKeys.includes(col.key))
+          const expandedContent = renderExpanded?.(row)
+          return (
+            <article key={rowKey} className={`data-card ${extraClassName}`}>
+              <details className="group">
+                <summary className="data-card__summary">
+                  <div className="min-w-0 flex-1">
+                    <div className="data-card__title">{titleColumn ? renderCell(row, titleColumn) : rowKey}</div>
+                    {summaryColumns.length > 0 && (
+                      <div className="data-card__highlights">
+                        {summaryColumns.map(col => (
+                          <span key={col.key} className="data-card__highlight">{renderCell(row, col)}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <span className="data-card__chevron" aria-hidden="true"><ChevronDown size={18} /></span>
+                </summary>
+                <div className="data-card__details">
+                  {detailColumns.map(col => (
+                    <div key={col.key} className={`data-card__field ${col.key === 'actions' ? 'data-card__field--actions' : ''}`}>
+                      {col.header && <span className="data-card__label">{col.header}</span>}
+                      <div className="data-card__value">{renderCell(row, col)}</div>
+                    </div>
+                  ))}
+                  {expandedContent && <div className="data-card__expanded">{expandedContent}</div>}
+                </div>
+              </details>
+            </article>
+          )
+        })}
+      </div>}
       {paginate && totalPages > 1 && (
         <div className="data-table__pagination flex items-center justify-between px-4 py-3 border-t border-[var(--color-border)] mt-auto">
           <span className="data-table__pagination-info text-xs text-[var(--color-muted)]">{rangeStart}–{rangeEnd} de {data.length}</span>
