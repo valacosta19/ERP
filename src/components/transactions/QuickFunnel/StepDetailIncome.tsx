@@ -31,8 +31,8 @@ export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubc
     <div>
       <StepHeading kicker="Paso 2 — Detalle" title="¿Qué cobrás?" />
 
-      <div className="flex flex-wrap items-center gap-3" style={{ marginBottom: '16px' }}>
-        <div className="flex items-center gap-1" style={{ padding: '4px', borderRadius: '12px', background: 'var(--color-bg)', border: '1.5px solid var(--color-border)' }}>
+      <div className="quick-funnel-detail-tools flex flex-wrap items-center gap-3" style={{ marginBottom: '16px' }}>
+        <div className="quick-funnel-income-tabs flex items-center gap-1" style={{ padding: '4px', borderRadius: '12px', background: 'var(--color-bg)', border: '1.5px solid var(--color-border)' }}>
           <ModeTab
             active={mode === 'services'}
             icon={<Scissors size={16} strokeWidth={2.4} />}
@@ -59,7 +59,7 @@ export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubc
           />
         </div>
 
-        <div style={{ position: 'relative', flex: '1 1 220px', maxWidth: '420px' }}>
+        <div className="quick-funnel-detail-search" style={{ position: 'relative', flex: '1 1 220px', maxWidth: '420px' }}>
           <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-muted)' }} />
           <input
             value={query}
@@ -129,7 +129,7 @@ function ModeTab({ active, icon, label, count, accent, onClick }: { active: bool
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-2"
+      className="quick-funnel-income-tab flex items-center gap-2"
       style={{
         padding: '8px 14px', borderRadius: '9px', cursor: 'pointer',
         border: 'none', background: active ? 'var(--color-surface)' : 'transparent',
@@ -138,9 +138,9 @@ function ModeTab({ active, icon, label, count, accent, onClick }: { active: bool
         fontWeight: 600, fontSize: '0.9375rem', transition: 'background 0.12s, color 0.12s',
       }}
     >
-      <span style={{ color: active ? accent : 'var(--color-muted)', display: 'flex' }}>{icon}</span>
-      {label}
-      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: active ? accent : 'var(--color-muted)' }}>{count}</span>
+      <span className="quick-funnel-income-tab__icon" style={{ color: active ? accent : 'var(--color-muted)', display: 'flex' }}>{icon}</span>
+      <span className="quick-funnel-income-tab__label">{label}</span>
+      <span className="quick-funnel-income-tab__count" style={{ fontSize: '0.75rem', fontWeight: 600, color: active ? accent : 'var(--color-muted)' }}>{count}</span>
     </button>
   )
 }

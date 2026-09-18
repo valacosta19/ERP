@@ -145,13 +145,13 @@ export function ReconcileModal({ open, onClose }: Props) {
           </p>
           <div className="flex flex-col divide-y divide-[var(--color-border)] max-h-[55vh] overflow-y-auto">
             {rows.map(row => (
-              <div key={row.id} className="grid grid-cols-[8rem_1fr_8rem] gap-x-3 gap-y-1.5 py-2.5 text-sm">
+              <div key={row.id} className="reconcile-row grid grid-cols-[8rem_1fr_8rem] gap-x-3 gap-y-1.5 py-2.5 text-sm">
                 <span className="text-[var(--color-muted)] whitespace-nowrap">{formatDate(row.date)}</span>
                 <span className="text-[var(--color-text)] break-words">{row.description ?? '—'}</span>
                 <span className="text-right tabular-nums text-[var(--color-muted)]">
                   ${row.amount.toLocaleString('es-CO')}
                 </span>
-                <div className="col-span-3">
+                <div className="reconcile-row__select col-span-3">
                   <Select
                     value={mappings[row.id] ?? ''}
                     onChange={e => setMappings(m => ({ ...m, [row.id]: e.target.value }))}

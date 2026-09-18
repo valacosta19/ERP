@@ -413,10 +413,10 @@ export function ReportsPage() {
   }, [allCatalogItems, allRecipes, products, txRevenue, txCommissions, dolarBlue])
 
   return (
-    <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
+    <div className="reports-page animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar title="Reportes" />
-      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
-        <div className="flex gap-1 border-b border-[var(--color-border)]">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 space-y-6">
+        <div className="responsive-tabs flex gap-1 border-b border-[var(--color-border)]">
           <button
             onClick={() => setActiveTab('financiero')}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${

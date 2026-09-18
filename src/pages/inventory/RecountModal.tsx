@@ -276,6 +276,8 @@ export function RecountModal({ open, onClose }: Props) {
               columns={previewColumns}
               data={preview.lines}
               keyField="product_id"
+              mobileTitleKey="product"
+              mobileSummaryKeys={['delta_quantity', 'delta_value']}
               emptyMessage="Sin diferencias para mostrar"
             />
           </div>
