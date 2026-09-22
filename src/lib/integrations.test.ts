@@ -371,11 +371,9 @@ describe('integration domain rules', () => {
     expect(pendingMovementPatch(rows[1], 'run-2', '2026-09-18T14:00:00Z')).toMatchObject({ amount: -100, fee_amount: -100, last_seen_run_id: 'run-2', raw_data: { ERP_COMPONENT: 'fee' } })
   })
 
-  it('uses rich Mercado Pago descriptions without discarding the source row', () => {
+  it('prioritizes the Mercado Pago payer name without discarding the source row', () => {
     expect(mpMovementDescription({ PAYER_NAME: 'Ana Pérez', SALE_DETAIL: 'Coloración' }, 'received_payment', 'mp-3')).toBe('Ana Pérez')
-    expect(mpMovementDescription({ SALE_DETAIL: 'Coloración', DESCRIPTION: 'Pago' }, 'received_payment', 'mp-3')).toBe('Coloración')
-    expect(mpMovementDescription({ EXTERNAL_REFERENCE: 'turno-42' }, 'received_payment', 'mp-3')).toBe('turno-42')
-    expect(mpMovementDescription({}, 'withholding', 'mp-3')).toBe('Retención Mercado Pago · MP mp-3')
+    expect(mpMovementDescription({ SALE_DETAIL: 'Coloración', DESCRIPTION: 'Pago aprobado' }, 'received_payment', 'mp-3')).toBe('Coloración')
     expect(movementFromReportRow({
       SOURCE_ID: 'mp-3',
       TRANSACTION_DATE: '2026-09-18T10:00:00-03:00',
@@ -385,6 +383,35 @@ describe('integration domain rules', () => {
       PAYER_ID_TYPE: 'DNI',
       PAYER_ID_NUMBER: '12345678',
     })).toMatchObject({ description: 'Ana Pérez', raw_data: { PAYER_ID_NUMBER: '12345678' } })
+  })
+
+  it('rejects generic Mercado Pago descriptions before using the external reference', () => {
+    expect(mpMovementDescription({ DESCRIPTION: 'settlement', EXTERNAL_REFERENCE: 'turno-42' }, 'received_payment', 'mp-3')).toBe('turno-42')
+    expect(mpMovementDescription({ DESCRIPTION: 'Pago aprobado', EXTERNAL_REFERENCE: 'turno-43' }, 'received_payment', 'mp-3')).toBe('turno-43')
+    for (const description of [
+      'Operación aprobada',
+      'Transacción aprobada',
+      'Operación realizada',
+      'Transacción confirmada',
+      'Operación exitosa',
+    ]) {
+      expect(mpMovementDescription({ DESCRIPTION: description, EXTERNAL_REFERENCE: 'turno-44' }, 'received_payment', 'mp-3')).toBe('turno-44')
+    }
+  })
+
+  it('keeps meaningful Mercado Pago descriptions', () => {
+    for (const description of ['Operación de Ana', 'Transferencia Banco Galicia', 'Pago de coloración']) {
+      expect(mpMovementDescription({ DESCRIPTION: description }, 'received_payment', 'mp-3')).toBe(description)
+    }
+  })
+
+  it('uses a localized Mercado Pago origin when descriptive fields are unavailable', () => {
+    expect(mpMovementDescription({ DESCRIPTION: 'payment', POI_WALLET_NAME: 'Cuenta DNI' }, 'received_payment', 'mp-3')).toBe('Cobro recibido Mercado Pago · Billetera: Cuenta DNI')
+    expect(mpMovementDescription({ DESCRIPTION: 'liquidación', POI_BANK_NAME: 'Banco Galicia' }, 'received_payment', 'mp-3')).toBe('Cobro recibido Mercado Pago · Banco: Banco Galicia')
+  })
+
+  it('falls back to the localized classification and stable Mercado Pago id', () => {
+    expect(mpMovementDescription({ DESCRIPTION: 'settlement', POI_WALLET_NAME: 'Mercado Pago' }, 'withholding', 'mp-3')).toBe('Retención Mercado Pago · MP mp-3')
   })
 
   it('auto-posts only deterministic Mercado Pago classifications', () => {

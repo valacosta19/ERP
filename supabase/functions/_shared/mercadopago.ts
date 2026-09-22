@@ -261,6 +261,56 @@ function providerText(value: string | undefined) {
   return text || null
 }
 
+const GENERIC_MP_DESCRIPTION_TOKENS = new Set([
+  'settlement', 'settlements', 'settled',
+  'payment', 'payments',
+  'approved', 'approve',
+  'refund', 'refunds',
+  'chargeback', 'chargebacks',
+  'withdrawal', 'withdrawals',
+  'payout', 'payouts',
+  'fee', 'fees',
+  'tax', 'taxes',
+  'withholding', 'withholdings',
+  'processed', 'pending', 'available', 'received', 'completed',
+  'operation', 'operations', 'transaction', 'transactions', 'confirmed', 'successful',
+  'liquidacion', 'liquidaciones', 'liquidado', 'liquidada',
+  'operacion', 'operaciones', 'transaccion', 'transacciones',
+  'pago', 'pagos', 'cobro', 'cobros',
+  'aprobado', 'aprobada', 'aprobados', 'aprobadas',
+  'reembolso', 'reembolsos', 'devolucion', 'devoluciones',
+  'contracargo', 'contracargos',
+  'retiro', 'retiros', 'desembolso', 'desembolsos',
+  'transferencia', 'transferencias',
+  'comision', 'comisiones',
+  'impuesto', 'impuestos',
+  'retencion', 'retenciones', 'percepcion', 'percepciones',
+  'procesado', 'procesada', 'pendiente', 'disponible',
+  'recibido', 'recibida', 'realizado', 'realizada', 'finalizado', 'finalizada', 'completado', 'completada',
+  'confirmado', 'confirmada', 'confirmados', 'confirmadas', 'exitoso', 'exitosa', 'exitosos', 'exitosas',
+  'de', 'del', 'el', 'la', 'dinero', 'fondos',
+  'mercado', 'mp', 'unknown', 'desconocido', 'none', 'null', 'na', 'n', 'a',
+])
+
+function meaningfulProviderDescription(value: string | undefined) {
+  const text = providerText(value)
+  if (!text) return null
+  const tokens = text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .match(/[a-z0-9]+/g) ?? []
+  return tokens.length > 0 && tokens.every(token => GENERIC_MP_DESCRIPTION_TOKENS.has(token)) ? null : text
+}
+
+function mpOriginDescription(row: Record<string, string>, classification: MpClassification) {
+  const walletName = meaningfulProviderDescription(row.POI_WALLET_NAME)
+  if (walletName) return `${MP_MOVEMENT_LABELS[classification]} Mercado Pago · Billetera: ${walletName}`
+  const bankName = meaningfulProviderDescription(row.POI_BANK_NAME)
+  if (bankName) return `${MP_MOVEMENT_LABELS[classification]} Mercado Pago · Banco: ${bankName}`
+  return null
+}
+
 function stableJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
@@ -357,8 +407,9 @@ export function mpMovementExternalId(row: Record<string, string>, classification
 export function mpMovementDescription(row: Record<string, string>, classification: MpClassification, externalId: string) {
   return providerText(row.PAYER_NAME)
     ?? providerText(row.SALE_DETAIL)
-    ?? providerText(row.DESCRIPTION)
+    ?? meaningfulProviderDescription(row.DESCRIPTION)
     ?? providerText(row.EXTERNAL_REFERENCE)
+    ?? mpOriginDescription(row, classification)
     ?? `${MP_MOVEMENT_LABELS[classification]} Mercado Pago · MP ${externalId}`
 }
 
