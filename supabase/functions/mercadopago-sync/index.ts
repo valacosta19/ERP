@@ -1,7 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
   movementsFromReportRow,
-  mpPostingPolicy,
   parseCsv,
   pendingMovementPatch,
   settlementFileNameFromReportSearch,
@@ -173,29 +172,17 @@ Deno.serve(async req => {
     }
     const rows = parseCsv(text)
     const movements = rows.flatMap(movementsFromReportRow)
-    let posted = 0
     for (const movement of movements) {
-      let movementId: string | null = null
       const { data: inserted, error: insertError } = await adminClient.from('mp_movements').insert({ ...movement, first_seen_run_id: run.id, last_seen_run_id: run.id }).select('id').single()
       if (insertError?.code === '23505') {
-        const { data: updated, error: updateError } = await adminClient.from('mp_movements').update(pendingMovementPatch(movement, run.id, new Date().toISOString())).eq('source_type', 'settlement_report').eq('external_id', movement.external_id).eq('status', 'pending').select('id').maybeSingle()
+        const { error: updateError } = await adminClient.from('mp_movements').update(pendingMovementPatch(movement, run.id, new Date().toISOString())).eq('source_type', 'settlement_report').eq('external_id', movement.external_id).eq('status', 'pending')
         if (updateError) throw updateError
-        movementId = updated?.id ?? null
       } else if (insertError) throw insertError
-      else movementId = inserted.id
-
-      if (movementId && mpPostingPolicy(movement.suggested_classification).autoPost) {
-        const { data: transactionId, error: postError } = await adminClient.rpc('post_mp_movement', {
-          p_movement_id: movementId,
-          p_actor_id: userId,
-        })
-        if (postError) throw postError
-        if (transactionId) posted += 1
-      }
+      else if (!inserted?.id) throw new Error('No se pudo registrar el movimiento de Mercado Pago.')
     }
     const { error: completionError } = await adminClient.from('mp_sync_runs').update({ status: 'completed', imported_count: movements.length, completed_at: new Date().toISOString() }).eq('id', run.id)
     if (completionError) throw completionError
-    return json({ status: 'completed', runId: run.id, imported: movements.length, posted })
+    return json({ status: 'completed', runId: run.id, imported: movements.length })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error de sincronización'
     if (currentRunId) {

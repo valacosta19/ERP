@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import forge from 'node-forge'
 import migrationSql from '../../supabase/migrations/102_arca_mercadopago_integrations.sql?raw'
 import mpAutoPostingMigrationSql from '../../supabase/migrations/103_mercadopago_auto_posting.sql?raw'
+import mpManualApprovalMigrationSql from '../../supabase/migrations/105_mp_manual_approval_only.sql?raw'
 import arcaEdgeSource from '../../supabase/functions/arca-issue/index.ts?raw'
 import mpEdgeSource from '../../supabase/functions/mercadopago-sync/index.ts?raw'
 import denoConfig from '../../supabase/functions/deno.json?raw'
@@ -17,7 +18,6 @@ import {
   movementsFromReportRow,
   mpMovementExternalId,
   mpMovementDescription,
-  mpPostingPolicy,
   parseCsv,
   pendingMovementPatch,
   SETTLEMENT_REPORT_COLUMNS,
@@ -110,6 +110,28 @@ describe('integration domain rules', () => {
     const [row] = parseCsv('TRANSACTION_ID;SETTLEMENT_DATE;NET_DEBIT_AMOUNT;DESCRIPTION\nmp-1;2026-09-18T10:00:00-03:00;1.234,50;"Comisión, Mercado Pago"')
     expect(classifyMpMovement(row)).toBe('fee')
     expect(movementFromReportRow(row)).toMatchObject({ external_id: 'mp-1', amount: -1234.5, suggested_classification: 'fee' })
+  })
+
+  it('classifies bank-transfer spelling variants as withdrawals', () => {
+    for (const transactionType of ['BANK_TRANSFER', 'Bank Transfer', 'bank-transfer']) {
+      const movement = movementFromReportRow({
+        SOURCE_ID: `transfer-${transactionType}`,
+        TRANSACTION_DATE: '2026-09-18T10:00:00-03:00',
+        TRANSACTION_TYPE: transactionType,
+        TRANSACTION_AMOUNT: '1000',
+        DESCRIPTION: 'settlement',
+      })
+      expect(movement).toMatchObject({ amount: -1000, suggested_classification: 'withdrawal' })
+    }
+  })
+  it('does not suggest received-payment accounting for debit settlements', () => {
+    const movement = movementFromReportRow({
+      SOURCE_ID: 'debit-settlement-1',
+      TRANSACTION_DATE: '2026-09-18T10:00:00-03:00',
+      TRANSACTION_TYPE: 'SETTLEMENT',
+      TRANSACTION_AMOUNT: '-20000',
+    })
+    expect(movement).toMatchObject({ amount: -20000, suggested_classification: 'unknown' })
   })
 
   it('configures manual Mercado Pago reports with the current account-report columns', () => {
@@ -414,25 +436,56 @@ describe('integration domain rules', () => {
     expect(mpMovementDescription({ DESCRIPTION: 'settlement', POI_WALLET_NAME: 'Mercado Pago' }, 'withholding', 'mp-3')).toBe('Retención Mercado Pago · MP mp-3')
   })
 
-  it('auto-posts only deterministic Mercado Pago classifications', () => {
-    expect(mpPostingPolicy('received_payment')).toMatchObject({ autoPost: true, transactionType: 'income', paymentDirection: 'entrada' })
-    for (const classification of ['fee', 'tax', 'withholding', 'refund', 'chargeback'] as const) {
-      expect(mpPostingPolicy(classification)).toMatchObject({ autoPost: true, transactionType: 'expense', paymentDirection: 'salida' })
-    }
-    expect(mpPostingPolicy('withdrawal').autoPost).toBe(false)
-    expect(mpPostingPolicy('unknown').autoPost).toBe(false)
-  })
-
-  it('defines an idempotent independent Mercado Pago posting boundary', () => {
+  it('keeps every imported Mercado Pago movement pending for explicit approval', () => {
     expect(mpAutoPostingMigrationSql).toContain('CREATE OR REPLACE FUNCTION post_mp_movement')
-    expect(mpAutoPostingMigrationSql).toContain('FOR UPDATE')
-    expect(mpAutoPostingMigrationSql).toContain('WHERE movement_id = p_movement_id')
-    expect(mpAutoPostingMigrationSql).toContain("IF FOUND THEN RETURN v_transaction_id")
-    expect(mpAutoPostingMigrationSql).toContain("IF NOT FOUND THEN RETURN NULL")
-    expect(mpAutoPostingMigrationSql).toContain("'Cobros Mercado Pago'")
-    expect(mpAutoPostingMigrationSql).toContain('no puede vincularse a una transacción manual')
-    expect(mpAutoPostingMigrationSql).not.toContain('UPDATE mp_movements SET status = \'pending\'')
-    expect(mpEdgeSource).toContain("adminClient.rpc('post_mp_movement'")
+    expect(mpEdgeSource).not.toContain("adminClient.rpc('post_mp_movement'")
+    expect(mpEdgeSource).not.toContain('mpPostingPolicy')
+    expect(mpManualApprovalMigrationSql).toContain('RETURN NULL;')
+    expect(mpManualApprovalMigrationSql).not.toContain('INSERT INTO transactions')
+  })
+  it('reverses only exact former automatic Mercado Pago links and preserves an audit trail', () => {
+    expect(mpManualApprovalMigrationSql).toContain("WHERE link.notes = 'Publicación automática desde reporte de Mercado Pago'")
+    expect(mpManualApprovalMigrationSql).toContain("movement.source_type = 'settlement_report'")
+    expect(mpManualApprovalMigrationSql).toContain("movement.status = 'reconciled'")
+    expect(mpManualApprovalMigrationSql).toContain('link.classification = movement.suggested_classification')
+    expect(mpManualApprovalMigrationSql).toContain('transaction_row.description IS NOT DISTINCT FROM movement.description')
+    expect(mpManualApprovalMigrationSql).toContain("transaction_row.date = (movement.occurred_at AT TIME ZONE 'America/Argentina/Buenos_Aires')::date")
+    expect(mpManualApprovalMigrationSql).toContain('transaction_row.currency = movement.currency')
+    expect(mpManualApprovalMigrationSql).toContain('transaction_row.amount = abs(movement.amount)')
+    expect(mpManualApprovalMigrationSql).toContain('transaction_row.created_by IS NOT DISTINCT FROM link.reconciled_by')
+    expect(mpManualApprovalMigrationSql).toContain("category.name = policy.category_name")
+    expect(mpManualApprovalMigrationSql).toContain('category.transaction_type = policy.transaction_type')
+    expect(mpManualApprovalMigrationSql).toContain('payment_shape.payment_count = 1')
+    expect(mpManualApprovalMigrationSql).toContain('payment_shape.matching_payment_count = 1')
+    expect(mpManualApprovalMigrationSql).toContain('LEFT JOIN mp_automatic_posting_reversal_targets')
+    expect(mpManualApprovalMigrationSql).toContain('no conservan todas las invariantes originales')
+    expect(mpManualApprovalMigrationSql).toContain("'reverse_automatic_mp_posting'")
+    expect(mpManualApprovalMigrationSql).toContain("SET voided_at = now(), voided_by = NULL")
+    expect(mpManualApprovalMigrationSql).toContain("status = 'pending'")
+    expect(mpManualApprovalMigrationSql).toContain('DELETE FROM mp_reconciliation_links')
+    expect(mpManualApprovalMigrationSql).toContain("'reconciliation_link_id', target.link_id")
+  })
+  it('fails closed before reversal for locked, fiscal, or grouped automatic transactions', () => {
+    const auditInsert = mpManualApprovalMigrationSql.indexOf('INSERT INTO user_action_logs')
+    for (const guard of ['JOIN locked_periods', 'JOIN fiscal_document_transactions', 'LEFT JOIN fiscal_document_items', 'JOIN transaction_group_members']) {
+      const guardIndex = mpManualApprovalMigrationSql.indexOf(guard)
+      expect(guardIndex).toBeGreaterThan(-1)
+      expect(guardIndex).toBeLessThan(auditInsert)
+    }
+    expect(mpManualApprovalMigrationSql).toContain('hay períodos contables cerrados')
+    expect(mpManualApprovalMigrationSql).toContain('fiscal_document_transactions/fiscal_document_items')
+    expect(mpManualApprovalMigrationSql).toContain('transaction_group_members contiene estas membresías')
+  })
+  it('idempotently repairs the complete pending Mercado Pago inbox', () => {
+    const pendingBackfill = mpManualApprovalMigrationSql.indexOf('WITH pending_base AS')
+    expect(pendingBackfill).toBeGreaterThan(-1)
+    const backfillSql = mpManualApprovalMigrationSql.slice(pendingBackfill)
+    expect(backfillSql).toContain("WHERE movement.status = 'pending'")
+    expect(backfillSql).toContain("~* 'bank[ _-]+transfer'")
+    expect(backfillSql).toContain("THEN 'withdrawal'")
+    expect(backfillSql).toContain("pending.suggested_classification = 'received_payment' AND pending.amount < 0")
+    expect(backfillSql).toContain("'Movimiento Mercado Pago · MP ' || pending.external_id")
+    expect(backfillSql).toContain('IS DISTINCT FROM repaired.repaired_description')
   })
 
   it('creates a parseable attached CMS/PKCS#7 payload for WSAA', async () => {

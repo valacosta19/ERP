@@ -237,11 +237,13 @@ export function classifyMpMovement(row: Record<string, string>): MpClassificatio
   const haystack = [row.TRANSACTION_TYPE, row.DESCRIPTION, row.SALE_DETAIL, row.TAX_DETAIL, row.SOURCE_ID, row.REASON].filter(Boolean).join(' ').toLowerCase()
   if (/chargeback|contracargo/.test(haystack)) return 'chargeback'
   if (/refund|devoluci[oó]n/.test(haystack)) return 'refund'
-  if (/withdraw|retiro|bank_transfer/.test(haystack)) return 'withdrawal'
+  if (/withdraw|retiro|bank(?:[\s_-]+)transfer/.test(haystack)) return 'withdrawal'
   if (/withholding|retenci[oó]n|percepci[oó]n|iibb|ganancias/.test(haystack)) return 'withholding'
   if (/tax|impuesto|iva/.test(haystack)) return 'tax'
   if (/fee|comisi[oó]n|shipping_fee|financing_fee/.test(haystack)) return 'fee'
-  if (/settlement|payment|approved|cobro/.test(haystack)) return 'received_payment'
+  if (/settlement|payment|approved|cobro/.test(haystack)) {
+    return reportMovementDirection(row) === 'debit' ? 'unknown' : 'received_payment'
+  }
   return 'unknown'
 }
 
@@ -413,20 +415,23 @@ export function mpMovementDescription(row: Record<string, string>, classificatio
     ?? `${MP_MOVEMENT_LABELS[classification]} Mercado Pago · MP ${externalId}`
 }
 
-export function mpPostingPolicy(classification: MpClassification) {
-  if (classification === 'received_payment') return { autoPost: true as const, transactionType: 'income' as const, paymentDirection: 'entrada' as const }
-  if (['fee', 'tax', 'withholding', 'refund', 'chargeback'].includes(classification)) {
-    return { autoPost: true as const, transactionType: 'expense' as const, paymentDirection: 'salida' as const }
-  }
-  return { autoPost: false as const, transactionType: null, paymentDirection: null }
-}
-
 export function parseMpAmount(value: string | undefined) {
   if (!value) return 0
   const trimmed = value.trim()
   const normalized = trimmed.includes(',') ? trimmed.replaceAll('.', '').replace(',', '.') : trimmed
   const amount = Number(normalized)
   return Number.isFinite(amount) ? amount : 0
+}
+
+function reportMovementDirection(row: Record<string, string>) {
+  const transactionAmount = parseMpAmount(row.TRANSACTION_AMOUNT || row.GROSS_AMOUNT)
+  if (transactionAmount !== 0) return transactionAmount < 0 ? 'debit' as const : 'credit' as const
+  const settlementNet = parseMpAmount(row.SETTLEMENT_NET_AMOUNT)
+  if (settlementNet !== 0) return settlementNet < 0 ? 'debit' as const : 'credit' as const
+  if (parseMpAmount(row.NET_CREDIT_AMOUNT) !== 0) return 'credit' as const
+  if (parseMpAmount(row.NET_DEBIT_AMOUNT) !== 0) return 'debit' as const
+  const fallback = parseMpAmount(row.REAL_AMOUNT || row.AMOUNT)
+  return fallback === 0 ? null : fallback < 0 ? 'debit' as const : 'credit' as const
 }
 
 export function movementFromReportRow(row: Record<string, string>) {
@@ -437,7 +442,7 @@ export function movementFromReportRow(row: Record<string, string>) {
   const settlementNet = parseMpAmount(row.SETTLEMENT_NET_AMOUNT)
   const credit = parseMpAmount(row.NET_CREDIT_AMOUNT)
   const debit = parseMpAmount(row.NET_DEBIT_AMOUNT)
-  const amount = classification === 'received_payment' && transactionAmount !== 0
+  const rawAmount = classification === 'received_payment' && transactionAmount !== 0
     ? transactionAmount
     : settlementNet !== 0
       ? settlementNet
@@ -446,6 +451,11 @@ export function movementFromReportRow(row: Record<string, string>) {
       : debit !== 0
         ? -Math.abs(debit)
         : parseMpAmount(row.REAL_AMOUNT || row.TRANSACTION_AMOUNT || row.AMOUNT)
+  const amount = ['fee', 'tax', 'withholding', 'withdrawal', 'refund', 'chargeback'].includes(classification)
+    ? -Math.abs(rawAmount)
+    : classification === 'received_payment'
+      ? Math.abs(rawAmount)
+      : rawAmount
   if (!externalId || !date || amount === 0) return null
   return {
     external_id: externalId,
