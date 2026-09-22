@@ -114,6 +114,76 @@ export interface TransactionGroupWithMembers extends TransactionGroup {
   members: GroupMemberTransaction[]
 }
 
+export type FiscalDocumentStatus = 'draft' | 'queued' | 'authorized' | 'rejected' | 'recovery_pending'
+
+export interface FiscalCustomer {
+  id: string
+  name: string
+  document_type: number
+  document_number: string
+  tax_condition_id: number | null
+  address: string | null
+  email: string | null
+  created_at: string
+}
+
+export interface FiscalDocument {
+  id: string
+  environment: 'homologation' | 'production'
+  status: FiscalDocumentStatus
+  receipt_type: 11 | 13
+  point_of_sale: number
+  receipt_number: number | null
+  issue_date: string
+  customer_snapshot: { name: string; document_type: number; document_number: string }
+  total: number
+  cae: string | null
+  cae_expires_on: string | null
+  qr_payload: string | null
+  last_error: string | null
+  created_at: string
+  items?: FiscalDocumentItem[]
+  transaction_ids?: string[]
+}
+
+export interface FiscalDocumentItem {
+  id: string
+  document_id: string
+  position: number
+  description: string
+  quantity: number
+  unit_price: number
+  line_total: number
+}
+
+export type MpClassification = 'received_payment' | 'fee' | 'tax' | 'withholding' | 'withdrawal' | 'refund' | 'chargeback' | 'unknown'
+
+export interface MpMovement {
+  id: string
+  external_id: string
+  occurred_at: string
+  amount: number
+  gross_amount: number | null
+  fee_amount: number | null
+  currency: 'ARS'
+  description: string | null
+  movement_type: string | null
+  suggested_classification: MpClassification
+  status: 'pending' | 'reconciled' | 'ignored'
+  created_at: string
+}
+
+export interface MpSyncRun {
+  id: string
+  status: 'requested' | 'processing' | 'downloaded' | 'completed' | 'failed'
+  date_from: string
+  date_to: string
+  report_file_name: string | null
+  imported_count: number
+  error_message: string | null
+  created_at: string
+}
+
 export interface Supplier {
   id: string
   name: string

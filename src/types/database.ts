@@ -333,6 +333,54 @@ export interface Database {
         Update: never
         Relationships: []
       }
+      fiscal_customers: {
+        Row: { id: string; name: string; document_type: number; document_number: string; tax_condition_id: number | null; address: string | null; email: string | null; created_at: string; created_by: string | null }
+        Insert: { id?: string; name: string; document_type: number; document_number?: string; tax_condition_id?: number | null; address?: string | null; email?: string | null; created_at?: string; created_by?: string | null }
+        Update: { name?: string; document_type?: number; document_number?: string; tax_condition_id?: number | null; address?: string | null; email?: string | null }
+        Relationships: []
+      }
+      fiscal_documents: {
+        Row: { id: string; environment: 'homologation' | 'production'; status: 'draft' | 'queued' | 'authorized' | 'rejected' | 'recovery_pending'; receipt_type: 11 | 13; point_of_sale: number; receipt_number: number | null; issue_date: string; currency: string; currency_rate: number; customer_id: string | null; customer_snapshot: Json; subtotal: number; total: number; associated_document_id: string | null; cae: string | null; cae_expires_on: string | null; qr_payload: string | null; provider_response: Json | null; last_error: string | null; idempotency_key: string; created_at: string; created_by: string | null; authorized_at: string | null }
+        Insert: { id?: string; environment?: 'homologation' | 'production'; status?: 'draft' | 'queued' | 'authorized' | 'rejected' | 'recovery_pending'; receipt_type?: 11 | 13; point_of_sale: number; receipt_number?: number | null; issue_date?: string; currency?: string; currency_rate?: number; customer_id?: string | null; customer_snapshot: Json; subtotal: number; total: number; associated_document_id?: string | null; created_by?: string | null }
+        Update: { status?: 'draft' | 'queued' | 'authorized' | 'rejected' | 'recovery_pending'; receipt_number?: number | null; cae?: string | null; cae_expires_on?: string | null; qr_payload?: string | null; provider_response?: Json | null; last_error?: string | null; authorized_at?: string | null }
+        Relationships: []
+      }
+      fiscal_document_items: {
+        Row: { id: string; document_id: string; position: number; description: string; quantity: number; unit_price: number; line_total: number; vat_rate: number }
+        Insert: { id?: string; document_id: string; position: number; description: string; quantity: number; unit_price: number; line_total: number; vat_rate?: number }
+        Update: { description?: string; quantity?: number; unit_price?: number; line_total?: number }
+        Relationships: []
+      }
+      fiscal_document_transactions: {
+        Row: { document_id: string; transaction_id: string; amount_snapshot: number; description_snapshot: string | null }
+        Insert: { document_id: string; transaction_id: string; amount_snapshot: number; description_snapshot?: string | null }
+        Update: never
+        Relationships: []
+      }
+      mp_sync_runs: {
+        Row: { id: string; status: 'requested' | 'processing' | 'downloaded' | 'completed' | 'failed'; date_from: string; date_to: string; report_file_name: string | null; imported_count: number; error_code: string | null; error_message: string | null; created_at: string; completed_at: string | null; created_by: string | null }
+        Insert: { id?: string; status: 'requested' | 'processing' | 'downloaded' | 'completed' | 'failed'; date_from: string; date_to: string; report_file_name?: string | null; imported_count?: number; error_code?: string | null; error_message?: string | null; created_at?: string; completed_at?: string | null; created_by?: string | null }
+        Update: { status?: 'requested' | 'processing' | 'downloaded' | 'completed' | 'failed'; report_file_name?: string | null; imported_count?: number; error_code?: string | null; error_message?: string | null; completed_at?: string | null }
+        Relationships: []
+      }
+      mp_movements: {
+        Row: { id: string; external_id: string; source_type: string; occurred_at: string; amount: number; gross_amount: number | null; fee_amount: number | null; currency: 'ARS'; description: string | null; movement_type: string | null; suggested_classification: 'received_payment' | 'fee' | 'tax' | 'withholding' | 'withdrawal' | 'refund' | 'chargeback' | 'unknown'; status: 'pending' | 'reconciled' | 'ignored'; raw_data: Json; first_seen_run_id: string | null; last_seen_run_id: string | null; created_at: string; updated_at: string }
+        Insert: { id?: string; external_id: string; source_type?: string; occurred_at: string; amount: number; gross_amount?: number | null; fee_amount?: number | null; currency?: 'ARS'; description?: string | null; movement_type?: string | null; suggested_classification?: 'received_payment' | 'fee' | 'tax' | 'withholding' | 'withdrawal' | 'refund' | 'chargeback' | 'unknown'; status?: 'pending' | 'reconciled' | 'ignored'; raw_data: Json; first_seen_run_id?: string | null; last_seen_run_id?: string | null }
+        Update: { occurred_at?: string; amount?: number; gross_amount?: number | null; fee_amount?: number | null; currency?: 'ARS'; description?: string | null; movement_type?: string | null; suggested_classification?: 'received_payment' | 'fee' | 'tax' | 'withholding' | 'withdrawal' | 'refund' | 'chargeback' | 'unknown'; status?: 'pending' | 'reconciled' | 'ignored'; raw_data?: Json; last_seen_run_id?: string | null; updated_at?: string }
+        Relationships: []
+      }
+      mp_reconciliation_links: {
+        Row: { id: string; movement_id: string; transaction_id: string; classification: string; reconciled_at: string; reconciled_by: string | null; notes: string | null }
+        Insert: { id?: string; movement_id: string; transaction_id: string; classification: string; reconciled_at?: string; reconciled_by?: string | null; notes?: string | null }
+        Update: never
+        Relationships: []
+      }
+      mp_reconciliation_rules: {
+        Row: { id: string; name: string; match_text: string; classification: string; subcategory_id: string | null; active: boolean; priority: number; created_at: string; created_by: string | null }
+        Insert: { id?: string; name: string; match_text: string; classification: string; subcategory_id?: string | null; active?: boolean; priority?: number; created_by?: string | null }
+        Update: { name?: string; match_text?: string; classification?: string; subcategory_id?: string | null; active?: boolean; priority?: number }
+        Relationships: []
+      }
       transaction_payments: {
         Row: {
           id: string
@@ -1086,6 +1134,50 @@ export interface Database {
       }
     }
     Functions: {
+      create_fiscal_draft: {
+        Args: { p_transaction_ids: string[]; p_customer_id: string | null; p_point_of_sale: number; p_environment?: string }
+        Returns: string
+      }
+      queue_fiscal_document: {
+        Args: { p_document_id: string; p_tax_id: string }
+        Returns: void
+      }
+      claim_fiscal_document: {
+        Args: { p_document_id: string; p_worker: string }
+        Returns: boolean
+      }
+      begin_fiscal_issue: {
+        Args: { p_document_id: string; p_tax_id: string; p_worker: string; p_actor_id: string }
+        Returns: boolean
+      }
+      finalize_fiscal_document: {
+        Args: { p_document_id: string; p_worker: string; p_status: string; p_receipt_number: number | null; p_cae: string | null; p_cae_expires_on: string | null; p_qr_payload: string | null; p_last_error: string | null }
+        Returns: void
+      }
+      record_fiscal_attempt_number: {
+        Args: { p_document_id: string; p_worker: string; p_receipt_number: number }
+        Returns: void
+      }
+      record_fiscal_recovery_evidence: {
+        Args: { p_document_id: string; p_worker: string; p_receipt_number: number; p_evidence: Json; p_last_error: string }
+        Returns: void
+      }
+      mark_stale_fiscal_recovery: {
+        Args: { p_document_id: string; p_actor_id: string }
+        Returns: void
+      }
+      recover_fiscal_document: {
+        Args: { p_document_id: string; p_actor_id: string; p_receipt_number: number; p_cae: string; p_cae_expires_on: string; p_qr_payload: string }
+        Returns: void
+      }
+      publish_mp_reconciliation: {
+        Args: { p_movement_id: string; p_classification: string; p_existing_transaction_id?: string | null; p_subcategory_id?: string | null; p_destination_payment_method?: string | null; p_notes?: string | null }
+        Returns: string
+      }
+      post_mp_movement: {
+        Args: { p_movement_id: string; p_actor_id?: string | null }
+        Returns: string | null
+      }
       create_funnel_unit: {
         Args: {
           p_client_uuid: string

@@ -13,6 +13,7 @@ import {
   PiggyBank,
   BookOpen,
   FlaskConical,
+  PlugZap,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { to: '/fondos', icon: <PiggyBank size={18} />, label: 'Fondos', adminOnly: true },
   { to: '/cuentas', icon: <BookOpen size={18} />, label: 'Cuentas', adminOnly: true },
   { to: '/import', icon: <FileSpreadsheet size={18} />, label: 'Importar', adminOnly: true },
+  { to: '/integrations', icon: <PlugZap size={18} />, label: 'Integraciones', adminOnly: true },
   { to: '/settings', icon: <Settings size={18} />, label: 'Ajustes', adminOnly: true },
 ]
 

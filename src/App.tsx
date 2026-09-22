@@ -22,6 +22,7 @@ const PurchaseOrdersPage = lazy(() => import('@/pages/purchase-orders/PurchaseOr
 const FondosPage = lazy(() => import('@/pages/fondos/FondosPage').then(m => ({ default: m.FondosPage })))
 const CuentasPage = lazy(() => import('@/pages/cuentas/CuentasPage').then(m => ({ default: m.CuentasPage })))
 const RecipesPage = lazy(() => import('@/pages/recipes/RecipesPage').then(m => ({ default: m.RecipesPage })))
+const IntegrationsPage = lazy(() => import('@/pages/integrations/IntegrationsPage').then(m => ({ default: m.IntegrationsPage })))
 
 function RouteFallback() {
   return (
@@ -77,6 +78,14 @@ export default function App() {
               element={
                 <AuthGuard requireAdmin>
                   <ErrorBoundary><ImportPage /></ErrorBoundary>
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/integrations"
+              element={
+                <AuthGuard requireAdmin>
+                  <ErrorBoundary><IntegrationsPage /></ErrorBoundary>
                 </AuthGuard>
               }
             />

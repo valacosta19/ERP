@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type DragEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers, Search, ChevronDown } from 'lucide-react'
+import { ArrowDown, ArrowUp, X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers, Search, ChevronDown, ReceiptText } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { currentMonthRange, todayLocal } from '@/lib/dateRange'
 import { readDateParam, readCurrencyParam } from '@/lib/transactionFilters'
@@ -26,6 +26,8 @@ import { useTransactionCategories } from '@/hooks/useTransactionCategories'
 import { useProfessionals } from '@/hooks/useProfessionals'
 import { useHairdresserServices } from '@/hooks/useHairdresserServices'
 import { useProducts } from '@/hooks/useProducts'
+import { useAuth } from '@/hooks/useAuth'
+import { useFiscalDocuments } from '@/hooks/useIntegrations'
 import { supabase } from '@/lib/supabaseClient'
 import { ReconcileModal } from './ReconcileModal'
 import { ProductCombobox } from '@/components/transactions/ProductCombobox'
@@ -44,6 +46,8 @@ import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInst
 import { confirmDialog } from '@/lib/confirm'
 import { showToast } from '@/lib/toast'
 import { transactionCashMovements, transactionCashTotals } from '@/lib/transactionCashFlow'
+import { fiscalDocumentStatusLabel, fiscalGroupInvoiceState, fiscalTransactionEligibility } from '@/lib/integrations'
+import { FiscalInvoiceModal, type FiscalSourceTransaction } from '@/components/integrations/FiscalInvoiceModal'
 import {
   internalTransferAmount,
   internalTransferValidationError,
@@ -62,6 +66,11 @@ const CURRENCY_FILTER_OPTIONS = [
 type TxRow =
   | { kind: 'single'; id: string; date: string; tx: Transaction }
   | { kind: 'group'; id: string; date: string; group: TransactionGroupWithMembers; visibleCount: number }
+
+interface FiscalTarget {
+  label: string
+  transactions: FiscalSourceTransaction[]
+}
 
 function signedAmount(tx: DirectionInput & { amount: number }) {
   return getTxDirection(tx) === 'salida' ? -tx.amount : tx.amount
@@ -91,6 +100,9 @@ function formatSigned(amount: number, sym: string) {
 export function TransactionsPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const { profile } = useAuth()
+  const isAdmin = profile?.role === 'admin'
+  const { data: fiscalDocuments = [] } = useFiscalDocuments(isAdmin)
   const [searchParams, setSearchParams] = useSearchParams()
   const defaultRange = { ...currentMonthRange(), to: todayLocal() }
   const parentCategoryFilter = searchParams.get('cat') ?? ''
@@ -147,6 +159,7 @@ export function TransactionsPage() {
   const [groupModalOpen, setGroupModalOpen] = useState(false)
   const [groupLabel, setGroupLabel] = useState('')
   const [groupError, setGroupError] = useState('')
+  const [fiscalTarget, setFiscalTarget] = useState<FiscalTarget | null>(null)
 
   const { data: txGroups = [] } = useTransactionGroups()
   const createGroup = useCreateTransactionGroup()
@@ -197,6 +210,9 @@ export function TransactionsPage() {
   const transactions = transactionsQuery.data ?? []
   const isLoading = transactionsQuery.isLoading
   const accountingQueryError = transactionsQuery.error ?? paymentBalancesQuery.error
+  const fiscalDocumentByTransactionId = new Map(
+    fiscalDocuments.flatMap(document => (document.transaction_ids ?? []).map(transactionId => [transactionId, document] as const)),
+  )
 
   const normalizedPaymentMethodFilter = paymentMethodFilter.toLowerCase()
   const filteredTransactions = paymentMethodFilter
@@ -598,10 +614,32 @@ export function TransactionsPage() {
   }
 
 
-  function renderActions(tx: Transaction) {
-    if (tx.voided_at || isDateLocked(tx.date)) return null
+  function renderFiscalAction(tx: FiscalSourceTransaction) {
+    if (!isAdmin) return null
+    const document = fiscalDocumentByTransactionId.get(tx.id)
+    const eligibility = fiscalTransactionEligibility(tx, document?.status)
+    if (!eligibility.canCreate && !eligibility.canOpenExisting) return null
+    const label = document ? `Ver factura · ${fiscalDocumentStatusLabel(document.status)}` : 'Facturar'
+    return (
+      <button
+        type="button"
+        onClick={() => setFiscalTarget({ label: tx.description || 'Transacción', transactions: [tx] })}
+        title={document ? `Abrir comprobante existente (${fiscalDocumentStatusLabel(document.status)})` : 'Facturar esta transacción'}
+        aria-label={`${label}: ${tx.description || 'transacción'}`}
+        className="transaction-touch-action inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs font-semibold text-[var(--color-accent)] transition-colors hover:bg-[var(--color-bg)]"
+      >
+        <ReceiptText size={14} aria-hidden="true" />
+        <span>{document ? 'Ver factura' : 'Facturar'}</span>
+      </button>
+    )
+  }
+
+  function renderActions(tx: Transaction, includeFiscal = true) {
+    const canModify = !tx.voided_at && !isDateLocked(tx.date)
     return (
       <>
+        {includeFiscal && renderFiscalAction(tx)}
+        {canModify && <>
         <button
           type="button"
           onClick={() => openEdit(tx)}
@@ -619,6 +657,48 @@ export function TransactionsPage() {
           className="transaction-touch-action p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-light)] transition-colors"
         >
           <Ban size={14} />
+        </button>
+        </>}
+      </>
+    )
+  }
+
+  function renderGroupActions(group: TransactionGroupWithMembers) {
+    const state = fiscalGroupInvoiceState(group.members, fiscalDocuments)
+    const existingDocument = state.kind === 'existing'
+      ? fiscalDocuments.find(document => document.id === state.document.id)
+      : undefined
+    const label = existingDocument ? 'Ver factura' : 'Facturar'
+    const explanation = state.reason
+      ?? (existingDocument ? `Abrir comprobante existente (${fiscalDocumentStatusLabel(existingDocument.status)})` : `Facturar el grupo completo por ${CURRENCY_SYMBOL[group.currency]}${state.total.toLocaleString('es-CO')}`)
+
+    return (
+      <>
+        {isAdmin && <button
+          type="button"
+          aria-disabled={state.kind === 'blocked'}
+          aria-label={`${label} grupo ${group.label}. ${explanation}`}
+          title={explanation}
+          onClick={() => {
+            if (state.kind === 'blocked') {
+              showToast(state.reason ?? 'Este grupo no se puede facturar.', 'warning')
+              return
+            }
+            setFiscalTarget({ label: group.label, transactions: group.members })
+          }}
+          className={`transaction-touch-action inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-2 py-1 text-xs font-semibold transition-colors ${state.kind === 'blocked' ? 'cursor-not-allowed text-[var(--color-muted)] opacity-60' : 'text-[var(--color-accent)] hover:bg-[var(--color-bg)]'}`}
+        >
+          <ReceiptText size={14} aria-hidden="true" />
+          <span>{label}</span>
+        </button>}
+        <button
+          type="button"
+          onClick={() => deleteGroup.mutate(group.id)}
+          title="Desagrupar"
+          aria-label={`Desagrupar ${group.label}`}
+          className="transaction-touch-action rounded-lg p-1.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-bg)] hover:text-[var(--color-text)]"
+        >
+          <Unlink size={14} />
         </button>
       </>
     )
@@ -649,7 +729,7 @@ export function TransactionsPage() {
                   {dir === 'entrada' ? '+' : dir === 'salida' ? '-' : ''}{sym}{member.amount.toLocaleString('es-CO')}
                 </span>
                 <div className="flex items-center gap-1 justify-end">
-                  {full && renderActions(full)}
+                  {full && renderActions(full, false)}
                   <button
                     type="button"
                     onClick={() => removeGroupMember.mutate({ groupId: group.id, transactionId: member.id })}
@@ -685,7 +765,7 @@ export function TransactionsPage() {
                   </span>
                 </div>
                 <div className="mt-2 flex items-center justify-end gap-1">
-                  {full && renderActions(full)}
+                  {full && renderActions(full, false)}
                   <button
                     type="button"
                     onClick={() => removeGroupMember.mutate({ groupId: group.id, transactionId: member.id })}
@@ -887,18 +967,10 @@ export function TransactionsPage() {
     {
       key: 'actions',
       header: '',
-      className: 'w-20',
+      className: 'w-[11rem] min-w-[11rem]',
       render: (row: TxRow) => (
-        <div className="flex items-center gap-1 justify-end">
-          {row.kind === 'group' ? (
-            <button
-              onClick={() => deleteGroup.mutate(row.group.id)}
-              title="Desagrupar"
-              className="p-1.5 rounded-lg text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg)] transition-colors"
-            >
-              <Unlink size={14} />
-            </button>
-          ) : renderActions(row.tx)}
+        <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+          {row.kind === 'group' ? renderGroupActions(row.group) : renderActions(row.tx)}
         </div>
       ),
     },
@@ -1013,12 +1085,9 @@ export function TransactionsPage() {
                 </Button>
               </div>
             </div>
-            <div className="transaction-mobile-card__actions">
+            <div className="transaction-mobile-card__actions flex-wrap">
               {row.kind === 'group' ? (
-                <Button type="button" variant="ghost" size="sm" onClick={() => deleteGroup.mutate(row.group.id)}>
-                  <Unlink size={16} />
-                  Desagrupar
-                </Button>
+                renderGroupActions(row.group)
               ) : renderActions(row.tx)}
             </div>
           </div>
@@ -1634,6 +1703,7 @@ export function TransactionsPage() {
       </Modal>
 
       <ReconcileModal open={reconcileOpen} onClose={() => setReconcileOpen(false)} />
+      {fiscalTarget && <FiscalInvoiceModal key={fiscalTarget.transactions.map(transaction => transaction.id).join(':')} open onClose={() => setFiscalTarget(null)} sourceLabel={fiscalTarget.label} transactions={fiscalTarget.transactions} />}
     </div>
   )
 }

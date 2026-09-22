@@ -58,6 +58,7 @@ Patrón de datos: Postgres → `supabaseClient.ts` → `hooks/` (TanStack Query)
 | [`CLAUDE.md`](./CLAUDE.md) | Instrucciones para la IA: comandos, reglas de negocio, convenciones de código, fase actual |
 | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | **Mapa por módulo: archivos, tablas/RPCs, invariantes que no se pueden rompen** — leer antes de tocar una feature |
 | [`docs/accounting.md`](./docs/accounting.md) | Manual contable: FIFO, valuación, cálculo de comisiones, reportes — para auditoría o referencia |
+| [`docs/integrations.md`](./docs/integrations.md) | Setup seguro y flujo operativo de ARCA + Mercado Pago |
 | [`PROJECT_STATE.md`](./PROJECT_STATE.md) | Estado actual del proyecto: fase en curso, deuda técnica abierta |
 | [`docs/backlog.md`](./docs/backlog.md) | Features pendientes priorizadas |
 | [`docs/roadmap/`](./docs/roadmap/) | Iniciativas planificadas a futuro (no en sprint) |
