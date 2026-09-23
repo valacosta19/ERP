@@ -1147,8 +1147,12 @@ export interface Database {
     }
     Functions: {
       create_fiscal_draft: {
-        Args: { p_transaction_ids: string[]; p_customer_id: string | null; p_point_of_sale: number; p_environment?: string }
+        Args: { p_transaction_ids: string[]; p_customer_id: string | null; p_point_of_sale: number; p_environment?: string; p_issue_date?: string }
         Returns: string
+      }
+      update_fiscal_draft_issue_date: {
+        Args: { p_document_id: string; p_issue_date: string }
+        Returns: void
       }
       queue_fiscal_document: {
         Args: { p_document_id: string; p_tax_id: string }
@@ -1160,7 +1164,7 @@ export interface Database {
       }
       begin_fiscal_issue: {
         Args: { p_document_id: string; p_tax_id: string; p_worker: string; p_actor_id: string }
-        Returns: boolean
+        Returns: string
       }
       finalize_fiscal_document: {
         Args: { p_document_id: string; p_worker: string; p_status: string; p_receipt_number: number | null; p_cae: string | null; p_cae_expires_on: string | null; p_qr_payload: string | null; p_last_error: string | null }

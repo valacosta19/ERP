@@ -10,7 +10,7 @@ import { useTransactionGroups } from '@/hooks/useTransactionGroups'
 import {
   useFiscalDocuments, useMpSync, useMpSyncRuns,
 } from '@/hooks/useIntegrations'
-import { fiscalTransactionEligibility, validateFiscalSource } from '@/lib/integrations'
+import { eligibleFiscalGroupSources, eligibleFiscalTransactionSources, fiscalTransactionEligibility, validateFiscalSource } from '@/lib/integrations'
 import { formatDate } from '@/lib/formatDate'
 import { showToast } from '@/lib/toast'
 import { FiscalInvoiceModal, FiscalStatusBadge, type FiscalSourceTransaction } from '@/components/integrations/FiscalInvoiceModal'
@@ -43,10 +43,12 @@ function ArcaPanel() {
       ?? null
     : null
   const groupedTransactionIds = new Set(groups.flatMap(group => group.members.map(member => member.id)))
+  const eligibleGroups = eligibleFiscalGroupSources(groups, documents)
+  const eligibleTransactions = eligibleFiscalTransactionSources(transactions, documents)
 
   const sourceOptions = [
-    ...groups.map(group => ({ value: `group:${group.id}`, label: `Ticket · ${group.label} · ${money(group.members.reduce((sum, item) => sum + item.amount, 0))}` })),
-    ...transactions.filter(transaction => !groupedTransactionIds.has(transaction.id)).slice(0, 100).map(transaction => ({ value: `tx:${transaction.id}`, label: `${formatDate(transaction.date)} · ${transaction.description || 'Sin descripción'} · ${money(transaction.amount)}` })),
+    ...eligibleGroups.map(group => ({ value: `group:${group.id}`, label: `Ticket · ${group.label} · ${money(group.members.reduce((sum, item) => sum + item.amount, 0))}` })),
+    ...eligibleTransactions.filter(transaction => !groupedTransactionIds.has(transaction.id)).slice(0, 100).map(transaction => ({ value: `tx:${transaction.id}`, label: `${formatDate(transaction.date)} · ${transaction.description || 'Sin descripción'} · ${money(transaction.amount)}` })),
   ]
 
   function openDocument(document: FiscalDocument) {

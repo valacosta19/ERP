@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
-  arcaEndpoints, buildArcaQrPayload, buildLoginCmsEnvelope,
+  arcaCredentials, arcaEndpoints, buildArcaQrPayload, buildLoginCmsEnvelope,
   buildLoginTicketRequest, buildWsfeAuthorizeEnvelope, buildWsfeConsultEnvelope,
   buildWsfeLastAuthorizedEnvelope, parseLastAuthorized, parseLoginTicketResponse,
   parseWsfeAuthorization, parseWsfeConsultation, type ArcaEnvironment,
@@ -36,17 +36,19 @@ Deno.serve(async req => {
   const input = await req.json().catch(() => ({})) as { documentId?: string; action?: 'issue' | 'recover' }
   const documentId = input.documentId
   if (typeof documentId !== 'string') return json({ error: 'documentId_required' }, 400)
-  const taxId = (Deno.env.get('ARCA_CUIT') ?? '').replace(/\D/g, '')
-  if (!taxId || !Deno.env.get('ARCA_CERT_PEM') || !Deno.env.get('ARCA_PRIVATE_KEY_PEM')) {
-    return json({ error: 'not_configured', detail: 'Configurá ARCA_CUIT, ARCA_CERT_PEM y ARCA_PRIVATE_KEY_PEM en los secrets de la Edge Function.' }, 503)
-  }
-
   const { data: document, error: documentError } = await adminClient.from('fiscal_documents').select('*').eq('id', documentId).single()
   if (documentError || !document) return json({ error: 'document_not_found' }, 404)
   const environment = document.environment as ArcaEnvironment
   const endpoint = arcaEndpoints(environment)
+  let credentials: ReturnType<typeof arcaCredentials>
+  try {
+    credentials = arcaCredentials(environment, name => Deno.env.get(name))
+  } catch (error) {
+    return json({ error: 'not_configured', detail: error instanceof Error ? error.message.replace(/^not_configured:\s*/, '') : 'La configuración de ARCA está incompleta.' }, 503)
+  }
+  const { taxId, certificatePem, privateKeyPem } = credentials
   const authenticate = async () => {
-    const signer = new ForgeCmsSigner(Deno.env.get('ARCA_CERT_PEM')!, Deno.env.get('ARCA_PRIVATE_KEY_PEM')!)
+    const signer = new ForgeCmsSigner(certificatePem, privateKeyPem)
     const ticketXml = buildLoginTicketRequest(Math.floor(Date.now() / 1000))
     const cms = await signer.sign(ticketXml)
     const loginResponse = await postSoap(endpoint.wsaa, 'loginCms', buildLoginCmsEnvelope(cms))
@@ -79,9 +81,9 @@ Deno.serve(async req => {
   }
 
   const worker = crypto.randomUUID()
-  const { data: claimed, error: claimError } = await adminClient.rpc('begin_fiscal_issue', { p_document_id: documentId, p_tax_id: taxId, p_worker: worker, p_actor_id: user.id })
+  const { data: authoritativeIssueDate, error: claimError } = await adminClient.rpc('begin_fiscal_issue', { p_document_id: documentId, p_tax_id: taxId, p_worker: worker, p_actor_id: user.id })
   if (claimError) return json({ error: 'claim_failed', detail: claimError.message }, 409)
-  if (!claimed) return json({ error: 'already_processing' }, 409)
+  if (typeof authoritativeIssueDate !== 'string') return json({ error: 'claim_failed', detail: 'No se pudo fijar la fecha fiscal del comprobante.' }, 409)
 
   const finalize = async (status: 'draft' | 'authorized' | 'rejected' | 'recovery_pending', values: { receiptNumber?: number; cae?: string; expires?: string; qr?: string; error?: string } = {}) => {
     const { error } = await adminClient.rpc('finalize_fiscal_document', {
@@ -107,7 +109,7 @@ Deno.serve(async req => {
     const { error: attemptError } = await adminClient.rpc('record_fiscal_attempt_number', { p_document_id: documentId, p_worker: worker, p_receipt_number: receiptNumber })
     if (attemptError) throw new Error(`persistence_failed: ${attemptError.message}`)
     const customer = document.customer_snapshot as { document_type: number; document_number: string; tax_condition_id: number }
-    const invoice = { taxId, token: auth.token, sign: auth.sign, pointOfSale: document.point_of_sale, receiptType: document.receipt_type, receiptNumber, issueDate: document.issue_date, documentType: customer.document_type, documentNumber: customer.document_number, taxConditionId: customer.tax_condition_id, total: Number(document.total) }
+    const invoice = { taxId, token: auth.token, sign: auth.sign, pointOfSale: document.point_of_sale, receiptType: document.receipt_type, receiptNumber, issueDate: authoritativeIssueDate, documentType: customer.document_type, documentNumber: customer.document_number, taxConditionId: customer.tax_condition_id, total: Number(document.total) }
 
     let parsed
     try {
@@ -129,7 +131,7 @@ Deno.serve(async req => {
     }
     providerAuthorized = true
     const expires = `${parsed.expires.slice(0, 4)}-${parsed.expires.slice(4, 6)}-${parsed.expires.slice(6, 8)}`
-    const qrPayload = buildArcaQrPayload({ date: document.issue_date, taxId, pointOfSale: document.point_of_sale, receiptType: document.receipt_type, receiptNumber: parsed.receiptNumber, total: Number(document.total), documentType: customer.document_type, documentNumber: customer.document_number, cae: parsed.cae })
+    const qrPayload = buildArcaQrPayload({ date: authoritativeIssueDate, taxId, pointOfSale: document.point_of_sale, receiptType: document.receipt_type, receiptNumber: parsed.receiptNumber, total: Number(document.total), documentType: customer.document_type, documentNumber: customer.document_number, cae: parsed.cae })
     authorizedEvidence = { receiptNumber: parsed.receiptNumber, cae: parsed.cae, expires, qr: qrPayload }
     await finalize('authorized', { receiptNumber: parsed.receiptNumber, cae: parsed.cae, expires, qr: qrPayload })
     return json({ status: 'authorized', receiptNumber: parsed.receiptNumber, cae: parsed.cae })

@@ -1,5 +1,51 @@
 export type ArcaEnvironment = 'homologation' | 'production'
 
+export interface ArcaCredentials {
+  taxId: string
+  certificatePem: string
+  privateKeyPem: string
+}
+
+type SecretReader = (name: string) => string | undefined
+
+function readCredentialBundle(prefix: string, readSecret: SecretReader) {
+  const rawTaxId = readSecret(`${prefix}_CUIT`)
+  const certificatePem = readSecret(`${prefix}_CERT_PEM`)
+  const privateKeyPem = readSecret(`${prefix}_PRIVATE_KEY_PEM`)
+  return {
+    present: rawTaxId !== undefined || certificatePem !== undefined || privateKeyPem !== undefined,
+    credentials: { taxId: rawTaxId?.replace(/\D/g, '') ?? '', certificatePem: certificatePem ?? '', privateKeyPem: privateKeyPem ?? '' },
+  }
+}
+
+function requireCredentialBundle(prefix: string, readSecret: SecretReader) {
+  const bundle = readCredentialBundle(prefix, readSecret)
+  const { taxId, certificatePem, privateKeyPem } = bundle.credentials
+  if (!taxId || !certificatePem || !privateKeyPem) {
+    throw new Error(`not_configured: Configurá ${prefix}_CUIT, ${prefix}_CERT_PEM y ${prefix}_PRIVATE_KEY_PEM como un bundle completo en los secrets de la Edge Function.`)
+  }
+  return bundle.credentials
+}
+
+export function arcaCredentials(environment: ArcaEnvironment, readSecret: SecretReader): ArcaCredentials {
+  if (environment === 'production' && readSecret('ARCA_PRODUCTION_ENABLED') !== 'true') {
+    throw new Error('not_configured: La emisión ARCA en producción está deshabilitada. Configurá ARCA_PRODUCTION_ENABLED=true únicamente después de cargar y verificar las credenciales productivas.')
+  }
+
+  if (environment === 'production') return requireCredentialBundle('ARCA_PRODUCTION', readSecret)
+
+  const preferred = readCredentialBundle('ARCA_HOMOLOGATION', readSecret)
+  if (preferred.present) {
+    const { taxId, certificatePem, privateKeyPem } = preferred.credentials
+    if (!taxId || !certificatePem || !privateKeyPem) {
+      throw new Error('not_configured: El bundle ARCA_HOMOLOGATION está incompleto. Configurá ARCA_HOMOLOGATION_CUIT, ARCA_HOMOLOGATION_CERT_PEM y ARCA_HOMOLOGATION_PRIVATE_KEY_PEM juntos, o eliminá las variables parciales para usar el bundle legacy completo.')
+    }
+    return preferred.credentials
+  }
+
+  return requireCredentialBundle('ARCA', readSecret)
+}
+
 const endpoints = {
   homologation: {
     wsaa: 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms',

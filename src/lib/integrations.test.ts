@@ -2,15 +2,20 @@ import { describe, expect, it } from 'vitest'
 import forge from 'node-forge'
 import migrationSql from '../../supabase/migrations/102_arca_mercadopago_integrations.sql?raw'
 import mpAutoPostingMigrationSql from '../../supabase/migrations/103_mercadopago_auto_posting.sql?raw'
+import fiscalIssueDateMigrationSql from '../../supabase/migrations/104_fiscal_issue_date.sql?raw'
 import mpManualApprovalMigrationSql from '../../supabase/migrations/105_mp_manual_approval_only.sql?raw'
 import arcaEdgeSource from '../../supabase/functions/arca-issue/index.ts?raw'
 import mpEdgeSource from '../../supabase/functions/mercadopago-sync/index.ts?raw'
 import denoConfig from '../../supabase/functions/deno.json?raw'
 import packageJson from '../../package.json?raw'
+import envExampleSource from '../../.env.example?raw'
+import integrationsDocSource from '../../docs/integrations.md?raw'
 import integrationsPageSource from '../pages/integrations/IntegrationsPage.tsx?raw'
 import transactionsPageSource from '../pages/transactions/TransactionsPage.tsx?raw'
-import { arcaQrPayload, edgeFunctionErrorDetail, fiscalGroupInvoiceState, fiscalTransactionEligibility, reconciliationRequirements, validateFiscalSource } from './integrations'
-import { buildWsfeAuthorizeEnvelope, parseWsfeAuthorization, parseWsfeConsultation } from '../../supabase/functions/_shared/arca.ts'
+import fiscalInvoiceModalSource from '../components/integrations/FiscalInvoiceModal.tsx?raw'
+import integrationsHookSource from '../hooks/useIntegrations.ts?raw'
+import { arcaQrPayload, edgeFunctionErrorDetail, eligibleFiscalGroupSources, eligibleFiscalTransactionSources, fiscalGroupInvoiceState, fiscalIssueDateBounds, fiscalIssueDateValue, fiscalTransactionEligibility, localIsoDate, reconciliationRequirements, validateFiscalIssueDate, validateFiscalSource } from './integrations'
+import { arcaCredentials, buildWsfeAuthorizeEnvelope, parseWsfeAuthorization, parseWsfeConsultation } from '../../supabase/functions/_shared/arca.ts'
 import { ForgeCmsSigner } from '../../supabase/functions/_shared/cms.ts'
 import {
   classifyMpMovement,
@@ -42,6 +47,59 @@ describe('integration domain rules', () => {
     expect(validateFiscalSource([100], ['ARS'])).toBeNull()
   })
 
+  it('accepts both ARCA service-date boundaries and rejects dates outside them', () => {
+    expect(fiscalIssueDateBounds('2026-09-22')).toEqual({ min: '2026-09-12', max: '2026-10-02' })
+    expect(validateFiscalIssueDate('2026-09-12', '2026-09-22')).toBeNull()
+    expect(validateFiscalIssueDate('2026-10-02', '2026-09-22')).toBeNull()
+    expect(validateFiscalIssueDate('2026-09-11', '2026-09-22')).toContain('2026-09-12')
+    expect(validateFiscalIssueDate('2026-10-03', '2026-09-22')).toContain('2026-10-02')
+    expect(validateFiscalIssueDate('2026-02-30', '2026-09-22')).toContain('válida')
+  })
+
+  it('derives the default issue date from local calendar fields instead of UTC', () => {
+    expect(localIsoDate(new Date(2026, 8, 22, 23, 30))).toBe('2026-09-22')
+  })
+
+  it('adopts an arriving or changed fiscal document date without overwriting an active matching edit', () => {
+    const newDraftEdit = { documentId: null, baseValue: null, value: '2026-09-22' }
+    const persisted = { id: 'doc-1', issue_date: '2026-09-21' }
+    expect(fiscalIssueDateValue(newDraftEdit, persisted)).toBe('2026-09-21')
+
+    const activeEdit = { documentId: 'doc-1', baseValue: '2026-09-21', value: '2026-09-20' }
+    expect(fiscalIssueDateValue(activeEdit, persisted)).toBe('2026-09-20')
+    expect(fiscalIssueDateValue(activeEdit, { ...persisted, issue_date: '2026-09-19' })).toBe('2026-09-19')
+  })
+
+  it('forwards the selected issue date from the date control through the draft RPC', () => {
+    expect(fiscalInvoiceModalSource).toContain('label="Fecha del comprobante"')
+    expect(fiscalInvoiceModalSource).toContain('min={issueDateBounds.min}')
+    expect(fiscalInvoiceModalSource).toContain('max={issueDateBounds.max}')
+    expect(fiscalInvoiceModalSource).toContain('issueDate,')
+    expect(integrationsHookSource).toContain('p_issue_date: payload.issueDate')
+    expect(fiscalIssueDateMigrationSql).toContain('INSERT INTO fiscal_documents(environment, point_of_sale, issue_date')
+  })
+
+  it('revalidates stale draft dates before either server-side queue path changes status', () => {
+    expect(fiscalIssueDateMigrationSql).toContain('CREATE OR REPLACE FUNCTION fiscal_issue_date_is_allowed')
+    expect(fiscalIssueDateMigrationSql.match(/IF NOT fiscal_issue_date_is_allowed\(p_issue_date\)/g)).toHaveLength(2)
+    expect(fiscalIssueDateMigrationSql.match(/IF NOT fiscal_issue_date_is_allowed\(v_doc\.issue_date\)/g)).toHaveLength(2)
+    expect(fiscalIssueDateMigrationSql).toContain('CREATE OR REPLACE FUNCTION update_fiscal_draft_issue_date')
+    const beginValidation = fiscalIssueDateMigrationSql.indexOf('IF NOT fiscal_issue_date_is_allowed(v_doc.issue_date)', fiscalIssueDateMigrationSql.indexOf('CREATE FUNCTION begin_fiscal_issue'))
+    const beginQueue = fiscalIssueDateMigrationSql.indexOf('UPDATE fiscal_documents SET', beginValidation)
+    expect(beginValidation).toBeGreaterThan(-1)
+    expect(beginQueue).toBeGreaterThan(beginValidation)
+  })
+
+  it('freezes the validated issue date for WSFE and resets only confirmed rejected attempt numbers', () => {
+    expect(fiscalIssueDateMigrationSql).toContain(') RETURNS date')
+    expect(fiscalIssueDateMigrationSql).toContain('RETURN v_doc.issue_date;')
+    expect(fiscalIssueDateMigrationSql.match(/receipt_number = CASE WHEN status = 'rejected' THEN NULL ELSE receipt_number END/g)).toHaveLength(2)
+    expect(fiscalIssueDateMigrationSql).toContain("v_doc.status NOT IN ('draft', 'rejected')")
+    expect(arcaEdgeSource).toContain('issueDate: authoritativeIssueDate')
+    expect(arcaEdgeSource).toContain('date: authoritativeIssueDate')
+    expect(arcaEdgeSource).not.toContain('const invoice = { taxId, token: auth.token, sign: auth.sign, pointOfSale: document.point_of_sale, receiptType: document.receipt_type, receiptNumber, issueDate: document.issue_date')
+  })
+
   it('offers row invoicing only for active positive ARS income and opens existing documents', () => {
     const income = { amount: 100, currency: 'ARS', voided_at: null, subcategory: { transaction_type: 'income' as const } }
     expect(fiscalTransactionEligibility(income)).toEqual({ canCreate: true, canOpenExisting: false, reason: null })
@@ -49,6 +107,17 @@ describe('integration domain rules', () => {
     expect(fiscalTransactionEligibility({ ...income, subcategory: { transaction_type: 'expense' as const } }).reason).toContain('ingresos')
     expect(fiscalTransactionEligibility({ ...income, currency: 'USD' }).reason).toContain('ARS')
     expect(fiscalTransactionEligibility(income, 'queued')).toEqual({ canCreate: false, canOpenExisting: true, reason: 'La transacción ya tiene un comprobante fiscal.' })
+  })
+
+  it('lists only invoice-eligible income sources in the ARCA source picker', () => {
+    const income = { id: 'income', amount: 100, currency: 'ARS', voided_at: null, subcategory: { transaction_type: 'income' as const } }
+    const expense = { id: 'expense', amount: 50, currency: 'ARS', voided_at: null, subcategory: { transaction_type: 'expense' as const } }
+
+    expect(eligibleFiscalTransactionSources([income, expense], [])).toEqual([income])
+    expect(eligibleFiscalGroupSources([
+      { id: 'income-group', members: [income] },
+      { id: 'expense-group', members: [expense] },
+    ], [])).toEqual([{ id: 'income-group', members: [income] }])
   })
 
   it('uses every real group member for one fiscal total and rejects mixed eligibility', () => {
@@ -106,6 +175,90 @@ describe('integration domain rules', () => {
     expect(parseWsfeConsultation('<Resultado>R</Resultado><CAE>fake</CAE><CAEFchVto>20260928</CAEFchVto><CbteDesde>81</CbteDesde>').authorized).toBe(false)
   })
 
+  it('keeps legacy ARCA secrets as a homologation-only fallback', () => {
+    const secrets: Record<string, string> = {
+      ARCA_CUIT: '20-12345678-9',
+      ARCA_CERT_PEM: 'homologation-certificate',
+      ARCA_PRIVATE_KEY_PEM: 'homologation-key',
+    }
+    expect(arcaCredentials('homologation', name => secrets[name])).toEqual({
+      taxId: '20123456789',
+      certificatePem: 'homologation-certificate',
+      privateKeyPem: 'homologation-key',
+    })
+  })
+
+  it('uses the complete preferred homologation credential bundle atomically', () => {
+    const secrets: Record<string, string> = {
+      ARCA_HOMOLOGATION_CUIT: '27-96025379-0',
+      ARCA_HOMOLOGATION_CERT_PEM: 'preferred-certificate',
+      ARCA_HOMOLOGATION_PRIVATE_KEY_PEM: 'preferred-key',
+      ARCA_CUIT: '20123456789',
+      ARCA_CERT_PEM: 'legacy-certificate',
+      ARCA_PRIVATE_KEY_PEM: 'legacy-key',
+    }
+    expect(arcaCredentials('homologation', name => secrets[name])).toEqual({
+      taxId: '27960253790',
+      certificatePem: 'preferred-certificate',
+      privateKeyPem: 'preferred-key',
+    })
+  })
+
+  it('fails closed instead of mixing a partial preferred bundle with legacy homologation secrets', () => {
+    const secrets: Record<string, string> = {
+      ARCA_HOMOLOGATION_CUIT: '27960253790',
+      ARCA_CUIT: '20123456789',
+      ARCA_CERT_PEM: 'legacy-certificate',
+      ARCA_PRIVATE_KEY_PEM: 'legacy-key',
+    }
+    expect(() => arcaCredentials('homologation', name => secrets[name])).toThrow('bundle ARCA_HOMOLOGATION está incompleto')
+  })
+
+  it('requires the explicit production flag before reading production credentials', () => {
+    const secrets: Record<string, string> = {
+      ARCA_PRODUCTION_CUIT: '20123456789',
+      ARCA_PRODUCTION_CERT_PEM: 'production-certificate',
+      ARCA_PRODUCTION_PRIVATE_KEY_PEM: 'production-key',
+    }
+    expect(() => arcaCredentials('production', name => secrets[name])).toThrow('ARCA_PRODUCTION_ENABLED=true')
+    secrets.ARCA_PRODUCTION_ENABLED = 'true'
+    expect(arcaCredentials('production', name => secrets[name])).toEqual({
+      taxId: '20123456789',
+      certificatePem: 'production-certificate',
+      privateKeyPem: 'production-key',
+    })
+  })
+
+  it('never falls back to homologation credentials in production', () => {
+    const secrets: Record<string, string> = {
+      ARCA_PRODUCTION_ENABLED: 'true',
+      ARCA_CUIT: '20123456789',
+      ARCA_CERT_PEM: 'homologation-certificate',
+      ARCA_PRIVATE_KEY_PEM: 'homologation-key',
+    }
+    expect(() => arcaCredentials('production', name => secrets[name])).toThrow('ARCA_PRODUCTION_CUIT')
+  })
+
+  it('selects credentials before both ARCA issuance and recovery', () => {
+    const selection = arcaEdgeSource.indexOf('credentials = arcaCredentials(environment')
+    const authentication = arcaEdgeSource.indexOf('const authenticate = async () =>', selection)
+    const recovery = arcaEdgeSource.indexOf("if (input.action === 'recover')", authentication)
+    const issuance = arcaEdgeSource.indexOf("adminClient.rpc('begin_fiscal_issue'", recovery)
+    expect(selection).toBeGreaterThan(-1)
+    expect(authentication).toBeGreaterThan(selection)
+    expect(recovery).toBeGreaterThan(authentication)
+    expect(issuance).toBeGreaterThan(recovery)
+    expect(arcaEdgeSource).toContain('new ForgeCmsSigner(certificatePem, privateKeyPem)')
+  })
+
+  it('requires explicit UI confirmation for a production draft and documents the safe secret contract', () => {
+    expect(fiscalInvoiceModalSource).toContain("environment === 'production' && !productionConfirmed")
+    expect(fiscalInvoiceModalSource).toContain('checked={productionConfirmed}')
+    expect(envExampleSource).toContain('ARCA_PRODUCTION_ENABLED=true')
+    expect(integrationsDocSource).toContain('Administración de Certificados Digitales')
+    expect(integrationsDocSource).toContain('no admite fallback')
+  })
+
   it('parses quoted Mercado Pago reports and keeps debit direction', () => {
     const [row] = parseCsv('TRANSACTION_ID;SETTLEMENT_DATE;NET_DEBIT_AMOUNT;DESCRIPTION\nmp-1;2026-09-18T10:00:00-03:00;1.234,50;"Comisión, Mercado Pago"')
     expect(classifyMpMovement(row)).toBe('fee')
@@ -124,6 +277,7 @@ describe('integration domain rules', () => {
       expect(movement).toMatchObject({ amount: -1000, suggested_classification: 'withdrawal' })
     }
   })
+
   it('does not suggest received-payment accounting for debit settlements', () => {
     const movement = movementFromReportRow({
       SOURCE_ID: 'debit-settlement-1',
@@ -443,6 +597,7 @@ describe('integration domain rules', () => {
     expect(mpManualApprovalMigrationSql).toContain('RETURN NULL;')
     expect(mpManualApprovalMigrationSql).not.toContain('INSERT INTO transactions')
   })
+
   it('reverses only exact former automatic Mercado Pago links and preserves an audit trail', () => {
     expect(mpManualApprovalMigrationSql).toContain("WHERE link.notes = 'Publicación automática desde reporte de Mercado Pago'")
     expect(mpManualApprovalMigrationSql).toContain("movement.source_type = 'settlement_report'")
@@ -465,6 +620,7 @@ describe('integration domain rules', () => {
     expect(mpManualApprovalMigrationSql).toContain('DELETE FROM mp_reconciliation_links')
     expect(mpManualApprovalMigrationSql).toContain("'reconciliation_link_id', target.link_id")
   })
+
   it('fails closed before reversal for locked, fiscal, or grouped automatic transactions', () => {
     const auditInsert = mpManualApprovalMigrationSql.indexOf('INSERT INTO user_action_logs')
     for (const guard of ['JOIN locked_periods', 'JOIN fiscal_document_transactions', 'LEFT JOIN fiscal_document_items', 'JOIN transaction_group_members']) {
@@ -476,6 +632,7 @@ describe('integration domain rules', () => {
     expect(mpManualApprovalMigrationSql).toContain('fiscal_document_transactions/fiscal_document_items')
     expect(mpManualApprovalMigrationSql).toContain('transaction_group_members contiene estas membresías')
   })
+
   it('idempotently repairs the complete pending Mercado Pago inbox', () => {
     const pendingBackfill = mpManualApprovalMigrationSql.indexOf('WITH pending_base AS')
     expect(pendingBackfill).toBeGreaterThan(-1)

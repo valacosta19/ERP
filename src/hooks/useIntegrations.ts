@@ -46,15 +46,30 @@ export function useFiscalDocuments(enabled = true) {
 export function useCreateFiscalDraft() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: async (payload: { transactionIds: string[]; customerId: string | null; pointOfSale: number; environment: 'homologation' | 'production' }) => {
+    mutationFn: async (payload: { transactionIds: string[]; customerId: string | null; pointOfSale: number; environment: 'homologation' | 'production'; issueDate: string }) => {
       const { data, error } = await supabase.rpc('create_fiscal_draft', {
         p_transaction_ids: payload.transactionIds,
         p_customer_id: payload.customerId,
         p_point_of_sale: payload.pointOfSale,
         p_environment: payload.environment,
+        p_issue_date: payload.issueDate,
       })
       if (error) throw new Error(error.message)
       return data
+    },
+    onSuccess: () => client.invalidateQueries({ queryKey: ['fiscal-documents'] }),
+  })
+}
+
+export function useUpdateFiscalDraftIssueDate() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ documentId, issueDate }: { documentId: string; issueDate: string }) => {
+      const { error } = await supabase.rpc('update_fiscal_draft_issue_date', {
+        p_document_id: documentId,
+        p_issue_date: issueDate,
+      })
+      if (error) throw new Error(error.message)
     },
     onSuccess: () => client.invalidateQueries({ queryKey: ['fiscal-documents'] }),
   })

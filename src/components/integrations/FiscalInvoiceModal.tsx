@@ -12,8 +12,17 @@ import {
   useFiscalCustomers,
   useFiscalDocuments,
   useIssueFiscalDocument,
+  useUpdateFiscalDraftIssueDate,
 } from '@/hooks/useIntegrations'
-import { fiscalDocumentStatusLabel, fiscalTransactionEligibility, validateFiscalSource } from '@/lib/integrations'
+import {
+  fiscalDocumentStatusLabel,
+  fiscalIssueDateBounds,
+  fiscalIssueDateValue,
+  fiscalTransactionEligibility,
+  localIsoDate,
+  validateFiscalIssueDate,
+  validateFiscalSource,
+} from '@/lib/integrations'
 import { formatDate } from '@/lib/formatDate'
 import { showToast } from '@/lib/toast'
 import type { Currency, FiscalDocument, TransactionCategory } from '@/types'
@@ -73,10 +82,12 @@ export function FiscalInvoiceModal({ open, onClose, transactions, sourceLabel, i
   const { data: customers = [] } = useFiscalCustomers()
   const createCustomer = useCreateFiscalCustomer()
   const createDraft = useCreateFiscalDraft()
+  const updateIssueDate = useUpdateFiscalDraftIssueDate()
   const issue = useIssueFiscalDocument()
   const [customerId, setCustomerId] = useState('consumer')
   const [pointOfSale, setPointOfSale] = useState('1')
   const [environment, setEnvironment] = useState<'homologation' | 'production'>('homologation')
+  const [productionConfirmed, setProductionConfirmed] = useState(false)
   const [customerOpen, setCustomerOpen] = useState(false)
   const [createdDocumentId, setCreatedDocumentId] = useState<string | null>(null)
   const [customerForm, setCustomerForm] = useState({ name: '', document_type: '96', document_number: '', tax_condition_id: '5', address: '', email: '' })
@@ -84,6 +95,18 @@ export function FiscalInvoiceModal({ open, onClose, transactions, sourceLabel, i
   const linkedDocument = documents.find(document => transactions.some(transaction => document.transaction_ids?.includes(transaction.id)))
   const documentId = createdDocumentId ?? initialDocument?.id ?? linkedDocument?.id
   const document = documents.find(item => item.id === documentId) ?? (initialDocument?.id === documentId ? initialDocument : null)
+  const initialIssueDateDocument = initialDocument ?? linkedDocument
+  const [issueDateEdit, setIssueDateEdit] = useState(() => ({
+    documentId: initialIssueDateDocument?.id ?? null,
+    baseValue: initialIssueDateDocument?.issue_date ?? null,
+    value: initialIssueDateDocument?.issue_date ?? localIsoDate(),
+  }))
+  const issueDate = fiscalIssueDateValue(issueDateEdit, document)
+  const setIssueDate = (value: string) => setIssueDateEdit({ documentId: document?.id ?? null, baseValue: document?.issue_date ?? null, value })
+  const issueDateBounds = fiscalIssueDateBounds()
+  const issueDateError = validateFiscalIssueDate(issueDate)
+  const issueDateChanged = Boolean(document && issueDate !== document.issue_date)
+  const productionConfirmationMissing = environment === 'production' && !productionConfirmed
   const eligibilityError = transactions.map(transaction => fiscalTransactionEligibility(transaction)).find(result => !result.canCreate)?.reason ?? null
   const sourceError = validateFiscalSource(
     transactions.map(transaction => transaction.amount),
@@ -93,16 +116,24 @@ export function FiscalInvoiceModal({ open, onClose, transactions, sourceLabel, i
   const draftError = documentsQuery.isLoading ? 'Verificando comprobantes vinculados…' : sourceError
 
   async function handleCreateDraft() {
-    if (draftError || transactions.length === 0) return
+    if (draftError || productionConfirmationMissing || transactions.length === 0) return
     const id = await createDraft.mutateAsync({
       transactionIds: transactions.map(transaction => transaction.id),
       customerId: customerId === 'consumer' ? null : customerId,
       pointOfSale: Number(pointOfSale),
       environment,
+      issueDate,
     })
     setCreatedDocumentId(String(id))
     await documentsQuery.refetch()
     showToast('Borrador fiscal preparado. Revisalo antes de emitir.', 'success')
+  }
+
+  async function handleUpdateIssueDate() {
+    if (!document || issueDateError) return
+    await updateIssueDate.mutateAsync({ documentId: document.id, issueDate })
+    await documentsQuery.refetch()
+    showToast('Fecha del comprobante actualizada.', 'success')
   }
 
   async function handleCustomer() {
@@ -135,13 +166,13 @@ export function FiscalInvoiceModal({ open, onClose, transactions, sourceLabel, i
       ) : document.status === 'recovery_pending' || document.status === 'queued' ? (
         <Button variant="secondary" loading={issue.isPending} onClick={() => void handleIssue('recover')}><ShieldAlert size={16} /> {document.status === 'queued' ? 'Verificar emisión pendiente' : 'Recuperar sin reemitir'}</Button>
       ) : (
-        <Button loading={issue.isPending} onClick={() => void handleIssue()}><Landmark size={16} /> Confirmar emisión</Button>
+        <Button disabled={Boolean(issueDateError) || issueDateChanged} loading={issue.isPending} onClick={() => void handleIssue()}><Landmark size={16} /> Confirmar emisión</Button>
       )}
     </>
   ) : (
     <>
       <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-      <Button disabled={Boolean(draftError) || Number(pointOfSale) < 1} loading={createDraft.isPending} onClick={() => void handleCreateDraft()}><FileCheck2 size={16} /> Preparar borrador</Button>
+      <Button disabled={Boolean(draftError) || Boolean(issueDateError) || productionConfirmationMissing || Number(pointOfSale) < 1} loading={createDraft.isPending} onClick={() => void handleCreateDraft()}><FileCheck2 size={16} /> Preparar borrador</Button>
     </>
   )
 
@@ -150,6 +181,14 @@ export function FiscalInvoiceModal({ open, onClose, transactions, sourceLabel, i
       {document ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3"><p className="text-sm text-[var(--color-muted)]">Esta transacción ya está vinculada a este comprobante.</p><FiscalStatusBadge status={document.status} /></div>
+          {(document.status === 'draft' || document.status === 'rejected') && (
+            <div className="flex items-end gap-3 rounded-lg border border-[var(--color-border)] p-4">
+              <div className="min-w-0 flex-1">
+                <Input label="Fecha del comprobante" type="date" min={issueDateBounds.min} max={issueDateBounds.max} value={issueDate} error={issueDateError ?? undefined} hint="ARCA permite hasta 10 días antes o después de hoy." onChange={event => setIssueDate(event.target.value)} />
+              </div>
+              <Button variant="secondary" disabled={!issueDateChanged || Boolean(issueDateError)} loading={updateIssueDate.isPending} onClick={() => void handleUpdateIssueDate()}>Guardar fecha</Button>
+            </div>
+          )}
           <FiscalPrint document={document} />
           {document.last_error && <p className="rounded-lg bg-[var(--color-danger-light)] p-3 text-sm text-[var(--color-danger)]">{document.last_error}</p>}
         </div>
@@ -165,11 +204,12 @@ export function FiscalInvoiceModal({ open, onClose, transactions, sourceLabel, i
           <div className="grid gap-4 md:grid-cols-2">
             <Select label="Receptor" value={customerId} onChange={event => setCustomerId(event.target.value)} options={[{ value: 'consumer', label: 'Consumidor final' }, ...customers.map(customer => ({ value: customer.id, label: `${customer.name} · ${customer.document_number}` }))]} />
             <div className="flex items-end"><Button variant="secondary" onClick={() => setCustomerOpen(open => !open)}><Plus size={16} /> {customerOpen ? 'Ocultar cliente' : 'Guardar cliente fiscal'}</Button></div>
-            <Input label="Punto de venta Web Services" type="number" min="1" value={pointOfSale} onChange={event => setPointOfSale(event.target.value)} />
-            <Select label="Ambiente" value={environment} onChange={event => setEnvironment(event.target.value as typeof environment)} options={[{ value: 'homologation', label: 'Homologación' }, { value: 'production', label: 'Producción' }]} />
+            <Input label="Punto de venta Web Services" type="number" min="1" value={pointOfSale} onChange={event => { setPointOfSale(event.target.value); if (environment === 'production') setProductionConfirmed(false) }} />
+            <Select label="Ambiente" value={environment} onChange={event => { setEnvironment(event.target.value as typeof environment); setProductionConfirmed(false) }} options={[{ value: 'homologation', label: 'Homologación' }, { value: 'production', label: 'Producción' }]} />
+            <Input label="Fecha del comprobante" type="date" min={issueDateBounds.min} max={issueDateBounds.max} value={issueDate} error={issueDateError ?? undefined} hint="ARCA permite hasta 10 días antes o después de hoy." onChange={event => setIssueDate(event.target.value)} />
           </div>
           {customerOpen && <div className="grid gap-4 rounded-lg border border-[var(--color-border)] p-4 md:grid-cols-2"><Input label="Nombre o razón social" value={customerForm.name} onChange={event => setCustomerForm(form => ({ ...form, name: event.target.value }))} /><Select label="Tipo de documento" value={customerForm.document_type} onChange={event => setCustomerForm(form => ({ ...form, document_type: event.target.value }))} options={[{ value: '96', label: 'DNI' }, { value: '80', label: 'CUIT' }, { value: '86', label: 'CUIL' }]} /><Input label="Número" inputMode="numeric" value={customerForm.document_number} onChange={event => setCustomerForm(form => ({ ...form, document_number: event.target.value }))} /><Select label="Condición frente al IVA" value={customerForm.tax_condition_id} onChange={event => setCustomerForm(form => ({ ...form, tax_condition_id: event.target.value }))} options={[{ value: '5', label: 'Consumidor final' }, { value: '6', label: 'Monotributista' }, { value: '1', label: 'Responsable inscripto' }, { value: '4', label: 'Exento' }]} /><Input label="Domicilio" value={customerForm.address} onChange={event => setCustomerForm(form => ({ ...form, address: event.target.value }))} /><Input label="Email" type="email" value={customerForm.email} onChange={event => setCustomerForm(form => ({ ...form, email: event.target.value }))} /><div className="md:col-span-2 flex justify-end"><Button loading={createCustomer.isPending} disabled={!customerForm.name.trim() || !customerForm.document_number.trim()} onClick={() => void handleCustomer()}>Guardar cliente</Button></div></div>}
-          {environment === 'production' && <div className="flex gap-2 rounded-lg bg-[var(--color-warning-light)] p-3 text-sm text-amber-800"><ShieldAlert size={18} className="shrink-0" /> Producción emitirá un comprobante real. Prepará y revisá el borrador antes de confirmar.</div>}
+          {environment === 'production' && <div className="space-y-3 rounded-lg bg-[var(--color-warning-light)] p-3 text-sm text-amber-800"><div className="flex gap-2"><ShieldAlert size={18} className="shrink-0" /> Producción emitirá un comprobante fiscal real.</div><label className="flex cursor-pointer items-start gap-2 font-medium"><input type="checkbox" checked={productionConfirmed} onChange={event => setProductionConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4" /> Confirmo que seleccioné el punto de venta productivo y que deseo preparar este borrador en producción.</label></div>}
         </div>
       )}
     </Modal>

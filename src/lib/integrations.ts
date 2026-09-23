@@ -17,6 +17,43 @@ export interface FiscalLinkedDocument {
   transaction_ids?: string[]
 }
 
+export interface FiscalIssueDateEdit {
+  documentId: string | null
+  baseValue: string | null
+  value: string
+}
+
+export function fiscalIssueDateValue(
+  edit: FiscalIssueDateEdit,
+  document?: { id: string; issue_date: string } | null,
+) {
+  if (document && (edit.documentId !== document.id || edit.baseValue !== document.issue_date)) return document.issue_date
+  return edit.value
+}
+
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+function shiftIsoDate(date: string, days: number) {
+  const [year, month, day] = date.split('-').map(Number)
+  const shifted = new Date(Date.UTC(year, month - 1, day + days))
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`
+}
+
+export function localIsoDate(now = new Date()) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+export function fiscalIssueDateBounds(today = localIsoDate()) {
+  return { min: shiftIsoDate(today, -10), max: shiftIsoDate(today, 10) }
+}
+
+export function validateFiscalIssueDate(issueDate: string, today = localIsoDate()) {
+  if (!ISO_DATE_PATTERN.test(issueDate) || shiftIsoDate(issueDate, 0) !== issueDate) return 'Ingresá una fecha de comprobante válida.'
+  const { min, max } = fiscalIssueDateBounds(today)
+  if (issueDate < min || issueDate > max) return `La fecha debe estar entre ${min} y ${max}.`
+  return null
+}
+
 export function fiscalTransactionEligibility(
   transaction: FiscalTransactionCandidate,
   existingStatus?: FiscalDocumentStatus | null,
@@ -75,6 +112,23 @@ export function fiscalGroupInvoiceState(
   const invalid = transactions.map(transaction => fiscalTransactionEligibility(transaction)).find(result => !result.canCreate)
   if (invalid) return { kind: 'blocked' as const, transactionIds, total, document: null, reason: invalid.reason }
   return { kind: 'ready' as const, transactionIds, total, document: null, reason: null }
+}
+
+export function eligibleFiscalTransactionSources<T extends FiscalGroupTransactionCandidate>(
+  transactions: T[],
+  documents: FiscalLinkedDocument[],
+) {
+  return transactions.filter(transaction => {
+    const linkedDocument = documents.find(document => document.transaction_ids?.includes(transaction.id))
+    return fiscalTransactionEligibility(transaction, linkedDocument?.status).canCreate
+  })
+}
+
+export function eligibleFiscalGroupSources<T extends { members: FiscalGroupTransactionCandidate[] }>(
+  groups: T[],
+  documents: FiscalLinkedDocument[],
+) {
+  return groups.filter(group => fiscalGroupInvoiceState(group.members, documents).kind === 'ready')
 }
 
 export const MP_CLASSIFICATION_LABELS: Record<MpClassification, string> = {
