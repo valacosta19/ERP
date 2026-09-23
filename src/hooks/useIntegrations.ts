@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 import { edgeFunctionErrorDetail } from '@/lib/integrations'
-import type { FiscalCustomer, FiscalDocument, FiscalDocumentItem, MpClassification, MpMovement, MpSyncRun } from '@/types'
+import type { FiscalCustomer, FiscalDocument, FiscalDocumentItem, MpClassification, MpMovement, MpSaleApproval, MpSyncRun, PublishMpSalesInput, PublishMpSalesResult } from '@/types'
 
 export function useFiscalCustomers() {
   return useQuery({
@@ -73,13 +73,85 @@ export function useIssueFiscalDocument() {
   })
 }
 
-export function useMpMovements() {
+export function useMpMovements(status: 'pending' | 'reconciled' | 'all' = 'pending') {
   return useQuery({
-    queryKey: ['mp-movements'],
+    queryKey: ['mp-movements', status],
     queryFn: async () => {
-      const { data, error } = await supabase.from('mp_movements').select('*').eq('status', 'pending').order('occurred_at', { ascending: false }).limit(250)
+      let query = supabase.from('mp_movements').select('*').order('occurred_at', { ascending: false }).limit(500)
+      if (status !== 'all') query = query.eq('status', status)
+      const { data, error } = await query
       if (error) throw new Error(error.message)
-      return data as MpMovement[]
+      const movements = data as MpMovement[]
+      if (movements.length === 0) return movements
+      const { data: approvals, error: approvalsError } = await supabase
+        .from('mp_sale_approvals')
+        .select('*, tickets:mp_sale_approval_tickets(group_id, position), links:mp_reconciliation_links(transaction_id)')
+        .in('movement_id', movements.map(movement => movement.id))
+        .is('reversed_at', null)
+      if (approvalsError) throw new Error(approvalsError.message)
+      const byMovement = new Map((approvals ?? []).map(raw => {
+        const approval = raw as unknown as MpSaleApproval & { links: { transaction_id: string }[] }
+        return [approval.movement_id, { ...approval, transaction_ids: approval.links.map(link => link.transaction_id) }]
+      }))
+      return movements.map(movement => ({ ...movement, approval: byMovement.get(movement.id) ?? null }))
+    },
+  })
+}
+
+export function useMpMovement(movementId: string | undefined) {
+  return useQuery({
+    queryKey: ['mp-movement', movementId],
+    enabled: Boolean(movementId),
+    queryFn: async () => {
+      const { data, error } = await supabase.from('mp_movements').select('*').eq('id', movementId!).single()
+      if (error) throw new Error(error.message)
+      return data as MpMovement
+    },
+  })
+}
+
+export function usePublishMpSales() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: PublishMpSalesInput) => {
+      const { data, error } = await supabase.rpc('publish_mp_sales', {
+        p_movement_id: payload.movementId,
+        p_idempotency_key: payload.idempotencyKey,
+        p_tickets: payload.tickets,
+        p_additional_payments: payload.additionalPayments,
+        p_notes: null,
+      })
+      if (error) throw new Error(error.message)
+      return data as unknown as PublishMpSalesResult
+    },
+    onSuccess: (_, payload) => {
+      client.invalidateQueries({ queryKey: ['mp-movements'] })
+      client.invalidateQueries({ queryKey: ['mp-movement', payload.movementId] })
+      client.invalidateQueries({ queryKey: ['transactions'] })
+      client.invalidateQueries({ queryKey: ['transaction-groups'] })
+      client.invalidateQueries({ queryKey: ['payment-method-balances'] })
+      client.invalidateQueries({ queryKey: ['transaction-recipe-costs'] })
+      client.invalidateQueries({ queryKey: ['products'] })
+      client.invalidateQueries({ queryKey: ['inventory_lots'] })
+    },
+  })
+}
+
+export function useReverseMpSaleApproval() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (approvalId: string) => {
+      const { data, error } = await supabase.rpc('reverse_mp_sale_approval', { p_approval_id: approvalId })
+      if (error) throw new Error(error.message)
+      return data
+    },
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ['mp-movements'] })
+      client.invalidateQueries({ queryKey: ['transactions'] })
+      client.invalidateQueries({ queryKey: ['transaction-groups'] })
+      client.invalidateQueries({ queryKey: ['payment-method-balances'] })
+      client.invalidateQueries({ queryKey: ['products'] })
+      client.invalidateQueries({ queryKey: ['inventory_lots'] })
     },
   })
 }

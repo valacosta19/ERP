@@ -11,6 +11,7 @@ import { ErrorBoundary } from '@/components/layout/ErrorBoundary'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { TransactionsPage } from '@/pages/transactions/TransactionsPage'
 import { QuickFunnelPage } from '@/pages/transactions/QuickFunnelPage'
+import { MpSaleRegistrationPage } from '@/pages/transactions/MpSaleRegistrationPage'
 import { InventoryPage } from '@/pages/inventory/InventoryPage'
 import { SuppliersPage } from '@/pages/suppliers/SuppliersPage'
 
@@ -69,6 +70,10 @@ export default function App() {
             <Route path="/dashboard" element={<ErrorBoundary><DashboardPage /></ErrorBoundary>} />
             <Route path="/transactions" element={<ErrorBoundary><TransactionsPage /></ErrorBoundary>} />
             <Route path="/transactions/cargar" element={<ErrorBoundary><QuickFunnelPage /></ErrorBoundary>} />
+            <Route
+              path="/transactions/mercadopago/:movementId/registrar"
+              element={<AuthGuard requireAdmin><ErrorBoundary><MpSaleRegistrationPage /></ErrorBoundary></AuthGuard>}
+            />
             <Route path="/inventory" element={<ErrorBoundary><InventoryPage /></ErrorBoundary>} />
             <Route path="/purchase-orders" element={<ErrorBoundary><PurchaseOrdersPage /></ErrorBoundary>} />
             <Route path="/suppliers" element={<ErrorBoundary><SuppliersPage /></ErrorBoundary>} />

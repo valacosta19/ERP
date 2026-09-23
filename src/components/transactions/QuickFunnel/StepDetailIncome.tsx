@@ -16,9 +16,11 @@ type Props = {
   onAddProduct: (product: Product) => void
   onAddOther: (subcat: TransactionCategory) => void
   productLabel: (p: Product) => string
+  showOther?: boolean
+  servicePrice?: (item: CatalogItem) => number
 }
 
-export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubcategories, selectedOtherId, onAddService, onAddProduct, onAddOther, productLabel }: Props) {
+export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubcategories, selectedOtherId, onAddService, onAddProduct, onAddOther, productLabel, showOther = true, servicePrice = item => item.price }: Props) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<Mode>('services')
   const q = query.trim().toLowerCase()
@@ -49,14 +51,14 @@ export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubc
             accent="#6366F1"
             onClick={() => setMode('products')}
           />
-          <ModeTab
+          {showOther && <ModeTab
             active={mode === 'other'}
             icon={<Tag size={16} strokeWidth={2.4} />}
             label="Otros"
             count={incomeSubcategories.length}
             accent="#F59E0B"
             onClick={() => setMode('other')}
-          />
+          />}
         </div>
 
         <div className="quick-funnel-detail-search" style={{ position: 'relative', flex: '1 1 220px', maxWidth: '420px' }}>
@@ -75,7 +77,7 @@ export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubc
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3" style={{ maxHeight: '58vh', overflowY: 'auto', paddingRight: '4px', paddingBottom: '4px' }}>
         {mode === 'services' && filteredServices.map(item => (
-          <ItemTile key={item.id} title={item.name} price={money(item.price)} accent="#10B981" onClick={() => onAddService(item)} />
+          <ItemTile key={item.id} title={item.name} price={money(servicePrice(item))} accent="#10B981" onClick={() => onAddService(item)} />
         ))}
         {mode === 'products' && filteredProducts.map(p => {
           const noStock = (p.stock ?? 0) <= 0
@@ -91,7 +93,7 @@ export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubc
             />
           )
         })}
-        {mode === 'other' && filteredOther.map(c => (
+        {showOther && mode === 'other' && filteredOther.map(c => (
           <ItemTile key={c.id} title={c.name} accent="#F59E0B" selected={selectedOtherId === c.id} onClick={() => onAddOther(c)} />
         ))}
         {mode === 'services' && filteredServices.length === 0 && (
@@ -100,12 +102,12 @@ export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubc
         {mode === 'products' && filteredProducts.length === 0 && (
           <p style={{ gridColumn: '1 / -1', fontSize: '0.875rem', color: 'var(--color-muted)' }}>Sin resultados.</p>
         )}
-        {mode === 'other' && incomeSubcategories.length === 0 && (
+        {showOther && mode === 'other' && incomeSubcategories.length === 0 && (
           <p style={{ gridColumn: '1 / -1', fontSize: '0.875rem', color: 'var(--color-muted)' }}>
             No hay subcategorías de ingreso configuradas. Agregalas en Ajustes.
           </p>
         )}
-        {mode === 'other' && incomeSubcategories.length > 0 && filteredOther.length === 0 && (
+        {showOther && mode === 'other' && incomeSubcategories.length > 0 && filteredOther.length === 0 && (
           <p style={{ gridColumn: '1 / -1', fontSize: '0.875rem', color: 'var(--color-muted)' }}>Sin resultados.</p>
         )}
       </div>
@@ -115,7 +117,7 @@ export function StepDetailIncome({ catalogItems, products, cartCount, incomeSubc
           Tocá un servicio o producto para sumarlo al ticket. Los ingresos de "Otros" se cargan solos, con su propio monto.
         </p>
       )}
-      {selectedOtherId && (
+      {showOther && selectedOtherId && (
         <p style={{ marginTop: '14px', fontSize: '0.8125rem', color: 'var(--color-muted)' }}>
           Este ingreso se carga solo. Si agregás un servicio o un producto, se reemplaza por el ticket.
         </p>

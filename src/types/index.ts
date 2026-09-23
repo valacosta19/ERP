@@ -171,6 +171,82 @@ export interface MpMovement {
   suggested_classification: MpClassification
   status: 'pending' | 'reconciled' | 'ignored'
   created_at: string
+  approval?: MpSaleApproval | null
+}
+
+export interface MpSaleApprovalTicket {
+  group_id: string
+  position: number
+}
+
+export interface MpSaleApproval {
+  id: string
+  movement_id: string
+  idempotency_key: string
+  mp_amount: number
+  sale_total: number
+  additional_payment_total: number
+  notes: string | null
+  created_at: string
+  created_by: string | null
+  reversed_at: string | null
+  reversed_by: string | null
+  tickets?: MpSaleApprovalTicket[]
+  transaction_ids?: string[]
+}
+
+export interface MpSaleDraftLine {
+  key: string
+  clientUuid: string
+  kind: 'service' | 'product'
+  description: string
+  catalogItemId: string | null
+  productId: string | null
+  quantity: number
+  unitPrice: number
+  professionals: { id: string; commissionRate: number }[]
+  withoutProfessional: boolean
+}
+
+export interface MpSaleDraftTicket {
+  clientUuid: string
+  lines: MpSaleDraftLine[]
+}
+
+export interface MpSaleAdditionalPayment {
+  paymentMethod: string
+  amount: number
+}
+
+export interface PublishMpSalesInput {
+  movementId: string
+  idempotencyKey: string
+  tickets: Array<{
+    clientUuid: string
+    label: string
+    lines: Array<{
+      clientUuid: string
+      kind: 'service' | 'product'
+      description: string
+      catalogItemId: string | null
+      productId: string | null
+      quantity: number
+      unitPrice: number
+      professionals: { hairdresserId: string; commissionRate: number }[]
+      withoutProfessional: boolean
+    }>
+  }>
+  additionalPayments: Array<{ paymentMethod: string; amount: number }>
+}
+
+export interface PublishMpSalesResult {
+  approvalId: string
+  movementId: string
+  mpAmount: number
+  saleTotal: number
+  additionalPaymentTotal: number
+  tickets: Array<{ groupId: string; label: string; total: number; transactionIds: string[] }>
+  transactionIds: string[]
 }
 
 export interface MpSyncRun {

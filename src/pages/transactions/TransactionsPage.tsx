@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type DragEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers, Search, ChevronDown, ReceiptText } from 'lucide-react'
+import { ArrowDown, ArrowUp, X, Link, Ban, Zap, Download, GripVertical, Unlink, Layers, Search, ChevronDown, ReceiptText, Landmark } from 'lucide-react'
 import { formatDate } from '@/lib/formatDate'
 import { currentMonthRange, todayLocal } from '@/lib/dateRange'
 import { readDateParam, readCurrencyParam } from '@/lib/transactionFilters'
@@ -48,6 +48,7 @@ import { showToast } from '@/lib/toast'
 import { transactionCashMovements, transactionCashTotals } from '@/lib/transactionCashFlow'
 import { fiscalDocumentStatusLabel, fiscalGroupInvoiceState, fiscalTransactionEligibility } from '@/lib/integrations'
 import { FiscalInvoiceModal, type FiscalSourceTransaction } from '@/components/integrations/FiscalInvoiceModal'
+import { MercadoPagoTransactionsPanel } from '@/components/transactions/MercadoPagoTransactionsPanel'
 import {
   internalTransferAmount,
   internalTransferValidationError,
@@ -97,6 +98,13 @@ function formatSigned(amount: number, sym: string) {
   return `${amount >= 0 ? '+' : '-'}${sym}${Math.abs(amount).toLocaleString('es-CO')}`
 }
 
+function TransactionViewTabs({ active, onChange, showMercadoPago }: { active: 'transactions' | 'mercadopago'; onChange: (view: 'transactions' | 'mercadopago') => void; showMercadoPago: boolean }) {
+  return <nav aria-label="Vistas de transacciones" className="flex gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 md:px-6">
+    <button type="button" onClick={() => onChange('transactions')} className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${active === 'transactions' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-transparent text-[var(--color-muted)]'}`}><ReceiptText size={17} />Transacciones</button>
+    {showMercadoPago && <button type="button" onClick={() => onChange('mercadopago')} className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${active === 'mercadopago' ? 'border-sky-500 text-sky-600' : 'border-transparent text-[var(--color-muted)]'}`}><Landmark size={17} />Mercado Pago</button>}
+  </nav>
+}
+
 export function TransactionsPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -104,6 +112,7 @@ export function TransactionsPage() {
   const isAdmin = profile?.role === 'admin'
   const { data: fiscalDocuments = [] } = useFiscalDocuments(isAdmin)
   const [searchParams, setSearchParams] = useSearchParams()
+  const activeView = isAdmin && searchParams.get('view') === 'mercadopago' ? 'mercadopago' : 'transactions'
   const defaultRange = { ...currentMonthRange(), to: todayLocal() }
   const parentCategoryFilter = searchParams.get('cat') ?? ''
   const currencyFilter = readCurrencyParam(searchParams)
@@ -1096,6 +1105,16 @@ export function TransactionsPage() {
     )
   }
 
+  if (activeView === 'mercadopago') {
+    return (
+      <div className="transactions-page animate-fade-in flex min-h-0 flex-1 flex-col">
+        <TopBar title="Transacciones" subtitle="Ventas, caja y movimientos externos" />
+        <TransactionViewTabs active="mercadopago" onChange={view => setFilterParam('view', view === 'mercadopago' ? view : null)} showMercadoPago={isAdmin} />
+        <MercadoPagoTransactionsPanel />
+      </div>
+    )
+  }
+
   return (
     <div className="transactions-page animate-fade-in flex-1 min-h-0 flex flex-col">
       <TopBar
@@ -1171,6 +1190,7 @@ export function TransactionsPage() {
           </div>
         }
       />
+      <TransactionViewTabs active="transactions" onChange={view => setFilterParam('view', view === 'mercadopago' ? view : null)} showMercadoPago={isAdmin} />
 
       <div className="responsive-page-body flex-1 min-h-0 flex flex-col p-4 md:p-6 gap-4">
         <div className="responsive-filters flex flex-wrap gap-3">

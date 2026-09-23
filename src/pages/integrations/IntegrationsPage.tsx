@@ -1,23 +1,20 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { CloudDownload, Landmark, RefreshCw, ReceiptText } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Modal } from '@/components/ui/Modal'
 import { Select } from '@/components/ui/Select'
 import { useTransactions } from '@/hooks/useTransactions'
 import { useTransactionGroups } from '@/hooks/useTransactionGroups'
-import { useTransactionCategories } from '@/hooks/useTransactionCategories'
-import { usePaymentMethods } from '@/hooks/usePaymentMethods'
 import {
-  useFiscalDocuments, useMpMovements, useMpSync, useMpSyncRuns, usePublishMpReconciliation,
+  useFiscalDocuments, useMpSync, useMpSyncRuns,
 } from '@/hooks/useIntegrations'
-import { fiscalTransactionEligibility, MP_CLASSIFICATION_LABELS, reconciliationRequirements, validateFiscalSource } from '@/lib/integrations'
+import { fiscalTransactionEligibility, validateFiscalSource } from '@/lib/integrations'
 import { formatDate } from '@/lib/formatDate'
 import { showToast } from '@/lib/toast'
 import { FiscalInvoiceModal, FiscalStatusBadge, type FiscalSourceTransaction } from '@/components/integrations/FiscalInvoiceModal'
-import type { FiscalDocument, MpClassification, MpMovement } from '@/types'
+import type { FiscalDocument } from '@/types'
 
 type Tab = 'arca' | 'mercadopago'
 
@@ -80,39 +77,30 @@ function ArcaPanel() {
   )
 }
 
-function MpReconcileModal({ movement, onClose }: { movement: MpMovement; onClose: () => void }) {
-  const publish = usePublishMpReconciliation()
-  const { data: categories = [] } = useTransactionCategories()
-  const { data: paymentMethods = [] } = usePaymentMethods()
-  const [classification, setClassification] = useState<MpClassification>(movement.suggested_classification)
-  const [subcategoryId, setSubcategoryId] = useState('')
-  const [destinationPaymentMethod, setDestinationPaymentMethod] = useState('')
-  const [notes, setNotes] = useState('')
-  const requirements = reconciliationRequirements(classification)
-  const valid = classification !== 'unknown' && (!requirements.category || subcategoryId) && (!requirements.destination || destinationPaymentMethod)
-  async function submit() {
-    if (!movement || !valid) return
-    await publish.mutateAsync({ movementId: movement.id, classification, subcategoryId, destinationPaymentMethod, notes })
-    showToast('Movimiento conciliado y publicado.', 'success'); onClose()
-  }
-  return <Modal open onClose={onClose} title="Conciliar movimiento" size="lg" footer={<><Button variant="secondary" onClick={onClose}>Cancelar</Button><Button loading={publish.isPending} disabled={!valid} onClick={() => void submit()}>Publicar en contabilidad</Button></>}>
-    <div className="space-y-4"><div className="rounded-lg bg-[var(--color-bg)] p-4"><p className="text-sm text-[var(--color-muted)]">{formatDate(movement.occurred_at.slice(0, 10))} · {movement.external_id}</p><p className="mt-1 font-semibold">{movement.description || movement.movement_type || 'Movimiento Mercado Pago'}</p><p className="mt-2 text-xl font-bold">{money(movement.amount)}</p></div><Select label="Clasificación" value={classification} onChange={event => setClassification(event.target.value as MpClassification)} options={Object.entries(MP_CLASSIFICATION_LABELS).map(([value, label]) => ({ value, label }))} />{requirements.category && <Select label="Categoría de egreso" value={subcategoryId} onChange={event => setSubcategoryId(event.target.value)} placeholder="Elegir categoría" options={categories.filter(category => category.transaction_type === 'expense').map(category => ({ value: category.id, label: category.name }))} />}{requirements.destination && <Select label="Cuenta de destino" value={destinationPaymentMethod} onChange={event => setDestinationPaymentMethod(event.target.value)} placeholder="Elegir destino" options={paymentMethods.filter(method => method.active && method.name.toLowerCase() !== 'mercado pago').map(method => ({ value: method.name, label: method.name }))} />}<Input label="Nota opcional" value={notes} onChange={event => setNotes(event.target.value)} />{classification === 'unknown' && <p className="rounded-lg bg-[var(--color-warning-light)] p-3 text-sm text-amber-800">Los movimientos desconocidos permanecen pendientes: el sistema nunca los contabiliza por su cuenta.</p>}</div>
-  </Modal>
-}
-
 function MercadoPagoPanel() {
-  const { data: movements = [], isLoading } = useMpMovements()
+  const navigate = useNavigate()
   const { data: runs = [] } = useMpSyncRuns()
   const sync = useMpSync()
-  const [selected, setSelected] = useState<MpMovement | null>(null)
   const processing = runs.find(run => run.status === 'processing' || run.status === 'requested')
   async function synchronize() {
     if (processing) await sync.mutateAsync({ action: 'poll', runId: processing.id })
     else await sync.mutateAsync({ action: 'start', days: 3 })
     showToast(processing ? 'Se consultó el reporte pendiente.' : 'Reporte solicitado. Volvé a consultar cuando Mercado Pago lo procese.', 'success')
   }
-  return <div className="space-y-5 p-4 md:p-6"><section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5"><div className="flex flex-col justify-between gap-4 md:flex-row md:items-center"><div><div className="flex items-center gap-2"><CloudDownload className="text-sky-600" /><h2 className="font-bold">Reporte de todas las transacciones</h2></div><p className="mt-1 text-sm text-[var(--color-muted)]">Fuente de verdad para cobros, comisiones, impuestos, retiros y devoluciones. Se reimportan 3 días para capturar ajustes tardíos.</p></div><Button loading={sync.isPending} onClick={() => void synchronize()}>{processing ? <RefreshCw size={16} /> : <CloudDownload size={16} />}{processing ? 'Consultar reporte' : 'Sincronizar ahora'}</Button></div>{runs[0] && <p className="mt-4 text-xs text-[var(--color-muted)]">Última ejecución: {new Date(runs[0].created_at).toLocaleString('es-AR')} · {runs[0].status}{runs[0].status === 'completed' ? ` · ${runs[0].imported_count} movimientos` : runs[0].status === 'processing' || runs[0].status === 'requested' ? ' · esperando a Mercado Pago' : ''}{runs[0].error_message ? ` · ${runs[0].error_message}` : ''}</p>}</section>
-    <section className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"><div className="flex items-center justify-between border-b border-[var(--color-border)] p-4"><div><h2 className="font-bold">Excepciones pendientes</h2><p className="mt-1 text-sm text-[var(--color-muted)]">Los movimientos determinísticos ya se publican solos. Acá solo revisás los que necesitan una decisión.</p></div><Badge variant="accent">{movements.length} pendientes</Badge></div>{isLoading ? <p className="p-5 text-sm text-[var(--color-muted)]">Cargando…</p> : movements.length === 0 ? <p className="p-8 text-center text-sm text-[var(--color-muted)]">No hay excepciones pendientes. Los movimientos identificados se publicaron automáticamente.</p> : <div className="divide-y divide-[var(--color-border)]">{movements.map(movement => <button key={movement.id} onClick={() => setSelected(movement)} className="grid w-full gap-2 p-4 text-left hover:bg-[var(--color-bg)] md:grid-cols-[130px_minmax(0,1fr)_150px_130px]"><span className="text-sm text-[var(--color-muted)]">{formatDate(movement.occurred_at.slice(0, 10))}</span><span><strong className="block text-sm">{movement.description || movement.movement_type || 'Movimiento'}</strong><span className="text-xs text-[var(--color-muted)]">{movement.external_id}</span></span><span><Badge variant={movement.suggested_classification === 'unknown' ? 'warning' : 'default'}>{MP_CLASSIFICATION_LABELS[movement.suggested_classification]}</Badge></span><strong className={movement.amount >= 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'}>{money(movement.amount)}</strong></button>)}</div>}</section>{selected && <MpReconcileModal key={selected.id} movement={selected} onClose={() => setSelected(null)} />}</div>
+  return <div className="space-y-5 p-4 md:p-6">
+    <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+        <div><div className="flex items-center gap-2"><CloudDownload className="text-sky-600" /><h2 className="font-bold">Conexión con Mercado Pago</h2></div><p className="mt-1 text-sm text-[var(--color-muted)]">La integración importa movimientos como pendientes. Ninguno se contabiliza sin una decisión explícita.</p></div>
+        <Button loading={sync.isPending} onClick={() => void synchronize()}>{processing ? <RefreshCw size={16} /> : <CloudDownload size={16} />}{processing ? 'Consultar reporte' : 'Probar sincronización'}</Button>
+      </div>
+      {runs[0] && <p className="mt-4 text-xs text-[var(--color-muted)]">Última ejecución: {new Date(runs[0].created_at).toLocaleString('es-AR')} · {runs[0].status}{runs[0].status === 'completed' ? ` · ${runs[0].imported_count} movimientos` : runs[0].status === 'processing' || runs[0].status === 'requested' ? ' · esperando a Mercado Pago' : ''}{runs[0].error_message ? ` · ${runs[0].error_message}` : ''}</p>}
+    </section>
+    <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+      <h2 className="font-bold">Trabajo diario</h2><p className="mt-1 text-sm text-[var(--color-muted)]">La sincronización, el registro de ventas y la clasificación de comisiones, impuestos, retiros y devoluciones ahora viven junto a Transacciones.</p>
+      <Button className="mt-4" onClick={() => navigate('/transactions?view=mercadopago')}><Landmark size={16} />Abrir bandeja de Mercado Pago</Button>
+    </section>
+    <section className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"><div className="border-b border-[var(--color-border)] p-4"><h2 className="font-bold">Historial de sincronización</h2></div>{runs.length === 0 ? <p className="p-5 text-sm text-[var(--color-muted)]">Todavía no hay sincronizaciones.</p> : <div className="divide-y divide-[var(--color-border)]">{runs.map(run => <div key={run.id} className="flex items-center justify-between gap-3 p-4 text-sm"><span>{new Date(run.created_at).toLocaleString('es-AR')}</span><Badge variant={run.status === 'completed' ? 'success' : run.status === 'failed' ? 'danger' : 'default'}>{run.status}</Badge><span className="text-[var(--color-muted)]">{run.imported_count} movimientos</span></div>)}</div>}</section>
+  </div>
 }
 
 export function IntegrationsPage() {

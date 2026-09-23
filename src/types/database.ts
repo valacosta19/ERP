@@ -370,8 +370,20 @@ export interface Database {
         Relationships: []
       }
       mp_reconciliation_links: {
-        Row: { id: string; movement_id: string; transaction_id: string; classification: string; reconciled_at: string; reconciled_by: string | null; notes: string | null }
-        Insert: { id?: string; movement_id: string; transaction_id: string; classification: string; reconciled_at?: string; reconciled_by?: string | null; notes?: string | null }
+        Row: { id: string; movement_id: string; transaction_id: string; classification: string; reconciled_at: string; reconciled_by: string | null; notes: string | null; approval_id: string | null; allocated_amount: number | null }
+        Insert: { id?: string; movement_id: string; transaction_id: string; classification: string; reconciled_at?: string; reconciled_by?: string | null; notes?: string | null; approval_id?: string | null; allocated_amount?: number | null }
+        Update: never
+        Relationships: []
+      }
+      mp_sale_approvals: {
+        Row: { id: string; movement_id: string; idempotency_key: string; mp_amount: number; sale_total: number; additional_payment_total: number; notes: string | null; created_at: string; created_by: string | null; reversed_at: string | null; reversed_by: string | null }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
+      mp_sale_approval_tickets: {
+        Row: { approval_id: string; group_id: string; position: number }
+        Insert: never
         Update: never
         Relationships: []
       }
@@ -1374,6 +1386,14 @@ export interface Database {
       }
       void_transaction: {
         Args: { p_transaction_id: string }
+        Returns: Json
+      }
+      publish_mp_sales: {
+        Args: { p_movement_id: string; p_idempotency_key: string; p_tickets: Json; p_additional_payments?: Json; p_notes?: string | null }
+        Returns: Json
+      }
+      reverse_mp_sale_approval: {
+        Args: { p_approval_id: string }
         Returns: Json
       }
       record_partial_commission_payout: {
