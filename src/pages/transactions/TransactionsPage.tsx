@@ -123,6 +123,7 @@ export function TransactionsPage() {
   const pendingOnly = searchParams.get('pending') === '1'
   const search = searchParams.get('q') ?? ''
   const [searchInput, setSearchInput] = useState(search)
+  const [filtersExpanded, setFiltersExpanded] = useState(false)
   const hasActiveFilters = ['cat', 'cur', 'method', 'from', 'to', 'voided', 'pending', 'q'].some(k => searchParams.has(k))
 
   const setFilterParam = (key: string, value: string | null) => {
@@ -1193,7 +1194,23 @@ export function TransactionsPage() {
       <TransactionViewTabs active="transactions" onChange={view => setFilterParam('view', view === 'mercadopago' ? view : null)} showMercadoPago={isAdmin} />
 
       <div className="responsive-page-body flex-1 min-h-0 flex flex-col p-4 md:p-6 gap-4">
-        <div className="responsive-filters flex flex-wrap gap-3">
+        <div className="transactions-filter-toggle">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setFiltersExpanded(expanded => !expanded)}
+            aria-expanded={filtersExpanded}
+            aria-controls="transaction-filters"
+          >
+            <ChevronDown size={16} className={`transition-transform ${filtersExpanded ? 'rotate-180' : ''}`} />
+            Filtros
+            {hasActiveFilters && <span className="transactions-filter-toggle__active">Activos</span>}
+          </Button>
+        </div>
+        <div
+          id="transaction-filters"
+          className={`responsive-filters transactions-filters flex flex-wrap gap-3 ${filtersExpanded ? 'transactions-filters--expanded' : ''}`}
+        >
           <Input
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
@@ -1282,20 +1299,23 @@ export function TransactionsPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div
+          className="transactions-balances flex flex-nowrap gap-3 overflow-x-auto overscroll-x-contain pb-1 snap-x snap-proximity"
+          aria-label="Saldos por cuenta"
+        >
           {paymentBalances.filter(b => b.method.toLowerCase() !== 'inventario').map(b => (
             <div
               key={b.method}
-              className="rounded-xl border border-[var(--color-border)] p-4"
+              className="transactions-balance-card w-64 shrink-0 snap-start rounded-xl border border-[var(--color-border)] p-3"
               style={{ background: 'var(--color-surface)' }}
             >
-              <div className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--color-muted)' }}>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-muted)' }}>
                 {b.method}
               </div>
-              <div className="text-xs mb-2" style={{ color: 'var(--color-muted)' }}>
+              <div className="mb-1 text-xs" style={{ color: 'var(--color-muted)' }}>
                 {to ? `Saldo al ${to.split('-').reverse().join('/')}` : 'Saldo acumulado'}
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-0.5">
                 {b.currencies.map(({ currency, balance }) => (
                   <div key={currency} className="flex items-baseline justify-between gap-2">
                     <span className="text-xs" style={{ color: 'var(--color-muted)' }}>{currency}</span>
