@@ -46,6 +46,11 @@ export function arcaCredentials(environment: ArcaEnvironment, readSecret: Secret
   return requireCredentialBundle('ARCA', readSecret)
 }
 
+/** Reads production credentials for read-only connectivity checks without enabling issuance. */
+export function arcaProductionPreflightCredentials(readSecret: SecretReader): ArcaCredentials {
+  return requireCredentialBundle('ARCA_PRODUCTION', readSecret)
+}
+
 const endpoints = {
   homologation: {
     wsaa: 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms',
@@ -83,6 +88,40 @@ export function buildLoginCmsEnvelope(cmsBase64: string) {
 function readXmlTag(xml: string, tag: string) {
   const match = xml.match(new RegExp(`<(?:\\w+:)?${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:\\w+:)?${tag}>`, 'i'))
   return match?.[1]?.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&') ?? null
+}
+
+function readXmlElements(xml: string, tag: string) {
+  return [...xml.matchAll(new RegExp(`<(?:\\w+:)?${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:\\w+:)?${tag}>`, 'gi'))]
+    .map(match => match[1])
+}
+
+function normalizeOptionalXmlValue(value: string | null) {
+  const normalized = value?.trim()
+  return !normalized || normalized.toUpperCase() === 'NULL' ? null : normalized
+}
+
+export function sanitizeArcaPublicDetail(value: string) {
+  return value
+    .replace(/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/gi, '[redacted]')
+    .replace(/\b(token|sign|firma|clave|certificate|certificado)\s*[:=]\s*\S+/gi, '$1=[redacted]')
+    .replace(/\b[A-Za-z0-9+/_=-]{32,}\b/g, '[redacted]')
+    .replace(/\b(?:\d[\s.-]?){8,}\b/g, '[redacted]')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240)
+}
+
+/** Extracts only ARCA's public SOAP fault/error message, never the raw envelope. */
+export function arcaPublicErrorDetail(xml: string) {
+  const errors = readXmlTag(xml, 'Errors')
+  const detail = readXmlTag(xml, 'faultstring') ?? (errors ? readXmlTag(errors, 'Msg') : null)
+  return detail ? sanitizeArcaPublicDetail(detail) || null : null
+}
+
+function assertNoSoapError(xml: string) {
+  const detail = arcaPublicErrorDetail(xml)
+  if (detail) throw new Error(detail)
 }
 
 export function parseLoginTicketResponse(xml: string) {
@@ -123,14 +162,91 @@ export function buildWsfeLastAuthorizedEnvelope(auth: { token: string; sign: str
   return `<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/"><soap:Body><ar:FECompUltimoAutorizado><ar:Auth><ar:Token>${escapeXml(auth.token)}</ar:Token><ar:Sign>${escapeXml(auth.sign)}</ar:Sign><ar:Cuit>${escapeXml(auth.taxId)}</ar:Cuit></ar:Auth><ar:PtoVta>${pointOfSale}</ar:PtoVta><ar:CbteTipo>${receiptType}</ar:CbteTipo></ar:FECompUltimoAutorizado></soap:Body></soap:Envelope>`
 }
 
+function buildWsfeAuth(auth: { token: string; sign: string; taxId: string }) {
+  return `<ar:Auth><ar:Token>${escapeXml(auth.token)}</ar:Token><ar:Sign>${escapeXml(auth.sign)}</ar:Sign><ar:Cuit>${escapeXml(auth.taxId)}</ar:Cuit></ar:Auth>`
+}
+
+export function buildWsfeDummyEnvelope() {
+  return '<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/"><soap:Body><ar:FEDummy /></soap:Body></soap:Envelope>'
+}
+
+export function buildWsfePointsOfSaleEnvelope(auth: { token: string; sign: string; taxId: string }) {
+  return `<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/"><soap:Body><ar:FEParamGetPtosVenta>${buildWsfeAuth(auth)}</ar:FEParamGetPtosVenta></soap:Body></soap:Envelope>`
+}
+
+export function buildWsfeReceiptTypesEnvelope(auth: { token: string; sign: string; taxId: string }) {
+  return `<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/"><soap:Body><ar:FEParamGetTiposCbte>${buildWsfeAuth(auth)}</ar:FEParamGetTiposCbte></soap:Body></soap:Envelope>`
+}
+
 export function buildWsfeConsultEnvelope(auth: { token: string; sign: string; taxId: string }, pointOfSale: number, receiptType: number, receiptNumber: number) {
   return `<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/"><soap:Body><ar:FECompConsultar><ar:Auth><ar:Token>${escapeXml(auth.token)}</ar:Token><ar:Sign>${escapeXml(auth.sign)}</ar:Sign><ar:Cuit>${escapeXml(auth.taxId)}</ar:Cuit></ar:Auth><ar:FeCompConsReq><ar:CbteTipo>${receiptType}</ar:CbteTipo><ar:CbteNro>${receiptNumber}</ar:CbteNro><ar:PtoVta>${pointOfSale}</ar:PtoVta></ar:FeCompConsReq></ar:FECompConsultar></soap:Body></soap:Envelope>`
 }
 
 export function parseLastAuthorized(xml: string) {
+  assertNoSoapError(xml)
   const value = Number(readXmlTag(xml, 'CbteNro'))
   if (!Number.isSafeInteger(value) || value < 0) throw new Error('ARCA no devolvió el último comprobante autorizado.')
   return value
+}
+
+export function parseWsfeDummy(xml: string) {
+  assertNoSoapError(xml)
+  const services = {
+    appServer: readXmlTag(xml, 'AppServer'),
+    dbServer: readXmlTag(xml, 'DbServer'),
+    authServer: readXmlTag(xml, 'AuthServer'),
+  }
+  if (Object.values(services).some(value => value?.toUpperCase() !== 'OK')) {
+    throw new Error('ARCA informó que uno o más componentes de WSFE no están disponibles.')
+  }
+  return services as { appServer: string; dbServer: string; authServer: string }
+}
+
+export interface WsfePointOfSale {
+  number: number
+  emissionType: string
+  blocked: boolean
+  disabledOn: string | null
+}
+
+export function isCaeEmissionType(value: string) {
+  return /^CAE(?:$|[^A-Z0-9])/.test(value.trim().toUpperCase())
+}
+
+export function parseWsfePointsOfSale(xml: string): WsfePointOfSale[] {
+  assertNoSoapError(xml)
+  return readXmlElements(xml, 'PtoVenta').map(item => {
+    const number = Number(readXmlTag(item, 'Nro'))
+    if (!Number.isSafeInteger(number) || number <= 0) throw new Error('ARCA devolvió un punto de venta inválido.')
+    const disabledOn = normalizeOptionalXmlValue(readXmlTag(item, 'FchBaja'))
+    return {
+      number,
+      emissionType: readXmlTag(item, 'EmisionTipo') ?? '',
+      blocked: (readXmlTag(item, 'Bloqueado') ?? '').toUpperCase() !== 'N',
+      disabledOn,
+    }
+  })
+}
+
+export interface WsfeReceiptType {
+  id: number
+  description: string
+  validFrom: string | null
+  validUntil: string | null
+}
+
+export function parseWsfeReceiptTypes(xml: string): WsfeReceiptType[] {
+  assertNoSoapError(xml)
+  return readXmlElements(xml, 'CbteTipo').map(item => {
+    const id = Number(readXmlTag(item, 'Id'))
+    if (!Number.isSafeInteger(id) || id <= 0) throw new Error('ARCA devolvió un tipo de comprobante inválido.')
+    return {
+      id,
+      description: readXmlTag(item, 'Desc') ?? '',
+      validFrom: normalizeOptionalXmlValue(readXmlTag(item, 'FchDesde')),
+      validUntil: normalizeOptionalXmlValue(readXmlTag(item, 'FchHasta')),
+    }
+  })
 }
 
 export function parseWsfeAuthorization(xml: string) {

@@ -5,6 +5,7 @@ import mpAutoPostingMigrationSql from '../../supabase/migrations/103_mercadopago
 import fiscalIssueDateMigrationSql from '../../supabase/migrations/104_fiscal_issue_date.sql?raw'
 import mpManualApprovalMigrationSql from '../../supabase/migrations/105_mp_manual_approval_only.sql?raw'
 import arcaEdgeSource from '../../supabase/functions/arca-issue/index.ts?raw'
+import arcaPreflightSource from '../../supabase/functions/arca-preflight/index.ts?raw'
 import mpEdgeSource from '../../supabase/functions/mercadopago-sync/index.ts?raw'
 import denoConfig from '../../supabase/functions/deno.json?raw'
 import packageJson from '../../package.json?raw'
@@ -15,7 +16,22 @@ import transactionsPageSource from '../pages/transactions/TransactionsPage.tsx?r
 import fiscalInvoiceModalSource from '../components/integrations/FiscalInvoiceModal.tsx?raw'
 import integrationsHookSource from '../hooks/useIntegrations.ts?raw'
 import { arcaQrPayload, edgeFunctionErrorDetail, eligibleFiscalGroupSources, eligibleFiscalTransactionSources, fiscalGroupInvoiceState, fiscalIssueDateBounds, fiscalIssueDateValue, fiscalTransactionEligibility, localIsoDate, reconciliationRequirements, validateFiscalIssueDate, validateFiscalSource } from './integrations'
-import { arcaCredentials, buildWsfeAuthorizeEnvelope, parseWsfeAuthorization, parseWsfeConsultation } from '../../supabase/functions/_shared/arca.ts'
+import {
+  arcaCredentials,
+  arcaPublicErrorDetail,
+  arcaProductionPreflightCredentials,
+  buildWsfeAuthorizeEnvelope,
+  buildWsfeDummyEnvelope,
+  buildWsfePointsOfSaleEnvelope,
+  buildWsfeReceiptTypesEnvelope,
+  isCaeEmissionType,
+  parseWsfeAuthorization,
+  parseWsfeConsultation,
+  parseWsfeDummy,
+  parseWsfePointsOfSale,
+  parseWsfeReceiptTypes,
+  sanitizeArcaPublicDetail,
+} from '../../supabase/functions/_shared/arca.ts'
 import { ForgeCmsSigner } from '../../supabase/functions/_shared/cms.ts'
 import {
   classifyMpMovement,
@@ -237,6 +253,83 @@ describe('integration domain rules', () => {
       ARCA_PRIVATE_KEY_PEM: 'homologation-key',
     }
     expect(() => arcaCredentials('production', name => secrets[name])).toThrow('ARCA_PRODUCTION_CUIT')
+  })
+
+  it('reads production credentials for preflight without enabling production issuance', () => {
+    const secrets: Record<string, string> = {
+      ARCA_PRODUCTION_CUIT: '20-12345678-9',
+      ARCA_PRODUCTION_CERT_PEM: 'production-certificate',
+      ARCA_PRODUCTION_PRIVATE_KEY_PEM: 'production-key',
+    }
+    expect(arcaProductionPreflightCredentials(name => secrets[name])).toEqual({
+      taxId: '20123456789',
+      certificatePem: 'production-certificate',
+      privateKeyPem: 'production-key',
+    })
+    expect(() => arcaCredentials('production', name => secrets[name])).toThrow('ARCA_PRODUCTION_ENABLED=true')
+  })
+
+  it('builds and parses only read-only WSFE preflight operations', () => {
+    const auth = { taxId: '20123456789', token: 'token', sign: 'sign' }
+    expect(buildWsfeDummyEnvelope()).toContain('<ar:FEDummy />')
+    expect(buildWsfePointsOfSaleEnvelope(auth)).toContain('<ar:FEParamGetPtosVenta>')
+    expect(buildWsfeReceiptTypesEnvelope(auth)).toContain('<ar:FEParamGetTiposCbte>')
+    expect(parseWsfeDummy('<FEDummyResult><AppServer>OK</AppServer><DbServer>OK</DbServer><AuthServer>OK</AuthServer></FEDummyResult>')).toEqual({
+      appServer: 'OK', dbServer: 'OK', authServer: 'OK',
+    })
+    expect(parseWsfePointsOfSale('<ResultGet><PtoVenta><Nro>2</Nro><EmisionTipo>CAE</EmisionTipo><Bloqueado>N</Bloqueado><FchBaja>  NuLl  </FchBaja></PtoVenta><PtoVenta><Nro>3</Nro><EmisionTipo>CAE</EmisionTipo><Bloqueado>N</Bloqueado><FchBaja>20260924</FchBaja></PtoVenta></ResultGet><Events><Evt><Msg>Mantenimiento programado</Msg></Evt></Events>')).toEqual([
+      { number: 2, emissionType: 'CAE', blocked: false, disabledOn: null },
+      { number: 3, emissionType: 'CAE', blocked: false, disabledOn: '20260924' },
+    ])
+    expect(parseWsfePointsOfSale('<ResultGet><PtoVenta><Nro>4</Nro><EmisionTipo>CAE</EmisionTipo><Bloqueado>N</Bloqueado></PtoVenta><PtoVenta><Nro>5</Nro><EmisionTipo>CAE</EmisionTipo><Bloqueado>N</Bloqueado><FchBaja> </FchBaja></PtoVenta></ResultGet>').map(point => point.disabledOn)).toEqual([null, null])
+    expect(parseWsfeReceiptTypes('<ResultGet><CbteTipo><Id>11</Id><Desc>Factura C</Desc><FchDesde>20110301</FchDesde><FchHasta>20991231</FchHasta></CbteTipo></ResultGet>')).toEqual([
+      { id: 11, description: 'Factura C', validFrom: '20110301', validUntil: '20991231' },
+    ])
+    expect(parseWsfeReceiptTypes('<ResultGet><CbteTipo><Id>13</Id><Desc>Nota de crédito C</Desc><FchDesde> NuLl </FchDesde><FchHasta> </FchHasta></CbteTipo><CbteTipo><Id>15</Id><Desc>Recibo C</Desc></CbteTipo></ResultGet>')).toEqual([
+      { id: 13, description: 'Nota de crédito C', validFrom: null, validUntil: null },
+      { id: 15, description: 'Recibo C', validFrom: null, validUntil: null },
+    ])
+    expect(() => parseWsfeReceiptTypes('<Errors><Err><Code>600</Code><Msg>Token inválido</Msg></Err></Errors>')).toThrow('Token inválido')
+  })
+
+  it('extracts useful SOAP faults without exposing envelopes or sensitive values', () => {
+    const secretToken = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdef'
+    const soap = `<soap:Envelope><soap:Body><soap:Fault><faultcode>soap:Server</faultcode><faultstring>Certificado rechazado para CUIT 20-12345678-9 token=${secretToken} -----BEGIN PRIVATE KEY-----secret-----END PRIVATE KEY-----</faultstring><detail>respuesta interna que no debe exponerse</detail></soap:Fault></soap:Body></soap:Envelope>`
+    const detail = arcaPublicErrorDetail(soap)
+    expect(detail).toContain('Certificado rechazado')
+    expect(detail).toContain('[redacted]')
+    expect(detail).not.toContain('20-12345678-9')
+    expect(detail).not.toContain(secretToken)
+    expect(detail).not.toContain('PRIVATE KEY')
+    expect(detail).not.toContain('respuesta interna')
+    expect(detail).not.toContain('soap:Envelope')
+    expect(arcaPublicErrorDetail('<soap:Envelope><soap:Body>sin fault público</soap:Body></soap:Envelope>')).toBeNull()
+    expect(sanitizeArcaPublicDetail('Error para 20123456789')).toBe('Error para [redacted]')
+  })
+
+  it('accepts descriptive CAE labels without confusing CAEA with CAE', () => {
+    expect(isCaeEmissionType('CAE')).toBe(true)
+    expect(isCaeEmissionType('CAE - Monotributo')).toBe(true)
+    expect(isCaeEmissionType('CAEA')).toBe(false)
+    expect(isCaeEmissionType('CAEA - contingencia')).toBe(false)
+  })
+
+  it('keeps the production preflight admin-only, sanitized, and incapable of issuance or persistence', () => {
+    expect(arcaPreflightSource).toContain("profile?.role !== 'admin'")
+    expect(arcaPreflightSource).toContain("arcaEndpoints('production')")
+    expect(arcaPreflightSource).toContain('arcaProductionPreflightCredentials')
+    expect(arcaPreflightSource).toContain("input.receiptType !== 11")
+    expect(arcaPreflightSource).toContain("'http://ar.gov.afip.dif.FEV1/FEDummy'")
+    expect(arcaPreflightSource).toContain("'http://ar.gov.afip.dif.FEV1/FEParamGetPtosVenta'")
+    expect(arcaPreflightSource).toContain("'http://ar.gov.afip.dif.FEV1/FEParamGetTiposCbte'")
+    expect(arcaPreflightSource).toContain("'http://ar.gov.afip.dif.FEV1/FECompUltimoAutorizado'")
+    expect(arcaPreflightSource).not.toContain('FECAESolicitar')
+    expect(arcaPreflightSource).not.toContain('SUPABASE_SERVICE_ROLE_KEY')
+    expect(arcaPreflightSource).not.toContain(".rpc(")
+    expect(arcaPreflightSource).not.toContain(".insert(")
+    expect(arcaPreflightSource).not.toContain(".update(")
+    expect(arcaPreflightSource).not.toContain('ARCA_PRODUCTION_ENABLED')
+    expect(arcaPreflightSource).toContain('cuit: `*******${credentials.taxId.slice(-4)}`')
   })
 
   it('selects credentials before both ARCA issuance and recovery', () => {
