@@ -44,11 +44,30 @@ describe('funnelSubcategories', () => {
       type: 'transfer',
       subcategoryId: 'internal-transfer',
       manualAmount: 500,
+      transferDestinationAmount: 400,
+      transferDestinationCurrency: 'USD',
       simpleMethod: 'Efectivo',
       transferDestinationMethod: 'Efectivo',
     }
 
     expect(canAdvanceSimpleAmount(state, categories[2])).toBe(false)
     expect(canAdvanceSimpleAmount(state, categories[1])).toBe(true)
+  })
+
+  it('accepts independently entered amounts only when transfer currencies differ', () => {
+    const state: FunnelState = {
+      ...makeEmptyFunnelState(),
+      type: 'transfer',
+      subcategoryId: 'internal-transfer',
+      currency: 'ARS',
+      manualAmount: 120000,
+      transferDestinationAmount: 100,
+      transferDestinationCurrency: 'USD',
+      simpleMethod: 'Efectivo',
+      transferDestinationMethod: 'Mercado Pago',
+    }
+
+    expect(canAdvanceSimpleAmount(state, categories[2])).toBe(true)
+    expect(canAdvanceSimpleAmount({ ...state, transferDestinationCurrency: 'ARS' }, categories[2])).toBe(false)
   })
 })

@@ -18,7 +18,7 @@ export type TicketUnit = {
   professionals: { id: string; commission_rate: number }[]
   sena_amount: number | null
   transfer_direction?: 'entrada' | 'salida'
-  payments: { payment_method: string; instrument: null; amount: number; type?: PaymentDirection }[]
+  payments: { payment_method: string; instrument: null; amount: number; currency?: Currency; type?: PaymentDirection }[]
   hairdresser_id?: string | null
   staff_quantity?: number | null
   value_amount?: number | null

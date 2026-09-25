@@ -38,6 +38,10 @@ type SimpleProps = {
   onCurrency: (c: Currency) => void
   manualAmount: number
   onAmount: (v: number) => void
+  transferDestinationAmount: number
+  onTransferDestinationAmount: (v: number) => void
+  transferDestinationCurrency: Currency
+  onTransferDestinationCurrency: (c: Currency) => void
   simpleMethod: string
   onMethod: (m: string) => void
   transferDirection: 'entrada' | 'salida'
@@ -270,13 +274,14 @@ function IncomeAmount({ lines, currency, onCurrency, professionals, assignments,
   )
 }
 
-function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simpleMethod, onMethod, transferDirection, onDirection, transferDestinationMethod, onTransferDestinationMethod, isInternalTransfer, paymentMethods, deductsInventory, methodLabel }: SimpleProps) {
+function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, transferDestinationAmount, onTransferDestinationAmount, transferDestinationCurrency, onTransferDestinationCurrency, simpleMethod, onMethod, transferDirection, onDirection, transferDestinationMethod, onTransferDestinationMethod, isInternalTransfer, paymentMethods, deductsInventory, methodLabel }: SimpleProps) {
   return (
     <div style={{ maxWidth: '520px' }}>
       <StepHeading kicker="Paso 3 — Monto" title="¿Cuánto?" />
 
-      <CurrencyPicker currency={currency} onCurrency={onCurrency} />
+      <CurrencyPicker label={isInternalTransfer ? 'Moneda de origen' : 'Moneda'} currency={currency} onCurrency={onCurrency} />
 
+      {isInternalTransfer && <div style={{ marginBottom: '8px' }}><SectionLabel>Importe de origen</SectionLabel></div>}
       <div style={{ position: 'relative', marginBottom: '22px' }}>
         <span style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', fontSize: '1.6rem', fontWeight: 600, color: 'var(--color-muted)' }}>
           {currency === 'ARS' ? '$' : currency}
@@ -331,6 +336,29 @@ function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simp
             disabledMethod={transferDestinationMethod}
             onChange={onMethod}
           />
+          <div>
+            <CurrencyPicker label="Moneda de destino" currency={transferDestinationCurrency} onCurrency={onTransferDestinationCurrency} />
+            <SectionLabel>Importe de destino</SectionLabel>
+            <div style={{ position: 'relative', marginTop: '8px' }}>
+              <span style={{ position: 'absolute', left: '18px', top: '50%', transform: 'translateY(-50%)', fontSize: '1.25rem', fontWeight: 600, color: 'var(--color-muted)' }}>
+                {transferDestinationCurrency === 'ARS' ? '$' : transferDestinationCurrency}
+              </span>
+              <input
+                type="number"
+                min="0"
+                value={transferDestinationAmount === 0 ? '' : String(transferDestinationAmount)}
+                onChange={e => onTransferDestinationAmount(parseFloat(e.target.value) || 0)}
+                placeholder="0"
+                aria-label="Importe de destino"
+                style={{
+                  width: '100%', padding: '14px 18px 14px 56px', fontSize: '1.5rem', fontWeight: 700,
+                  border: '1.5px solid var(--color-border)', borderRadius: '14px', background: 'var(--color-surface)',
+                  color: 'var(--color-text)', outline: 'none', fontFamily: 'var(--font-body)',
+                }}
+                className="tabular-nums"
+              />
+            </div>
+          </div>
           <PaymentMethodButtons
             label="Cuenta de destino"
             value={transferDestinationMethod}
@@ -339,7 +367,7 @@ function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simp
             onChange={onTransferDestinationMethod}
           />
           <p style={{ fontSize: '0.8125rem', color: 'var(--color-muted)' }}>
-            Ambas cuentas usan la moneda seleccionada. Las operaciones entre monedas se registran por separado.
+            Ingresá ambos importes manualmente. No se calcula ni aplica un tipo de cambio. Si las monedas coinciden, los importes deben ser iguales.
           </p>
         </div>
       ) : (
@@ -368,10 +396,10 @@ function SimpleAmount({ type, currency, onCurrency, manualAmount, onAmount, simp
   )
 }
 
-function CurrencyPicker({ currency, onCurrency }: { currency: Currency; onCurrency: (c: Currency) => void }) {
+function CurrencyPicker({ label = 'Moneda', currency, onCurrency }: { label?: string; currency: Currency; onCurrency: (c: Currency) => void }) {
   return (
     <div style={{ marginBottom: '14px' }}>
-      <SectionLabel>Moneda</SectionLabel>
+      <SectionLabel>{label}</SectionLabel>
       <div className="flex gap-2" style={{ marginTop: '8px' }}>
         {(['ARS', 'USD', 'EUR'] as Currency[]).map(c => (
           <button

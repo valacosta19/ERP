@@ -263,7 +263,7 @@ export function QuickFunnelPage() {
     }
     if (step === 'amount') {
       if (isCartIncome(state)) return 'Cada ítem necesita un precio mayor a cero.'
-      if (isInternalTransfer) return 'Ingresá un monto y elegí cuentas de origen y destino distintas.'
+      if (isInternalTransfer) return 'Ingresá ambos importes y elegí cuentas de origen y destino distintas.'
       return 'Ingresá un monto mayor a cero.'
     }
     if (step === 'payment') return 'El pago debe cubrir el total a cobrar.'
@@ -278,7 +278,9 @@ export function QuickFunnelPage() {
       ? totalToCharge <= 0
         ? `Pagado con anticipo · ${money(netToPay, state.currency)}`
         : `Cobrado ${money(totalToCharge, state.currency)}`
-      : `Registrado ${money(Math.round(state.manualAmount), state.currency)}`
+      : isInternalTransfer
+        ? `Registrado ${money(Math.round(state.manualAmount), state.currency)} → ${money(Math.round(state.transferDestinationAmount), state.transferDestinationCurrency)}`
+        : `Registrado ${money(Math.round(state.manualAmount), state.currency)}`
     const finishQueued = () => { enqueue(payload); setClosed({ summary, queued: true }); setState(s => ({ ...s, step: 'done' })) }
 
     if (!navigator.onLine) {
@@ -529,6 +531,10 @@ export function QuickFunnelPage() {
                 onCurrency={c => setState(s => ({ ...s, currency: c }))}
                 manualAmount={state.manualAmount}
                 onAmount={v => setState(s => ({ ...s, manualAmount: v }))}
+                transferDestinationAmount={state.transferDestinationAmount}
+                onTransferDestinationAmount={v => setState(s => ({ ...s, transferDestinationAmount: v }))}
+                transferDestinationCurrency={state.transferDestinationCurrency}
+                onTransferDestinationCurrency={c => setState(s => ({ ...s, transferDestinationCurrency: c }))}
                 simpleMethod={state.simpleMethod}
                 onMethod={m => setState(s => ({ ...s, simpleMethod: m }))}
                 transferDirection={state.transferDirection}
@@ -548,6 +554,10 @@ export function QuickFunnelPage() {
                 onCurrency={c => setState(s => ({ ...s, currency: c }))}
                 manualAmount={state.manualAmount}
                 onAmount={v => setState(s => ({ ...s, manualAmount: v }))}
+                transferDestinationAmount={state.transferDestinationAmount}
+                onTransferDestinationAmount={v => setState(s => ({ ...s, transferDestinationAmount: v }))}
+                transferDestinationCurrency={state.transferDestinationCurrency}
+                onTransferDestinationCurrency={c => setState(s => ({ ...s, transferDestinationCurrency: c }))}
                 simpleMethod={state.simpleMethod}
                 onMethod={m => setState(s => ({ ...s, simpleMethod: m }))}
                 transferDirection={state.transferDirection}

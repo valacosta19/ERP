@@ -86,11 +86,11 @@ describe('submitTicket grouping', () => {
     expect(createGroup).not.toHaveBeenCalled()
   })
 
-  it('forwards typed transfer legs without changing legacy non-transfer payments', async () => {
+  it('forwards typed cross-currency transfer legs without changing legacy non-transfer payments', async () => {
     const { submitTicket } = useFunnelSubmit()
     const transferPayments = [
-      { payment_method: 'Efectivo', instrument: null, amount: 1000, type: 'salida' as const },
-      { payment_method: 'Mercado Pago', instrument: null, amount: 1000, type: 'entrada' as const },
+      { payment_method: 'Efectivo', instrument: null, amount: 120000, currency: 'ARS' as const, type: 'salida' as const },
+      { payment_method: 'Mercado Pago', instrument: null, amount: 100, currency: 'USD' as const, type: 'entrada' as const },
     ]
 
     await submitTicket(ticket([

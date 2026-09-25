@@ -114,9 +114,15 @@ export function TicketPanel({ state, isInternalTransfer, onQty, onRemove, onDate
             {tip > 0 && <Row label="Propina" value={`+ ${money(tip, cur)}`} muted />}
           </>
         )}
+        {isInternalTransfer && (
+          <>
+            <Row label="Salida" value={money(Math.round(Math.max(0, state.manualAmount)), state.currency)} muted />
+            <Row label="Entrada" value={money(Math.round(Math.max(0, state.transferDestinationAmount)), state.transferDestinationCurrency)} muted />
+          </>
+        )}
         <div className="flex items-baseline justify-between" style={{ paddingTop: '8px' }}>
           <span style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-muted)' }}>
-            {isIncome ? 'A cobrar' : 'Total'}
+            {isIncome ? 'A cobrar' : isInternalTransfer ? 'Origen' : 'Total'}
           </span>
           <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.75rem', fontWeight: 700, color: accent, letterSpacing: '-0.02em' }} className="tabular-nums">
             {money(total, cur)}

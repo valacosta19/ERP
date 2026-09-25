@@ -25,7 +25,7 @@ export function transactionCashMovements(
         transactionId: transaction.id,
         date: transaction.date,
         description: transaction.description,
-        currency: transaction.currency,
+        currency: payment.currency ?? transaction.currency,
         paymentMethod: payment.payment_method,
         type: payment.type as 'entrada' | 'salida',
         amount: payment.amount,

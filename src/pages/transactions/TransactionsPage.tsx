@@ -46,6 +46,7 @@ import type { Transaction, TransactionType, Currency, PaymentMethod, PaymentInst
 import { confirmDialog } from '@/lib/confirm'
 import { showToast } from '@/lib/toast'
 import { transactionCashMovements, transactionCashTotals } from '@/lib/transactionCashFlow'
+import { buildTransactionCsv } from '@/lib/transactionCsv'
 import { fiscalDocumentStatusLabel, fiscalGroupInvoiceState, fiscalTransactionEligibility } from '@/lib/integrations'
 import { FiscalInvoiceModal, type FiscalSourceTransaction } from '@/components/integrations/FiscalInvoiceModal'
 import { MercadoPagoTransactionsPanel } from '@/components/transactions/MercadoPagoTransactionsPanel'
@@ -436,12 +437,13 @@ export function TransactionsPage() {
             payment_method: validMethod ? p.payment_method : (paymentMethodsData.find(pm => pm.active)?.name ?? p.payment_method),
             instrument: p.instrument,
             amount: p.amount,
+            currency: p.currency ?? tx.currency,
             type: p.type,
           }
         })
       : [makeEmptyPayment()]
     const editPayments = isInternalTransferCategory(tx.subcategory)
-      ? normalizeInternalTransferPayments(mappedPayments, activePaymentMethodNames)
+      ? normalizeInternalTransferPayments(mappedPayments, activePaymentMethodNames, tx.currency)
       : mappedPayments.map(payment => ({
           payment_method: payment.payment_method,
           instrument: payment.instrument,
@@ -549,7 +551,7 @@ export function TransactionsPage() {
       let payments = form.payments
 
       if (isInternalTransferCategory(nextSubcategory)) {
-        payments = normalizeInternalTransferPayments(payments, activePaymentMethodNames)
+        payments = normalizeInternalTransferPayments(payments, activePaymentMethodNames, form.currency)
       } else if (isInternalTransferCategory(previousSubcategory)) {
         const origin = payments.find(payment => payment.type === 'salida') ?? payments[0] ?? makeEmptyPayment()
         payments = [{
@@ -568,41 +570,25 @@ export function TransactionsPage() {
     const movements = transactionCashMovements(filteredTransactions, paymentMethodFilter || undefined)
       .slice()
       .sort((a, b) => a.date.localeCompare(b.date))
+    const exportCurrencies: Currency[] = currencyFilter ? [currencyFilter] : ['ARS', 'USD', 'EUR']
+    const openingBalances: Partial<Record<Currency, number>> = {}
 
-    const fmt = (n: number) => n.toFixed(2).replace('.', ',')
-
-    let startingBalance = 0
     if (from) {
-      const { data, error } = await supabase.rpc('get_opening_balance', {
-        p_before_date: from,
-        p_payment_method: paymentMethodFilter || null,
-        p_currency: currencyFilter || null,
-      })
-      if (error) throw new Error(error.message)
-      startingBalance = data ?? 0
+      const results = await Promise.all(exportCurrencies.map(async currency => {
+        const { data, error } = await supabase.rpc('get_opening_balance', {
+          p_before_date: from,
+          p_payment_method: paymentMethodFilter || null,
+          p_currency: currency,
+        })
+        if (error) throw new Error(error.message)
+        return [currency, data ?? 0] as const
+      }))
+      for (const [currency, balance] of results) openingBalances[currency] = balance
+    } else {
+      for (const currency of exportCurrencies) openingBalances[currency] = 0
     }
 
-    let balance = startingBalance
-    const rows = movements.map(movement => {
-      const signed = movement.type === 'entrada' ? movement.amount : -movement.amount
-      balance += signed
-      return [
-        movement.date,
-        `"${(movement.description ?? '').replace(/"/g, '""')}"`,
-        `"${movement.paymentMethod.replace(/"/g, '""')}"`,
-        fmt(signed),
-        fmt(balance),
-      ].join(';')
-    })
-
-    const totalCredits = movements.reduce((sum, movement) =>
-      movement.type === 'entrada' ? sum + movement.amount : sum, 0)
-    const totalDebits = movements.reduce((sum, movement) =>
-      movement.type === 'salida' ? sum - movement.amount : sum, 0)
-
-    const summary = `BALANCE_INICIAL;CREDITOS;DEBITOS;BALANCE_FINAL\n${fmt(startingBalance)};${fmt(totalCredits)};${fmt(totalDebits)};${fmt(balance)}`
-    const header = 'FECHA;DESCRIPCION;METODO_PAGO;MONTO_NETO;BALANCE_PARCIAL'
-    const csv = [summary, '', header, ...rows].join('\n')
+    const csv = buildTransactionCsv(movements, openingBalances, currencyFilter || undefined)
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -1436,10 +1422,19 @@ export function TransactionsPage() {
             />
             <div>
               <Select
-                label="Moneda"
+                label={isEditInternalTransfer ? 'Moneda de origen' : 'Moneda'}
                 options={CURRENCY_OPTIONS}
                 value={editForm.currency}
-                onChange={e => setEditForm(f => ({ ...f, currency: e.target.value as Currency }))}
+                onChange={e => {
+                  const currency = e.target.value as Currency
+                  setEditForm(form => ({
+                    ...form,
+                    currency,
+                    payments: isEditInternalTransfer
+                      ? form.payments.map(payment => payment.type === 'salida' ? { ...payment, currency } : payment)
+                      : form.payments,
+                  }))
+                }}
                 disabled={editing != null && groupIdByTx.has(editing.id)}
               />
               {editing != null && groupIdByTx.has(editing.id) && (
@@ -1501,48 +1496,67 @@ export function TransactionsPage() {
             <div className="space-y-3">
               <span className="text-sm font-medium text-[var(--color-text)]">Transferencia interna</span>
               {editForm.payments.map((payment, index) => (
-                <div key={payment.type} className="grid grid-cols-2 gap-3">
-                  <Select
-                    label={payment.type === 'salida' ? 'Cuenta de origen' : 'Cuenta de destino'}
-                    options={paymentMethodOptions}
-                    value={payment.payment_method}
-                    onChange={e => setEditForm(form => ({
-                      ...form,
-                      payments: form.payments.map((row, rowIndex) => rowIndex === index
-                        ? { ...row, payment_method: e.target.value as PaymentMethod }
-                        : row),
-                    }))}
-                  />
-                  <Select
-                    label="Instrumento"
-                    options={INSTRUMENT_OPTIONS}
-                    value={payment.instrument ?? ''}
-                    onChange={e => setEditForm(form => ({
-                      ...form,
-                      payments: form.payments.map((row, rowIndex) => rowIndex === index
-                        ? { ...row, instrument: (e.target.value as PaymentInstrument) || null }
-                        : row),
-                    }))}
-                  />
+                <div key={payment.type} className="space-y-3 rounded-xl border border-[var(--color-border)] p-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Select
+                      label={payment.type === 'salida' ? 'Cuenta de origen' : 'Cuenta de destino'}
+                      options={paymentMethodOptions}
+                      value={payment.payment_method}
+                      onChange={e => setEditForm(form => ({
+                        ...form,
+                        payments: form.payments.map((row, rowIndex) => rowIndex === index
+                          ? { ...row, payment_method: e.target.value as PaymentMethod }
+                          : row),
+                      }))}
+                    />
+                    <Select
+                      label="Instrumento"
+                      options={INSTRUMENT_OPTIONS}
+                      value={payment.instrument ?? ''}
+                      onChange={e => setEditForm(form => ({
+                        ...form,
+                        payments: form.payments.map((row, rowIndex) => rowIndex === index
+                          ? { ...row, instrument: (e.target.value as PaymentInstrument) || null }
+                          : row),
+                      }))}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      label={payment.type === 'salida' ? 'Importe de origen' : 'Importe de destino'}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={payment.amount || ''}
+                      onChange={e => setEditForm(form => ({
+                        ...form,
+                        payments: form.payments.map((row, rowIndex) => rowIndex === index
+                          ? { ...row, amount: parseFloat(e.target.value) || 0 }
+                          : row),
+                      }))}
+                      prefix={CURRENCY_SYMBOL[payment.currency ?? editForm.currency]}
+                    />
+                    <Select
+                      label={payment.type === 'salida' ? 'Moneda de origen' : 'Moneda de destino'}
+                      options={CURRENCY_OPTIONS}
+                      value={payment.currency ?? editForm.currency}
+                      disabled={payment.type === 'salida' && editing != null && groupIdByTx.has(editing.id)}
+                      onChange={e => {
+                        const currency = e.target.value as Currency
+                        setEditForm(form => ({
+                          ...form,
+                          currency: payment.type === 'salida' ? currency : form.currency,
+                          payments: form.payments.map((row, rowIndex) => rowIndex === index
+                            ? { ...row, currency }
+                            : row),
+                        }))
+                      }}
+                    />
+                  </div>
                 </div>
               ))}
-              <Input
-                label="Importe transferido"
-                type="number"
-                min="0"
-                step="0.01"
-                value={internalTransferAmount(editForm.payments) || ''}
-                onChange={e => {
-                  const amount = parseFloat(e.target.value) || 0
-                  setEditForm(form => ({
-                    ...form,
-                    payments: form.payments.map(payment => ({ ...payment, amount })),
-                  }))
-                }}
-                prefix={CURRENCY_SYMBOL[editForm.currency]}
-              />
               <p className="text-xs text-[var(--color-muted)]">
-                La salida y la entrada usan la misma moneda e importe. El movimiento neto es cero.
+                Ingresá ambas patas manualmente. Los importes deben ser iguales únicamente cuando las dos usan la misma moneda.
               </p>
             </div>
           ) : (

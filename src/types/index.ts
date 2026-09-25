@@ -54,6 +54,7 @@ export interface TransactionPayment {
   payment_method: PaymentMethod
   instrument: PaymentInstrument | null
   amount: number
+  currency?: Currency | null
   type: PaymentDirection
   created_at: string
 }
@@ -62,6 +63,7 @@ export interface TransactionPaymentInput {
   payment_method: PaymentMethod
   instrument: PaymentInstrument | null
   amount: number
+  currency?: Currency
   type?: PaymentDirection
 }
 
@@ -107,7 +109,7 @@ export interface GroupMemberTransaction {
   seña_amount: number | null
   subcategory_id: string | null
   subcategory: TransactionCategory | null
-  payments: Pick<TransactionPayment, 'payment_method' | 'type' | 'amount'>[]
+  payments: Pick<TransactionPayment, 'payment_method' | 'type' | 'amount' | 'currency'>[]
 }
 
 export interface TransactionGroupWithMembers extends TransactionGroup {

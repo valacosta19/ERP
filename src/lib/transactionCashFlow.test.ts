@@ -71,4 +71,18 @@ describe('transaction cash flow', () => {
       ] }),
     ], 'Mercado Pago'))).toEqual({ ARS: { entrada: 100, salida: 0 } })
   })
+
+  it('attributes each cross-currency transfer leg to its own currency', () => {
+    const movements = transactionCashMovements([
+      transaction({ currency: 'ARS', payments: [
+        { id: 'out', transaction_id: 'tx', payment_method: 'Efectivo', instrument: null, amount: 120000, currency: 'ARS', type: 'salida', created_at: '' },
+        { id: 'in', transaction_id: 'tx', payment_method: 'Mercado Pago', instrument: null, amount: 100, currency: 'USD', type: 'entrada', created_at: '' },
+      ] }),
+    ])
+
+    expect(transactionCashTotals(movements)).toEqual({
+      ARS: { entrada: 0, salida: 120000 },
+      USD: { entrada: 100, salida: 0 },
+    })
+  })
 })
