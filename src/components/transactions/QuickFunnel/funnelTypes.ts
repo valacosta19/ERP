@@ -41,6 +41,8 @@ export type FunnelState = {
   lines: CartLine[]
   concept: string
   manualAmount: number
+  transferDestinationAmount: number
+  transferDestinationCurrency: Currency
   simpleMethod: string
   transferDirection: 'entrada' | 'salida'
   transferDestinationMethod: string
@@ -82,8 +84,8 @@ export function canAdvanceSimpleAmount(
 
   if (state.type === 'transfer' && isInternalTransferCategory(subcategory)) {
     return internalTransferValidationError([
-      { payment_method: state.simpleMethod, instrument: null, amount: state.manualAmount, type: 'salida' },
-      { payment_method: state.transferDestinationMethod, instrument: null, amount: state.manualAmount, type: 'entrada' },
+      { payment_method: state.simpleMethod, instrument: null, amount: state.manualAmount, type: 'salida', currency: state.currency },
+      { payment_method: state.transferDestinationMethod, instrument: null, amount: state.transferDestinationAmount, type: 'entrada', currency: state.transferDestinationCurrency },
     ]) === null
   }
 
@@ -100,6 +102,8 @@ export function makeEmptyFunnelState(): FunnelState {
     lines: [],
     concept: '',
     manualAmount: 0,
+    transferDestinationAmount: 0,
+    transferDestinationCurrency: 'ARS',
     simpleMethod: 'Efectivo',
     transferDirection: 'entrada',
     transferDestinationMethod: '',

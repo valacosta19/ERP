@@ -400,6 +400,7 @@ export interface Database {
           payment_method: string
           instrument: string | null
           amount: number
+          currency: 'ARS' | 'USD' | 'EUR'
           type: string
           created_at: string
         }
@@ -409,6 +410,7 @@ export interface Database {
           payment_method: string
           instrument?: string | null
           amount: number
+          currency?: 'ARS' | 'USD' | 'EUR'
           type: string
           created_at?: string
         }

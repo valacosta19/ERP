@@ -1,4 +1,4 @@
-import type { PaymentDirection, TransactionPaymentInput } from '@/types'
+import type { Currency, PaymentDirection, TransactionPaymentInput } from '@/types'
 
 const DIRECTIONS: PaymentDirection[] = ['salida', 'entrada']
 
@@ -9,10 +9,6 @@ export function isInternalTransferCategory(
     && category.name?.trim().replace(/\s+/g, ' ').toLocaleLowerCase('es-AR') === 'transferencia interna'
 }
 
-function positiveAmount(payments: TransactionPaymentInput[]): number {
-  return payments.find(payment => Number(payment.amount) > 0)?.amount ?? 0
-}
-
 function fallbackMethod(methods: string[], excluded: string): string {
   const excludedKey = excluded.toLocaleLowerCase()
   return methods.find(method => method.toLocaleLowerCase() !== excludedKey) ?? ''
@@ -21,8 +17,8 @@ function fallbackMethod(methods: string[], excluded: string): string {
 export function normalizeInternalTransferPayments(
   payments: TransactionPaymentInput[],
   activeMethods: string[],
+  fallbackCurrency: Currency = 'ARS',
 ): TransactionPaymentInput[] {
-  const amount = positiveAmount(payments)
   const byDirection = new Map<PaymentDirection, TransactionPaymentInput>()
 
   for (const payment of payments) {
@@ -37,18 +33,30 @@ export function normalizeInternalTransferPayments(
   const originMethod = origin?.payment_method
     ?? fallbackMethod(activeMethods, destination?.payment_method ?? '')
   const destinationMethod = destination?.payment_method ?? fallbackMethod(activeMethods, originMethod)
+  const originAmountValue = Number(origin?.amount) || 0
+  const destinationAmountValue = Number(destination?.amount) || 0
+  const originAmount = originAmountValue > 0
+    ? originAmountValue
+    : destinationAmountValue > 0
+      ? destinationAmountValue
+      : 0
+  const destinationAmount = destinationAmountValue > 0 ? destinationAmountValue : originAmount
+  const originCurrency = origin?.currency ?? fallbackCurrency
+  const destinationCurrency = destination?.currency ?? originCurrency
 
   return [
     {
       payment_method: originMethod,
       instrument: origin?.instrument ?? null,
-      amount,
+      amount: originAmount,
+      currency: originCurrency,
       type: 'salida',
     },
     {
       payment_method: destinationMethod,
       instrument: destination?.instrument ?? null,
-      amount,
+      amount: destinationAmount,
+      currency: destinationCurrency,
       type: 'entrada',
     },
   ]
@@ -72,8 +80,17 @@ export function internalTransferValidationError(payments: TransactionPaymentInpu
   if (origin.payment_method.toLocaleLowerCase() === destination.payment_method.toLocaleLowerCase()) {
     return 'La cuenta de destino debe ser distinta de la cuenta de origen.'
   }
-  if (origin.amount <= 0 || destination.amount <= 0 || origin.amount !== destination.amount) {
-    return 'La salida y la entrada deben tener el mismo importe mayor que cero.'
+  if (origin.amount <= 0 || destination.amount <= 0) {
+    return 'La salida y la entrada deben tener importes mayores que cero.'
+  }
+  const currencies: Currency[] = ['ARS', 'USD', 'EUR']
+  if (!origin.currency || !destination.currency
+      || !currencies.includes(origin.currency) || !currencies.includes(destination.currency)) {
+    return 'La salida y la entrada deben tener monedas válidas.'
+  }
+  if (origin.currency === destination.currency
+      && Math.round(origin.amount * 100) !== Math.round(destination.amount * 100)) {
+    return 'La salida y la entrada deben tener el mismo importe cuando usan la misma moneda.'
   }
   return null
 }

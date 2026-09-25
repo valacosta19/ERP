@@ -85,6 +85,10 @@ describe('StepAmount Movimiento', () => {
     onCurrency: vi.fn(),
     manualAmount: 1000,
     onAmount: vi.fn(),
+    transferDestinationAmount: 900,
+    onTransferDestinationAmount: vi.fn(),
+    transferDestinationCurrency: 'USD' as const,
+    onTransferDestinationCurrency: vi.fn(),
     simpleMethod: 'Efectivo',
     onMethod: vi.fn(),
     transferDirection: 'entrada' as const,
@@ -109,5 +113,8 @@ describe('StepAmount Movimiento', () => {
     expect(screen.queryByText('Dirección')).toBeNull()
     expect(screen.getByText('Cuenta de origen')).toBeTruthy()
     expect(screen.getByText('Cuenta de destino')).toBeTruthy()
+    expect(screen.getByText('Moneda de origen')).toBeTruthy()
+    expect(screen.getByText('Moneda de destino')).toBeTruthy()
+    expect(screen.getByLabelText('Importe de destino')).toBeTruthy()
   })
 })

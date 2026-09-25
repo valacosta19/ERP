@@ -125,12 +125,13 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
   }
 
   // Simple operations use one transaction. Only the internal-transfer category
-  // uses two explicit ledger legs so the account-level net movement is zero.
+  // uses two explicit ledger legs so each account keeps its own amount/currency.
   const subcat = ctx.categories.find(c => c.id === state.subcategoryId)
   const isInternalTransfer = state.type === 'transfer' && isInternalTransferCategory(subcat)
   const txType: TicketUnit['transaction_type'] =
     state.type === 'transfer' ? 'transfer' : state.type === 'income' ? 'income' : 'expense'
   const amount = Math.round(Math.max(0, state.manualAmount))
+  const destinationAmount = Math.round(Math.max(0, state.transferDestinationAmount))
   const inventoryFunded = subcat?.deducts_inventory === true && !!state.simpleProductId
   return {
     ...base,
@@ -152,8 +153,8 @@ export function buildTicket(state: FunnelState, ctx: BuildContext): TicketPayloa
         transfer_direction: state.type === 'transfer' && !isInternalTransfer ? state.transferDirection : undefined,
         payments: isInternalTransfer && amount > 0
           ? [
-              { payment_method: state.simpleMethod, instrument: null, amount, type: 'salida' },
-              { payment_method: state.transferDestinationMethod, instrument: null, amount, type: 'entrada' },
+              { payment_method: state.simpleMethod, instrument: null, amount, currency: state.currency, type: 'salida' },
+              { payment_method: state.transferDestinationMethod, instrument: null, amount: destinationAmount, currency: state.transferDestinationCurrency, type: 'entrada' },
             ]
           : inventoryFunded
             ? []

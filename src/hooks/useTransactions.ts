@@ -4,6 +4,7 @@ import { fetchAllRows } from '@/lib/fetchAllRows'
 import { fetchDisplayPositions, compareByDisplayOrder } from '@/lib/transactionOrder'
 import type { Transaction, TransactionType, Currency, PaymentMethod, TransactionPaymentInput, ProfessionalAssignment, TransactionCategory } from '@/types'
 import { invalidateAccounting } from '@/lib/invalidateAccounting'
+import { summarizePaymentMethodBalances, type PaymentMethodBalanceRow } from '@/lib/paymentMethodBalances'
 
 interface TransactionFilters {
   subcategoryIds?: string[]
@@ -122,6 +123,7 @@ export function useUpdateTransaction() {
           payment_method: payment.payment_method,
           instrument: payment.instrument,
           amount: payment.amount,
+          ...(payment.currency ? { currency: payment.currency } : {}),
           ...(transaction_type === 'transfer' ? { type: payment.type } : {}),
         })),
         p_professionals: professionals.map(professional => ({
@@ -188,34 +190,21 @@ export function usePaymentMethodBalances(filters: { from?: string; to?: string; 
   return useQuery({
     queryKey: ['payment-method-balances', filters],
     queryFn: async () => {
-      type Row = { payment_method: PaymentMethod; amount: number; type: string; transactions: { currency: string; voided_at: string | null; date: string } }
-      const rows = await fetchAllRows<Row>((rangeFrom, rangeTo) => {
+      const rows = await fetchAllRows<PaymentMethodBalanceRow>((rangeFrom, rangeTo) => {
         let query = supabase
           .from('transaction_payments')
-          .select('payment_method, amount, type, transactions!inner(date, currency, voided_at)')
+          .select('payment_method, amount, currency, type, transactions!inner(date, currency, voided_at)')
           .is('transactions.voided_at', null)
           .order('id', { ascending: true })
 
         if (filters.from) query = query.gte('transactions.date', filters.from)
         if (filters.to) query = query.lte('transactions.date', filters.to)
-        if (filters.currency) query = query.eq('transactions.currency', filters.currency)
+        if (filters.currency) query = query.eq('currency', filters.currency)
 
         return query.range(rangeFrom, rangeTo)
       })
 
-      const methodKeySet = [...new Set(rows.map(r => r.payment_method.toLowerCase()))].sort()
-      return methodKeySet.map(methodKey => {
-        const subset = rows.filter(r => r.payment_method.toLowerCase() === methodKey)
-        const displayName = subset[0].payment_method
-        const currencySet = [...new Set(subset.map(r => r.transactions.currency))].sort()
-        const currencies = currencySet.map(currency => {
-          const balance = subset
-            .filter(r => r.transactions.currency === currency)
-            .reduce((sum, r) => sum + (r.type === 'entrada' ? r.amount : -r.amount), 0)
-          return { currency, balance }
-        })
-        return { method: displayName, currencies }
-      })
+      return summarizePaymentMethodBalances(rows)
     },
   })
 }

@@ -72,12 +72,15 @@ describe('buildTicket anticipo', () => {
 })
 
 describe('buildTicket Movimiento', () => {
-  it('creates equal typed legs only when Transferencia interna is selected', () => {
+  it('creates independently entered currency legs only when Transferencia interna is selected', () => {
     const state: FunnelState = {
       ...makeEmptyFunnelState(),
       type: 'transfer',
       subcategoryId: TRANSFERENCIA_INTERNA.id,
       manualAmount: 1250,
+      currency: 'ARS',
+      transferDestinationAmount: 1,
+      transferDestinationCurrency: 'USD',
       simpleMethod: 'Efectivo',
       transferDestinationMethod: 'Mercado Pago',
     }
@@ -85,8 +88,8 @@ describe('buildTicket Movimiento', () => {
     const ticket = buildTicket(state, ctx)
     expect(ticket.units).toHaveLength(1)
     expect(ticket.units[0].payments).toEqual([
-      { payment_method: 'Efectivo', instrument: null, amount: 1250, type: 'salida' },
-      { payment_method: 'Mercado Pago', instrument: null, amount: 1250, type: 'entrada' },
+      { payment_method: 'Efectivo', instrument: null, amount: 1250, currency: 'ARS', type: 'salida' },
+      { payment_method: 'Mercado Pago', instrument: null, amount: 1, currency: 'USD', type: 'entrada' },
     ])
     expect(ticket.units[0].payments[0].amount).toBe(1250)
   })

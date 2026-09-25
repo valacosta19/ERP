@@ -167,6 +167,8 @@ export function useInventoryValuation() {
 type RawPaymentWithTx = {
   payment_method: string
   amount: number
+  currency: Currency | null
+  type: string
   transactions: {
     date: string
     currency: Currency
@@ -188,7 +190,7 @@ export function useBalanceSheet(asOfDate?: string) {
         fetchAllRows<RawPaymentWithTx>((rangeFrom, rangeTo) =>
           supabase
             .from('transaction_payments')
-            .select('payment_method, amount, transactions!inner(date, currency, voided_at, transaction_categories!subcategory_id(transaction_type))')
+            .select('payment_method, amount, currency, type, transactions!inner(date, currency, voided_at, transaction_categories!subcategory_id(transaction_type))')
             .is('transactions.voided_at', null)
             .lte('transactions.date', dateFilter)
             .order('id', { ascending: true })
@@ -207,12 +209,11 @@ export function useBalanceSheet(asOfDate?: string) {
 
       const cashMap = new Map<string, { method: string; currency: Currency; amount: number }>()
       for (const payment of payments) {
-        const txType = payment.transactions?.transaction_categories?.transaction_type
-        if (!txType || txType === 'transfer') continue
-        const currency = payment.transactions?.currency ?? 'ARS'
+        if (payment.type !== 'entrada' && payment.type !== 'salida') continue
+        const currency = payment.currency ?? payment.transactions?.currency ?? 'ARS'
         const key = `${payment.payment_method}:${currency}`
         const current = cashMap.get(key) ?? { method: payment.payment_method, currency, amount: 0 }
-        current.amount += (txType === 'income' ? 1 : -1) * Number(payment.amount)
+        current.amount += (payment.type === 'entrada' ? 1 : -1) * Number(payment.amount)
         cashMap.set(key, current)
       }
 
